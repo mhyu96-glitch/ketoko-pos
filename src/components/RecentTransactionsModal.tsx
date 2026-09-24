@@ -72,17 +72,25 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
         });
       }
     };
+    const handleRemoteRefresh = () => {
+      db.transactions.reverse().sortBy('created_at').then(setTransactions).catch(() => {});
+    };
     window.addEventListener('ketoko_transaction_deleted', handleRemoteDelete);
     window.addEventListener('ketoko_transaction_created', handleRemoteCreate);
+    window.addEventListener('ketoko_transactions_refreshed', handleRemoteRefresh);
     return () => {
       window.removeEventListener('ketoko_transaction_deleted', handleRemoteDelete);
       window.removeEventListener('ketoko_transaction_created', handleRemoteCreate);
+      window.removeEventListener('ketoko_transactions_refreshed', handleRemoteRefresh);
     };
   }, []);
 
   const loadTransactions = async () => {
     setIsLoading(true);
     try {
+      if (navigator.onLine) {
+        await syncService.pullTransactionsFromSupabase(100).catch(() => {});
+      }
       const allTrx = await db.transactions.reverse().sortBy('created_at');
       setTransactions(allTrx);
     } catch (err) {

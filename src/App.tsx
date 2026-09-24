@@ -305,10 +305,12 @@ export const App: React.FC = () => {
         // 2. Tarik pembaruan produk & stok terbaru dari Cloud Supabase (dari komputer lain di jaringan berbeda)
         if (navigator.onLine) {
           syncService.pullFromSupabase().then((res) => {
-            if (res && res.count > 0) {
-              db.products.toArray().then((fresh) => {
-                if (fresh && fresh.length > 0) setProducts(fresh);
-              });
+            if (res && res.products && res.products.length > 0) {
+              const cloudMap = new Map(res.products.map(p => [String(p.id), p]));
+              setProducts((prev) => prev.map(p => {
+                const cp = cloudMap.get(String(p.id));
+                return cp ? { ...p, ...cp } : p;
+              }));
             }
           }).catch(() => {});
         }
@@ -568,7 +570,7 @@ export const App: React.FC = () => {
             if (prod && prod.id) {
               db.products.put(prod).catch(() => {});
               setProducts((prev) => {
-                const idx = prev.findIndex(p => p.id === prod.id);
+                const idx = prev.findIndex(p => String(p.id) === String(prod.id));
                 if (idx >= 0) {
                   const copy = [...prev];
                   copy[idx] = { ...copy[idx], ...prod };
@@ -586,7 +588,7 @@ export const App: React.FC = () => {
                   const prodId = it.product_id || it.id;
                   const addQty = Number(it.qty) || 0;
                   if (prodId && addQty > 0) {
-                    const existing = await db.products.get(prodId);
+                    const existing = await db.products.get(String(prodId));
                     if (existing) {
                       const updated = {
                         ...existing,
@@ -594,7 +596,7 @@ export const App: React.FC = () => {
                         buy_price: it.buy_price || existing.buy_price
                       };
                       await db.products.put(updated);
-                      setProducts((prev) => prev.map(p => p.id === prodId ? updated : p));
+                      setProducts((prev) => prev.map(p => String(p.id) === String(prodId) ? updated : p));
                     }
                   }
                 }
@@ -614,12 +616,12 @@ export const App: React.FC = () => {
               loadTransactions();
             }
             if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
-              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
               for (const s of payload.updated_stocks) {
-                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
               }
               setProducts((prev) => prev.map(p => {
-                const s = stockMap.get(p.id);
+                const s = stockMap.get(String(p.id));
                 return s !== undefined ? { ...p, stock: s } : p;
               }));
             }
@@ -632,15 +634,25 @@ export const App: React.FC = () => {
               setTransactions((prev) => prev.filter((t) => t.id !== trxId));
               window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
             }
+            if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
+              for (const s of payload.updated_stocks) {
+                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(String(p.id));
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
+            }
           })
           .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
             if (Array.isArray(payload)) {
-              const stockMap = new Map<string, number>(payload.map((s: any) => [s.id, Number(s.stock) || 0]));
+              const stockMap = new Map<string, number>(payload.map((s: any) => [String(s.id), Number(s.stock) || 0]));
               for (const s of payload) {
-                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
               }
               setProducts((prev) => prev.map(p => {
-                const s = stockMap.get(p.id);
+                const s = stockMap.get(String(p.id));
                 return s !== undefined ? { ...p, stock: s } : p;
               }));
             }
@@ -733,16 +745,35 @@ export const App: React.FC = () => {
     }
   }, [isOnline, loadTransactions, loadLocalProducts]);
 
-  // Non-blocking background sync timer (every 15s to keep cashier & admin in sync)
+  // Non-blocking background sync timer & mobile wake-up listener (every 12s and on tab focus)
   useEffect(() => {
     if (!isOnline) return;
 
     const interval = setInterval(() => {
       handleManualSync();
-    }, 15000);
+    }, 12000);
 
-    return () => clearInterval(interval);
-  }, [isOnline, handleManualSync]);
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        handleManualSync();
+      }
+    };
+
+    const handleTrxRefreshed = () => {
+      loadTransactions();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    };
+  }, [isOnline, handleManualSync, loadTransactions]);
 
   // In-memory Barcode & SKU Map for Sub-millisecond (0.01ms) O(1) Lookups
   const { barcodeIndex, idIndex } = useMemo(() => {

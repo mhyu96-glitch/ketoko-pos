@@ -24,7 +24,11 @@ export class SyncService {
     const supabase = getSupabaseClient();
     if (!supabase) return null;
     this.cloudLiveChannel = supabase.channel('ketoko_global_live_sync');
-    this.cloudLiveChannel.subscribe();
+    this.cloudLiveChannel.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[SyncService] Supabase Realtime Channel terhubung');
+      }
+    });
     return this.cloudLiveChannel;
   }
 
@@ -41,6 +45,43 @@ export class SyncService {
     } catch (err) {
       console.warn('[Sync] Broadcast cloud event error:', err);
     }
+  }
+
+  /**
+   * Pastikan customer tersimpan di Supabase sebelum digunakan sebagai foreign key
+   */
+  async ensureCustomerExists(supabase: any, customerId: string, customerName?: string): Promise<string | null> {
+    if (!customerId) return null;
+    const cleanId = String(customerId).trim();
+    if (!cleanId) return null;
+    try {
+      const { data, error } = await supabase.from('customers').upsert({
+        id: cleanId,
+        name: customerName || `Pelanggan ${cleanId}`,
+        type: 'RETAIL'
+      }, { onConflict: 'id' }).select('id').single();
+      if (!error && data?.id) return String(data.id);
+      if (!error) return cleanId;
+    } catch {}
+    return null;
+  }
+
+  /**
+   * Pastikan supplier tersimpan di Supabase sebelum digunakan sebagai foreign key
+   */
+  async ensureSupplierExists(supabase: any, supplierId: string, supplierName?: string): Promise<string | null> {
+    if (!supplierId) return null;
+    const cleanId = String(supplierId).trim();
+    if (!cleanId) return null;
+    try {
+      const { data, error } = await supabase.from('suppliers').upsert({
+        id: cleanId,
+        name: supplierName || `Supplier ${cleanId}`
+      }, { onConflict: 'id' }).select('id').single();
+      if (!error && data?.id) return String(data.id);
+      if (!error) return cleanId;
+    } catch {}
+    return null;
   }
 
   getStatus(): SyncStatusInfo {
@@ -253,40 +294,59 @@ export class SyncService {
       if (supabase) {
         for (const trx of transactionsToSync) {
           try {
-            const { error: headerErr } = await supabase.from('transactions').upsert({
-              id: trx.id,
+            let validCustomerId: string | null = null;
+            if (trx.member_id) {
+              validCustomerId = await this.ensureCustomerExists(supabase, trx.member_id, trx.customer_name);
+            }
+
+            const trxPayload: any = {
+              id: String(trx.id),
               receipt_number: trx.receipt_number,
               branch_id: trx.branch_id || branchId,
               cashier_id: trx.cashier_id || 'KASIR-01',
               cashier_name: trx.cashier_name || 'Kasir Toko',
-              customer_id: trx.member_id || null,
-              subtotal: trx.subtotal,
-              discount_amount: trx.discount_amount || 0,
-              tax_amount: trx.tax_amount || 0,
-              grand_total: trx.grand_total,
-              cash_given: trx.cash_given || trx.grand_total,
-              change_due: trx.change_returned || 0,
+              customer_id: validCustomerId,
+              customer_name: trx.customer_name || (validCustomerId ? `Member #${validCustomerId}` : null),
+              subtotal: Number(trx.subtotal) || 0,
+              discount_amount: Number(trx.discount_amount) || 0,
+              tax_amount: Number(trx.tax_amount) || 0,
+              grand_total: Number(trx.grand_total) || 0,
+              cash_given: Number(trx.cash_given) || Number(trx.grand_total) || 0,
+              change_due: Number(trx.change_returned) || 0,
               payment_method: trx.payment_method || 'CASH',
-              created_at: trx.created_at,
+              payment_status: trx.payment_method === 'TEMPO' ? (Number(trx.cash_given) >= Number(trx.grand_total) ? 'PAID' : 'PENDING') : 'PAID',
+              notes: trx.notes || (trx.due_date ? `Jatuh Tempo: ${trx.due_date}` : null),
+              created_at: trx.created_at || new Date().toISOString(),
               synced_at: new Date().toISOString()
-            });
+            };
+
+            let { error: headerErr } = await supabase.from('transactions').upsert(trxPayload, { onConflict: 'id' });
+
+            // If foreign key constraint violation on customer_id, fallback to customer_id = null
+            if (headerErr && (headerErr.code === '23503' || headerErr.message?.includes('violates foreign key constraint'))) {
+              trxPayload.customer_id = null;
+              const retry = await supabase.from('transactions').upsert(trxPayload, { onConflict: 'id' });
+              headerErr = retry.error;
+            }
 
             if (headerErr) throw headerErr;
 
             if (trx.items && trx.items.length > 0) {
+              await supabase.from('transaction_items').delete().eq('transaction_id', trx.id);
               const itemsPayload = trx.items.map((it) => ({
                 transaction_id: trx.id,
-                product_id: it.product_id,
+                product_id: String(it.product_id),
                 product_name: it.product_name,
-                qty: it.qty,
-                cost_price: it.buy_price || 0,
-                unit_price: it.price_applied,
-                subtotal: it.subtotal_item,
-                created_at: trx.created_at
+                qty: Number(it.qty) || 1,
+                unit: it.unit || 'Pcs',
+                cost_price: Number(it.buy_price) || 0,
+                unit_price: Number(it.price_applied) || 0,
+                subtotal: Number(it.subtotal_item) || 0,
+                created_at: trx.created_at || new Date().toISOString()
               }));
 
               const { error: itemsErr } = await supabase.from('transaction_items').insert(itemsPayload);
-              if (itemsErr) throw itemsErr;
+              if (itemsErr) console.warn('[SupabaseSync] Gagal insert items:', itemsErr.message);
             }
 
             syncedIds.push(trx.id);
@@ -302,7 +362,8 @@ export class SyncService {
             operation_type: 'PUSH_TRANSACTIONS',
             synced_records_count: syncedIds.length,
             status: failedIds.length === 0 ? 'SUCCESS' : 'PARTIAL',
-            error_message: failedIds.length > 0 ? `Failed IDs: ${failedIds.join(', ')}` : null
+            error_message: failedIds.length > 0 ? `Failed IDs: ${failedIds.join(', ')}` : null,
+            synced_at: new Date().toISOString()
           });
         } catch {
           // ignore
@@ -408,12 +469,14 @@ export class SyncService {
         const supabase = getSupabaseClient();
         if (supabase) {
           await supabase.from('transaction_items').delete().eq('transaction_id', trxId);
+          await supabase.from('receivables').delete().eq('transaction_id', trxId);
           await supabase.from('transactions').delete().eq('id', trxId);
         }
       } catch (err) {
         console.warn('[Sync] Gagal hapus transaksi dari Supabase:', err);
       }
     }
+    await db.receivables.where('transaction_id').equals(trxId).delete().catch(() => {});
 
     // Siarkan realtime broadcast ke semua kasir di cloud
     this.broadcastCloudEvent('transaction_deleted', {
@@ -499,7 +562,7 @@ export class SyncService {
     }
   }
 
-  async pullFromSupabase(): Promise<{ count: number; error?: string }> {
+  async pullFromSupabase(): Promise<{ count: number; error?: string; products?: Product[] }> {
     const supabase = getSupabaseClient();
     if (!supabase) {
       return { count: 0, error: 'Supabase belum dikonfigurasi.' };
@@ -521,10 +584,10 @@ export class SyncService {
         await db.products.bulkPut(cloudProducts as Product[]);
         this.lastSyncTime = new Date().toISOString();
         localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);
-        return { count: cloudProducts.length };
+        return { count: cloudProducts.length, products: cloudProducts as Product[] };
       }
 
-      return { count: 0 };
+      return { count: 0, products: [] };
     } catch (err: any) {
       this.lastError = err.message;
       return { count: 0, error: err.message };
@@ -607,13 +670,14 @@ export class SyncService {
         for (const item of cloudItems) {
           const list = itemsMap.get(item.transaction_id) || [];
           list.push({
-            product_id: item.product_id,
+            product_id: String(item.product_id),
             product_name: item.product_name,
-            qty: item.qty,
-            buy_price: item.cost_price,
-            price_applied: item.unit_price,
+            qty: Number(item.qty) || 1,
+            unit: item.unit || 'Pcs',
+            buy_price: Number(item.cost_price) || 0,
+            price_applied: Number(item.unit_price) || 0,
             is_wholesale: false,
-            subtotal_item: item.subtotal
+            subtotal_item: Number(item.subtotal) || 0
           });
           itemsMap.set(item.transaction_id, list);
         }
@@ -626,6 +690,9 @@ export class SyncService {
         cashier_id: t.cashier_id || 'KASIR-01',
         cashier_name: t.cashier_name || 'Kasir',
         member_id: t.customer_id || undefined,
+        customer_name: t.customer_name || (t.customer_id ? `Member #${t.customer_id}` : undefined),
+        notes: t.notes || undefined,
+        due_date: t.notes && t.notes.includes('Jatuh Tempo:') ? t.notes.split('Jatuh Tempo:')[1].trim() : undefined,
         items: itemsMap.get(t.id) || [],
         subtotal: Number(t.subtotal) || 0,
         discount_amount: Number(t.discount_amount) || 0,
@@ -640,6 +707,9 @@ export class SyncService {
       }));
 
       await db.transactions.bulkPut(formatted);
+      if (typeof window !== 'undefined' && formatted.length > 0) {
+        window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed', { detail: { count: formatted.length } }));
+      }
       return { count: formatted.length };
     } catch (err: any) {
       console.warn('[SyncService] Gagal tarik transaksi dari Supabase:', err.message);
@@ -738,19 +808,31 @@ export class SyncService {
       // 1. Push local debts
       const localDebts = await db.debts.toArray();
       if (localDebts.length > 0) {
-        await supabase.from('debts').upsert(localDebts.map(d => ({
+        for (const d of localDebts) {
+          if (d.supplier_id) {
+            await this.ensureSupplierExists(supabase, d.supplier_id, d.supplier_name);
+          }
+        }
+
+        const debtsPayload = localDebts.map(d => ({
           id: d.id,
-          supplier_id: d.supplier_id,
-          supplier_name: d.supplier_name,
+          supplier_id: d.supplier_id || null,
+          supplier_name: d.supplier_name || 'Supplier Umum',
           invoice_number: d.invoice_number,
-          amount: d.total_amount,
-          paid_amount: d.paid_amount,
+          amount: Number(d.total_amount) || 0,
+          paid_amount: Number(d.paid_amount) || 0,
           due_date: d.due_date,
           status: d.status,
           notes: d.notes,
           created_at: d.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
-        })));
+        }));
+
+        let { error: dErr } = await supabase.from('debts').upsert(debtsPayload, { onConflict: 'id' });
+        if (dErr && (dErr.code === '23503' || dErr.message?.includes('violates foreign key constraint'))) {
+          const fallbackDebts = debtsPayload.map(d => ({ ...d, supplier_id: null }));
+          await supabase.from('debts').upsert(fallbackDebts, { onConflict: 'id' });
+        }
       }
 
       // 2. Pull cloud debts
@@ -758,7 +840,7 @@ export class SyncService {
       if (cloudDebts && cloudDebts.length > 0) {
         await db.debts.bulkPut(cloudDebts.map((d: any) => ({
           id: d.id,
-          supplier_id: d.supplier_id,
+          supplier_id: d.supplier_id || undefined,
           supplier_name: d.supplier_name,
           invoice_number: d.invoice_number,
           total_amount: Number(d.amount) || 0,
@@ -774,20 +856,32 @@ export class SyncService {
       // 3. Push local receivables
       const localRecs = await db.receivables.toArray();
       if (localRecs.length > 0) {
-        await supabase.from('receivables').upsert(localRecs.map(r => ({
+        for (const r of localRecs) {
+          if (r.customer_id) {
+            await this.ensureCustomerExists(supabase, r.customer_id, r.customer_name);
+          }
+        }
+
+        const recsPayload = localRecs.map(r => ({
           id: r.id,
-          customer_id: r.customer_id,
-          customer_name: r.customer_name,
-          transaction_id: r.transaction_id,
+          customer_id: r.customer_id || null,
+          customer_name: r.customer_name || 'Pelanggan Umum',
+          transaction_id: r.transaction_id || null,
           receipt_number: r.receipt_number,
-          amount: r.total_amount,
-          paid_amount: r.paid_amount,
+          amount: Number(r.total_amount) || 0,
+          paid_amount: Number(r.paid_amount) || 0,
           due_date: r.due_date,
           status: r.status,
           notes: r.notes,
           created_at: r.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
-        })));
+        }));
+
+        let { error: rErr } = await supabase.from('receivables').upsert(recsPayload, { onConflict: 'id' });
+        if (rErr && (rErr.code === '23503' || rErr.message?.includes('violates foreign key constraint'))) {
+          const fallbackRecs = recsPayload.map(r => ({ ...r, customer_id: null }));
+          await supabase.from('receivables').upsert(fallbackRecs, { onConflict: 'id' });
+        }
       }
 
       // 4. Pull cloud receivables
@@ -795,9 +889,9 @@ export class SyncService {
       if (cloudRecs && cloudRecs.length > 0) {
         await db.receivables.bulkPut(cloudRecs.map((r: any) => ({
           id: r.id,
-          customer_id: r.customer_id,
+          customer_id: r.customer_id || undefined,
           customer_name: r.customer_name,
-          transaction_id: r.transaction_id,
+          transaction_id: r.transaction_id || undefined,
           receipt_number: r.receipt_number,
           total_amount: Number(r.amount) || 0,
           paid_amount: Number(r.paid_amount) || 0,

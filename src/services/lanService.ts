@@ -43,6 +43,41 @@ class LanService {
 
   constructor() {
     this.config = this.loadConfig();
+    this.autoDetectServerIfBrowser().catch(() => {});
+  }
+
+  /**
+   * Otomatis mendeteksi jika aplikasi dibuka melalui domain/IP yang menyediakan API LAN Server
+   */
+  public async autoDetectServerIfBrowser(): Promise<boolean> {
+    if (typeof window === 'undefined' || !window.location || !window.location.origin) return false;
+    const origin = window.location.origin;
+    if (origin.startsWith('file:') || origin === 'null') return false;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${origin}/api/lan/status`, {
+        signal: controller.signal,
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && (data.running || data.port !== undefined || data.ips)) {
+          if (this.config.mode === 'STANDALONE' || this.config.serverUrl !== origin) {
+            console.log('[LanService] Berhasil mendeteksi server Ketoko pada domain/origin:', origin);
+            this.config.mode = 'CLIENT';
+            this.config.serverUrl = origin;
+            this.saveConfig(this.config);
+            this.isOnlineWithServer = true;
+            return true;
+          }
+        }
+      }
+    } catch {}
+    return false;
   }
 
   public loadConfig(): LanConfig {

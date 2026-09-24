@@ -38,6 +38,8 @@ export interface CartItem {
 export interface TransactionItem {
   product_id: string;
   product_name: string;
+  barcode?: string;
+  unit?: string;
   qty: number;
   buy_price?: number;
   price_applied: number;
