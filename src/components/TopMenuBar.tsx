@@ -31,7 +31,8 @@ import {
   Palette,
   Tag,
   KeyRound,
-  ShieldCheck
+  ShieldCheck,
+  Download
 } from 'lucide-react';
 
 export type NavView = 'pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin';
@@ -56,6 +57,7 @@ interface TopMenuBarProps {
   onOpenPurchasesAndReturns?: (tab?: 'history' | 'purchase_return' | 'sales_return') => void;
   onOpenStockAdjustments?: (tab?: 'in' | 'out' | 'opname') => void;
   onOpenStoreSettings?: (tab?: 'profile' | 'theme' | 'csv' | 'backup' | 'users') => void;
+  onOpenPWAInstall?: () => void;
   pendingSyncCount: number;
   lowStockCount: number;
   overdueCount?: number;
@@ -82,6 +84,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
   onOpenPurchasesAndReturns,
   onOpenStockAdjustments,
   onOpenStoreSettings,
+  onOpenPWAInstall,
   lowStockCount,
   overdueCount = 0,
   userRole = 'CASHIER'
@@ -930,6 +933,25 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                       <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">USB / Bluetooth / WebSerial ESC/POS</div>
                     </div>
                   </button>
+
+                  {/* Pasang Aplikasi PWA */}
+                  {onOpenPWAInstall && (
+                    <button
+                      onClick={() => {
+                        onOpenPWAInstall();
+                        setOpenDropdown(null);
+                      }}
+                      className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Pasang Aplikasi (PWA)</div>
+                        <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Install di layar utama HP & Komputer</div>
+                      </div>
+                    </button>
+                  )}
 
                   {/* Lisensi & Aktivasi (Khusus Superadmin / Vendor) */}
                   {isSuperAdmin && (

@@ -2,11 +2,14 @@
   "name": "Ketoko POS - Sistem Kasir Offline-First",
   "short_name": "Ketoko POS",
   "description": "Sistem Kasir Point of Sale Cepat, Offline-First, dan Terintegrasi untuk Toko & Retail",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#fcf9f5",
   "theme_color": "#96633b",
   "orientation": "any",
+  "categories": ["business", "finance", "productivity", "shopping"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -19,7 +22,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
-

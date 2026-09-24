@@ -40,6 +40,9 @@ import { checkForAppUpdates, type AppVersionInfo } from './services/updateServic
 import { LanSettingsModal } from './components/LanSettingsModal';
 import { lanService } from './services/lanService';
 import { SuperadminPortalView } from './components/SuperadminPortalView';
+import { usePWA } from './hooks/usePWA';
+import { PWAInstallModal } from './components/PWAInstallModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 
 export const App: React.FC = () => {
   // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin')
@@ -103,6 +106,8 @@ export const App: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isLanModalOpen, setIsLanModalOpen] = useState(false);
+  const { isInstallable, isInstalled, isIOS, installApp } = usePWA();
+  const [isPWAInstallOpen, setIsPWAInstallOpen] = useState(false);
 
   // Master Developer / Superadmin Security State
   const [isDevUnlocked, setIsDevUnlocked] = useState(false);
@@ -758,6 +763,8 @@ export const App: React.FC = () => {
           onSecretDevTrigger={() => {
             setIsDevPinModalOpen(true);
           }}
+          isPWAInstalled={isInstalled}
+          onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
         />
       </div>
 
@@ -807,6 +814,7 @@ export const App: React.FC = () => {
             setStoreSettingsTab(tab);
             setIsStoreSettingsOpen(true);
           }}
+          onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
           pendingSyncCount={pendingSyncCount}
           lowStockCount={lowStockCount}
           overdueCount={overdueCount}
@@ -1157,6 +1165,24 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* PWA Install Modal & Floating Prompt Banner */}
+      <PWAInstallModal
+        isOpen={isPWAInstallOpen}
+        onClose={() => setIsPWAInstallOpen(false)}
+        onInstall={installApp}
+        isInstallable={isInstallable}
+        isIOS={isIOS}
+        isInstalled={isInstalled}
+      />
+
+      <PWAInstallBanner
+        isInstallable={isInstallable}
+        isInstalled={isInstalled}
+        isIOS={isIOS}
+        onOpenModal={() => setIsPWAInstallOpen(true)}
+        onInstall={installApp}
+      />
 
     </div>
   );

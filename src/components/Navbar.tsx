@@ -15,7 +15,8 @@ import {
   Lock,
   Network,
   Server,
-  Laptop
+  Laptop,
+  Download
 } from 'lucide-react';
 import type { User } from '../types';
 import { licenseService, type LicenseStatus } from '../services/licenseService';
@@ -41,6 +42,8 @@ interface NavbarProps {
   onOpenLicense?: () => void;
   onOpenLanSettings?: () => void;
   onSecretDevTrigger?: () => void;
+  isPWAInstalled?: boolean;
+  onOpenPWAInstall?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = React.memo(({
@@ -62,7 +65,9 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   onOpenStoreSettings,
   onOpenLicense,
   onOpenLanSettings,
-  onSecretDevTrigger
+  onSecretDevTrigger,
+  isPWAInstalled = false,
+  onOpenPWAInstall
 }) => {
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin';
   const isAdmin = isSuperAdmin || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
@@ -249,6 +254,19 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
                 </>
               )}
             </button>
+
+            {/* Tombol Install PWA (Jika belum terpasang di HP / Desktop) */}
+            {!isPWAInstalled && onOpenPWAInstall && (
+              <button
+                type="button"
+                onClick={onOpenPWAInstall}
+                title="Pasang Aplikasi Ketoko POS di Layar Utama (PWA Offline-First)"
+                className="flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 active:scale-95 animate-fadeIn"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden md:inline">Pasang PWA</span>
+              </button>
+            )}
 
             {/* Tombol Status LAN Multi-Kasir Terpusat & Cloud (HANYA UNTUK SUPERADMIN / DEVELOPER VENDOR) */}
             {isSuperAdmin && onOpenLanSettings && (
