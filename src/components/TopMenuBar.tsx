@@ -30,10 +30,11 @@ import {
   UserPlus,
   Palette,
   Tag,
-  KeyRound
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 
-export type NavView = 'pos' | 'dashboard' | 'inventory' | 'products' | 'settings';
+export type NavView = 'pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin';
 
 interface TopMenuBarProps {
   currentView: NavView;
@@ -967,9 +968,47 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                       </div>
                     </button>
                   )}
+
+                  {/* Portal Vendor (Khusus Superadmin) */}
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => {
+                        onNavigate('superadmin');
+                        setOpenDropdown(null);
+                      }}
+                      className="w-full p-2 text-left rounded-xl bg-purple-50 text-purple-900 hover:bg-purple-100 flex items-center space-x-3 transition-colors group border border-purple-200"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-purple-900 whitespace-nowrap">👑 Portal Vendor Superadmin</div>
+                        <div className="text-[10px] text-purple-700 font-medium whitespace-nowrap">Kelola toko klien, lisensi & server</div>
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+          )}
+
+          {/* Direct Portal Superadmin Button in Navigation Bar */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => {
+                onNavigate('superadmin');
+                setOpenDropdown(null);
+              }}
+              className={`${navButtonBase} ${
+                currentView === 'superadmin'
+                  ? 'bg-purple-900 text-purple-100 border-purple-700 ring-2 ring-purple-500/30 font-bold'
+                  : 'bg-purple-100/80 hover:bg-purple-200 text-purple-950 border-purple-300 font-extrabold'
+              }`}
+              title="Pusat Kontrol Vendor & Superadmin"
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-700" />
+              <span>Portal Vendor</span>
+            </button>
           )}
 
         </div>
@@ -1110,6 +1149,20 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
             >
               <Settings className="w-4 h-4 text-[#7c4e2f]" />
               <span>Pengaturan Toko</span>
+            </button>
+          )}
+
+          {/* 11. Portal Vendor (Superadmin) */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => {
+                onNavigate('superadmin');
+                setIsMobileMenuOpen(false);
+              }}
+              className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-300 text-left flex items-center space-x-2 text-xs font-extrabold text-purple-950 col-span-2"
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-700" />
+              <span>👑 Portal Vendor Superadmin</span>
             </button>
           )}
         </div>

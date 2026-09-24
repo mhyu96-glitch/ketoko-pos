@@ -39,10 +39,22 @@ import { AppUpdateNotifierModal } from './components/AppUpdateNotifierModal';
 import { checkForAppUpdates, type AppVersionInfo } from './services/updateService';
 import { LanSettingsModal } from './components/LanSettingsModal';
 import { lanService } from './services/lanService';
+import { SuperadminPortalView } from './components/SuperadminPortalView';
 
 export const App: React.FC = () => {
-  // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings')
-  const [currentView, setCurrentView] = useState<NavView>('pos');
+  // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin')
+  const [currentView, setCurrentView] = useState<NavView>(() => {
+    try {
+      const sessionSaved = sessionStorage.getItem('ketoko_current_user');
+      if (sessionSaved) {
+        const parsed = JSON.parse(sessionSaved);
+        if (parsed?.role === 'SUPERADMIN' || parsed?.username?.toLowerCase() === 'superadmin') {
+          return 'superadmin';
+        }
+      }
+    } catch {}
+    return 'pos';
+  });
 
   // Authentication state (Wajib login untuk seluruh akses Online & Offline)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -248,9 +260,24 @@ export const App: React.FC = () => {
           setProducts(all);
         }
       } else {
-        // 1. Fetch all products into state (Starts clean / 0 products for fresh store)
+        // 1. Fetch all products into state
         const all = await db.products.toArray();
-        setProducts(all);
+        if (all.length > 0) {
+          setProducts(all);
+        } else {
+          // If fresh device / empty local DB, auto-pull catalog from Supabase Cloud
+          try {
+            const pullRes = await syncService.pullFromSupabase();
+            if (pullRes && pullRes.count > 0) {
+              const cloudProds = await db.products.toArray();
+              setProducts(cloudProds);
+            } else {
+              setProducts([]);
+            }
+          } catch {
+            setProducts([]);
+          }
+        }
       }
 
       // Ensure active users for CV. Tumbuh Makmur Air Conindo are registered
@@ -569,6 +596,11 @@ export const App: React.FC = () => {
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
     sessionStorage.setItem('ketoko_current_user', JSON.stringify(user));
+    if (user.role === 'SUPERADMIN' || user.username?.toLowerCase() === 'superadmin') {
+      setCurrentView('superadmin');
+    } else {
+      setCurrentView('pos');
+    }
   };
 
   const handleLogout = () => {
@@ -585,10 +617,72 @@ export const App: React.FC = () => {
     return <LoginModal onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // If logged in as Superadmin / Vendor and in superadmin view, render Dedicated Superadmin Portal
+  if (currentView === 'superadmin' && (currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin')) {
+    return (
+      <>
+        <SuperadminPortalView
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onEnterStorePos={() => setCurrentView('pos')}
+          onOpenLanModal={() => setIsLanModalOpen(true)}
+          onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
+        />
+
+        {/* LAN Network, Cloudflare Tunnel & Supabase Cloud */}
+        {isLanModalOpen && (
+          <LanSettingsModal
+            isOpen={isLanModalOpen}
+            onClose={() => setIsLanModalOpen(false)}
+            onConfigChanged={async (cfg) => {
+              if (cfg.mode === 'CLIENT') {
+                await syncProductsFromLanServer();
+              } else {
+                await loadLocalProducts();
+              }
+            }}
+            onProductsSyncRequired={syncProductsFromLanServer}
+          />
+        )}
+
+        {/* License Modal */}
+        {isLicenseModalOpen && (
+          <LicenseModal
+            isOpen={isLicenseModalOpen}
+            onClose={() => setIsLicenseModalOpen(false)}
+            onActivated={() => setIsLicenseModalOpen(false)}
+          />
+        )}
+      </>
+    );
+  }
+
   const lowStockCount = products.filter((p) => p.stock <= p.min_stock_alert).length;
 
   return (
     <div className="flex flex-col min-h-screen lg:h-screen bg-[#f8fafc] text-slate-900 lg:overflow-hidden lg:select-none">
+      
+      {/* Superadmin Store Inspection Top Banner */}
+      {(currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin') && (
+        <div className="bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 text-white px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-purple-800 shadow-md shrink-0 z-50">
+          <div className="flex items-center space-x-2">
+            <span className="font-black px-2.5 py-0.5 rounded-full bg-purple-500/40 text-purple-200 border border-purple-400/40 text-[10px] uppercase">
+              👑 Mode Inspeksi Toko Klien
+            </span>
+            <span className="font-semibold text-purple-100">
+              Anda sedang membuka kasir toko: <strong>CV. Tumbuh Makmur Air Conindo</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCurrentView('superadmin')}
+            className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition-all active:scale-95"
+          >
+            <span>Kembali ke Portal Superadmin</span>
+            <span>→</span>
+          </button>
+        </div>
+      )}
       
       {/* 1. Header (Brand Logo, Status, Touchscreen Switch, Menu ERP Toggle & Cart) */}
       <div className="shrink-0">

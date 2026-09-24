@@ -21,8 +21,11 @@ export function getSupabaseConfig(): SupabaseConfig {
   const envUrl = ((import.meta as any).env?.VITE_SUPABASE_URL || '').trim();
   const envKey = ((import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '').trim();
 
-  const url = envUrl || localUrl;
-  const anonKey = envKey || localKey;
+  const DEFAULT_SUPABASE_URL = 'https://quhjgsoqjcumckoshjtv.supabase.co';
+  const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1aGpnc29xamN1bWNrb3NoanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDE0MTQsImV4cCI6MjEwNTc3NzQxNH0.fh79f6QFSdBA3QD8f7vFZ7P1z29ilPeFq_htxy_OKgM';
+
+  const url = localUrl || envUrl || DEFAULT_SUPABASE_URL;
+  const anonKey = localKey || envKey || DEFAULT_SUPABASE_KEY;
 
   return {
     url,

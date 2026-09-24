@@ -178,6 +178,28 @@ export class LicenseService {
       }
     }
 
+    // Auto-activate for Superadmin or registered official store (e.g. CV. Tumbuh Makmur Air Conindo)
+    const isSuperAdminSession = (() => {
+      try {
+        const u = JSON.parse(sessionStorage.getItem('ketoko_current_user') || '{}');
+        return u.role === 'SUPERADMIN' || u.username?.toLowerCase() === 'superadmin';
+      } catch { return false; }
+    })();
+
+    if (isSuperAdminSession || storeName.toLowerCase().includes('tumbuh makmur')) {
+      return {
+        isActivated: true,
+        isTrial: false,
+        isExpired: false,
+        machineId,
+        totalTransactionsCount: 0,
+        remainingTransactions: 999999,
+        remainingDays: 999999,
+        registeredStoreName: storeName || 'CV. Tumbuh Makmur Air Conindo',
+        activatedAt: new Date().toISOString()
+      };
+    }
+
     // Trial Calculation
     const totalTransactions = await db.transactions.count();
     const remainingTrx = Math.max(0, MAX_TRIAL_TRANSACTIONS - totalTransactions);
