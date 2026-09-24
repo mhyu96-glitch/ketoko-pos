@@ -300,6 +300,15 @@ class LanService {
         } catch {}
       });
 
+      es.addEventListener('purchase_created', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && data.updated_stocks) {
+            onStockUpdate(data.updated_stocks);
+          }
+        } catch {}
+      });
+
       return () => {
         es.close();
         if (this.eventSource === es) {
@@ -364,6 +373,63 @@ class LanService {
       return { success: true };
     } catch {
       return { success: false };
+    }
+  }
+
+  /**
+   * Mengambil riwayat transaksi dari Server LAN terpusat
+   */
+  public async fetchCentralTransactions(limit = 100, serverUrl: string = this.config.serverUrl): Promise<Transaction[]> {
+    const cleanUrl = serverUrl.replace(/\/+$/, '');
+    try {
+      const res = await fetch(`${cleanUrl}/api/lan/transactions?limit=${limit}`, {
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || [];
+    } catch (err) {
+      console.warn('[LanService] Gagal fetch transaksi dari server:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Mengambil data pembelian barang dari Server LAN terpusat
+   */
+  public async fetchCentralPurchases(serverUrl: string = this.config.serverUrl): Promise<any[]> {
+    const cleanUrl = serverUrl.replace(/\/+$/, '');
+    try {
+      const res = await fetch(`${cleanUrl}/api/lan/purchases`, {
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Kirim faktur pembelian baru ke Server LAN terpusat
+   */
+  public async submitPurchase(purchase: any, serverUrl: string = this.config.serverUrl): Promise<{ success: boolean; updatedStocks?: any[]; error?: string }> {
+    const cleanUrl = serverUrl.replace(/\/+$/, '');
+    try {
+      const res = await fetch(`${cleanUrl}/api/lan/purchases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(purchase)
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      return { success: true, updatedStocks: data.updated_stocks || [] };
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   }
 }

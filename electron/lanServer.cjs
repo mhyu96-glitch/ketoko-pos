@@ -181,6 +181,28 @@ function initCentralDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS idx_trx_receipt ON transactions(receipt_number);
   `);
 
+  // Tabel Pembelian Barang (Restock / Faktur Supplier) Terpusat
+  sqliteDb.exec(`
+    CREATE TABLE IF NOT EXISTS purchases (
+      id TEXT PRIMARY KEY,
+      invoice_number TEXT NOT NULL,
+      supplier_id TEXT,
+      supplier_name TEXT NOT NULL,
+      date TEXT NOT NULL,
+      payment_type TEXT DEFAULT 'CASH',
+      due_date TEXT,
+      subtotal REAL DEFAULT 0,
+      discount REAL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'RECEIVED',
+      cashier_name TEXT,
+      notes TEXT,
+      items_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pur_created_at ON purchases(created_at);
+  `);
+
   // Tabel Profil Toko & Pengaturan
   sqliteDb.exec(`
     CREATE TABLE IF NOT EXISTS store_profile (
@@ -592,7 +614,109 @@ function handleHttpRequest(req, res) {
     });
   }
 
-  // 8. Laporan Rekap Penjualan Hari Ini
+  // 8. Ambil Riwayat Pembelian Barang Terpusat
+  if (pathname === '/api/lan/purchases' && req.method === 'GET') {
+    const purchases = sqliteDb.prepare(`
+      SELECT * FROM purchases 
+      ORDER BY date DESC, created_at DESC 
+      LIMIT 100
+    `).all();
+
+    const parsed = purchases.map(p => ({
+      ...p,
+      items: p.items_json ? JSON.parse(p.items_json) : []
+    }));
+
+    return sendJson(200, {
+      status: 'success',
+      count: parsed.length,
+      data: parsed
+    });
+  }
+
+  // 9. Input Faktur Pembelian Barang (Restock) Terpusat
+  if (pathname === '/api/lan/purchases' && req.method === 'POST') {
+    return readJsonBody((pur) => {
+      if (!pur || !pur.invoice_number) {
+        return sendJson(400, { error: 'Data pembelian tidak lengkap' });
+      }
+
+      sqliteDb.exec('BEGIN TRANSACTION;');
+      try {
+        const purId = pur.id || `pur-${Date.now()}`;
+        const items = pur.items || [];
+
+        sqliteDb.prepare(`
+          INSERT OR REPLACE INTO purchases (
+            id, invoice_number, supplier_id, supplier_name, date,
+            payment_type, due_date, subtotal, discount, total,
+            status, cashier_name, notes, items_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          purId,
+          pur.invoice_number,
+          pur.supplier_id || '',
+          pur.supplier_name || 'Supplier',
+          pur.date || new Date().toISOString().split('T')[0],
+          pur.payment_type || 'CASH',
+          pur.due_date || null,
+          Number(pur.subtotal) || Number(pur.total) || 0,
+          Number(pur.discount) || 0,
+          Number(pur.total) || 0,
+          pur.status || 'RECEIVED',
+          pur.cashier_name || 'Admin',
+          pur.notes || '',
+          JSON.stringify(items),
+          pur.created_at || new Date().toISOString()
+        );
+
+        // Tambah stok barang di server
+        const updatedStocks = [];
+        const updateStockStmt = sqliteDb.prepare(`
+          UPDATE products 
+          SET stock = stock + ?, updated_at = ?
+          WHERE id = ?
+        `);
+        const getStockStmt = sqliteDb.prepare(`SELECT id, stock FROM products WHERE id = ?`);
+
+        for (const it of items) {
+          const prodId = it.product_id || it.id;
+          const qty = Number(it.qty) || 0;
+          if (prodId && qty > 0) {
+            updateStockStmt.run(qty, new Date().toISOString(), prodId);
+            const current = getStockStmt.get(prodId);
+            if (current) {
+              updatedStocks.push({ id: current.id, stock: current.stock });
+            }
+          }
+        }
+
+        sqliteDb.exec('COMMIT;');
+
+        // Broadcast event ke seluruh kasir agar stok langsung bertambah
+        broadcastSseEvent('purchase_created', {
+          purchase_id: purId,
+          invoice_number: pur.invoice_number,
+          updated_stocks: updatedStocks
+        });
+        if (updatedStocks.length > 0) {
+          broadcastSseEvent('stock_updated', updatedStocks);
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          message: 'Faktur pembelian berhasil disimpan ke server pusat',
+          purchase_id: purId,
+          updated_stocks: updatedStocks
+        });
+      } catch (err) {
+        try { sqliteDb.exec('ROLLBACK;'); } catch {}
+        return sendJson(500, { error: 'Gagal memproses pembelian di server: ' + err.message });
+      }
+    });
+  }
+
+  // 10. Laporan Rekap Penjualan Hari Ini
   if (pathname === '/api/lan/reports/daily' && req.method === 'GET') {
     const today = new Date().toISOString().split('T')[0];
     const summary = sqliteDb.prepare(`

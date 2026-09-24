@@ -9,11 +9,16 @@ import {
   Clock, 
   Printer, 
   DollarSign, 
-  TrendingDown
+  TrendingDown,
+  Plus,
+  Calendar,
+  Save
 } from 'lucide-react';
 import { db } from '../db';
-import type { DebtRecord, ReceivableRecord } from '../types';
+import type { DebtRecord, ReceivableRecord, Supplier, Customer } from '../types';
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
+import { syncService } from '../services/syncService';
+import { CustomSelect } from './CustomSelect';
 
 interface DebtReceivableModalProps {
   isOpen: boolean;
@@ -23,8 +28,6 @@ interface DebtReceivableModalProps {
   cashierName?: string;
   onUpdated?: () => void;
 }
-
-
 
 export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
   isOpen,
@@ -37,11 +40,35 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
   const [activeTab, setActiveTab] = useState<'debt' | 'receivable' | 'report'>(initialTab);
   const [debts, setDebts] = useState<DebtRecord[]>([]);
   const [receivables, setReceivables] = useState<ReceivableRecord[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
   // Repayment form states
   const [payingDebt, setPayingDebt] = useState<DebtRecord | null>(null);
   const [payingReceivable, setPayingReceivable] = useState<ReceivableRecord | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+
+  // Form Tambah Hutang Supplier Baru
+  const [isAddingDebt, setIsAddingDebt] = useState(false);
+  const [newDebtSupplierId, setNewDebtSupplierId] = useState('');
+  const [newDebtSupplierName, setNewDebtSupplierName] = useState('');
+  const [newDebtInvoice, setNewDebtInvoice] = useState('');
+  const [newDebtAmount, setNewDebtAmount] = useState<number>(0);
+  const [newDebtDueDate, setNewDebtDueDate] = useState<string>(() => {
+    return new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+  });
+  const [newDebtNotes, setNewDebtNotes] = useState('');
+
+  // Form Tambah Piutang Pelanggan Baru
+  const [isAddingReceivable, setIsAddingReceivable] = useState(false);
+  const [newRecCustomerId, setNewRecCustomerId] = useState('');
+  const [newRecCustomerName, setNewRecCustomerName] = useState('');
+  const [newRecReceiptNumber, setNewRecReceiptNumber] = useState('');
+  const [newRecAmount, setNewRecAmount] = useState<number>(0);
+  const [newRecDueDate, setNewRecDueDate] = useState<string>(() => {
+    return new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  });
+  const [newRecNotes, setNewRecNotes] = useState('');
 
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
@@ -54,11 +81,92 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
   }, [isOpen, initialTab]);
 
   const loadData = async () => {
+    if (navigator.onLine) {
+      try {
+        await syncService.syncDebtsAndReceivables();
+      } catch {}
+    }
     const allDebts = await db.debts.toArray();
     const allReceivables = await db.receivables.toArray();
+    const allSuppliers = await db.suppliers.toArray();
+    const allCustomers = await db.customers.toArray();
     setDebts(allDebts);
     setReceivables(allReceivables);
+    setSuppliers(allSuppliers);
+    setCustomers(allCustomers);
     onUpdated?.();
+  };
+
+  const handleSaveNewDebt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const supName = newDebtSupplierName.trim() || suppliers.find(s => s.id === newDebtSupplierId)?.name;
+    if (!supName || newDebtAmount <= 0) {
+      alert('Mohon isi nama supplier dan nominal hutang.');
+      return;
+    }
+
+    const newRecord: DebtRecord = {
+      id: `debt-${Date.now()}`,
+      supplier_id: newDebtSupplierId || `sup-${Date.now()}`,
+      supplier_name: supName,
+      invoice_number: newDebtInvoice.trim() || `FKT-${Date.now().toString().slice(-6)}`,
+      total_amount: newDebtAmount,
+      paid_amount: 0,
+      remaining_amount: newDebtAmount,
+      invoice_date: new Date().toISOString().split('T')[0],
+      due_date: newDebtDueDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      status: 'UNPAID',
+      notes: newDebtNotes.trim() || 'Hutang faktur supplier'
+    };
+
+    await db.debts.put(newRecord);
+    if (navigator.onLine) {
+      syncService.syncDebtsAndReceivables().catch(() => {});
+    }
+
+    setIsAddingDebt(false);
+    setNewDebtSupplierId('');
+    setNewDebtSupplierName('');
+    setNewDebtInvoice('');
+    setNewDebtAmount(0);
+    setNewDebtNotes('');
+    loadData();
+  };
+
+  const handleSaveNewReceivable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const custName = newRecCustomerName.trim() || customers.find(c => c.id === newRecCustomerId)?.name;
+    if (!custName || newRecAmount <= 0) {
+      alert('Mohon isi nama pelanggan dan nominal piutang.');
+      return;
+    }
+
+    const newRecord: ReceivableRecord = {
+      id: `rec-${Date.now()}`,
+      customer_id: newRecCustomerId || `cust-${Date.now()}`,
+      customer_name: custName,
+      receipt_number: newRecReceiptNumber.trim() || `BON-${Date.now().toString().slice(-6)}`,
+      total_amount: newRecAmount,
+      paid_amount: 0,
+      remaining_amount: newRecAmount,
+      invoice_date: new Date().toISOString().split('T')[0],
+      due_date: newRecDueDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      status: 'UNPAID',
+      notes: newRecNotes.trim() || 'Piutang bon belanja pelanggan'
+    };
+
+    await db.receivables.put(newRecord);
+    if (navigator.onLine) {
+      syncService.syncDebtsAndReceivables().catch(() => {});
+    }
+
+    setIsAddingReceivable(false);
+    setNewRecCustomerId('');
+    setNewRecCustomerName('');
+    setNewRecReceiptNumber('');
+    setNewRecAmount(0);
+    setNewRecNotes('');
+    loadData();
   };
 
   // Helper for due date status calculations
@@ -338,6 +446,160 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                 </div>
               </div>
 
+              {/* Action Bar: Tambah Hutang Baru */}
+              <div className="flex items-center justify-between pt-1">
+                <h4 className="font-extrabold text-sm text-[#3d2617]">Daftar Faktur Hutang ke Supplier</h4>
+                <button
+                  onClick={() => setIsAddingDebt(!isAddingDebt)}
+                  className="px-3.5 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs transition-all active:scale-95"
+                >
+                  <Plus className="w-4 h-4 text-amber-200" />
+                  <span>+ Catat Hutang Supplier</span>
+                </button>
+              </div>
+
+              {/* Form Input Hutang Supplier Baru */}
+              {isAddingDebt && (
+                <form onSubmit={handleSaveNewDebt} className="p-4 sm:p-5 bg-white border border-[#ddc3aa] rounded-2xl shadow-xs space-y-3.5 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-[#eed7c4] pb-2">
+                    <div className="flex items-center space-x-2">
+                      <Building2 className="w-4 h-4 text-[#96633b]" />
+                      <span className="font-black text-sm text-[#3d2617]">Catat Hutang Faktur Supplier Baru</span>
+                    </div>
+                    <button type="button" onClick={() => setIsAddingDebt(false)} className="text-[#856b59] hover:text-[#332219]">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <CustomSelect
+                        label="Pilih Supplier Terdaftar:"
+                        value={newDebtSupplierId}
+                        onChange={(val) => {
+                          setNewDebtSupplierId(val);
+                          const s = suppliers.find(sup => sup.id === val);
+                          if (s) setNewDebtSupplierName(s.name);
+                        }}
+                        placeholder="-- Pilih Supplier --"
+                        options={suppliers.map(s => ({
+                          value: s.id,
+                          label: `${s.name} (${s.code})`,
+                          sublabel: s.phone ? `Telp: ${s.phone}` : undefined
+                        }))}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Atau ketik nama supplier/distributor..."
+                        value={newDebtSupplierName}
+                        onChange={(e) => setNewDebtSupplierName(e.target.value)}
+                        className="mt-1 w-full px-3 py-1.5 border border-[#dfcebe] rounded-xl bg-[#fcf9f5] text-xs font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#543c2e] block mb-1">Nomor Faktur / Nota Pembelian:</label>
+                      <input
+                        type="text"
+                        placeholder="contoh: FKT-SUP-0912"
+                        value={newDebtInvoice}
+                        onChange={(e) => setNewDebtInvoice(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#543c2e] block mb-1">Nominal Hutang (Rp):</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Rp 0"
+                        value={newDebtAmount || ''}
+                        onChange={(e) => setNewDebtAmount(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-black text-rose-800"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Pengaturan Tanggal Jatuh Tempo */}
+                  <div className="p-3 bg-[#fdfaf7] rounded-xl border border-[#eed7c4] space-y-2 text-xs">
+                    <label className="font-bold text-[#543c2e] flex items-center space-x-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-[#96633b]" />
+                      <span>Atur Tanggal Jatuh Tempo:</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { days: 7, label: '+7 Hari (1 Minggu)' },
+                        { days: 14, label: '+14 Hari (2 Minggu)' },
+                        { days: 30, label: '+30 Hari (1 Bulan)' },
+                        { days: 45, label: '+45 Hari' },
+                        { days: 60, label: '+60 Hari (2 Bulan)' }
+                      ].map(({ days, label }) => {
+                        const target = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+                        const isSelected = newDebtDueDate === target;
+                        return (
+                          <button
+                            key={days}
+                            type="button"
+                            onClick={() => setNewDebtDueDate(target)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                              isSelected
+                                ? 'bg-[#96633b] text-white border-[#96633b] shadow-2xs'
+                                : 'bg-white hover:bg-[#faebd7] text-[#5c3c26] border-[#dfcebe]'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center space-x-2 pt-0.5">
+                      <input
+                        type="date"
+                        value={newDebtDueDate}
+                        onChange={(e) => setNewDebtDueDate(e.target.value)}
+                        className="px-3 py-1.5 border border-[#dfcebe] rounded-xl bg-white font-mono text-xs font-bold"
+                        required
+                      />
+                      {newDebtDueDate && (
+                        <span className="text-[11px] font-bold text-[#96633b] bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200">
+                          ⏰ Jatuh tempo: {new Date(newDebtDueDate).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-center">
+                    <div className="sm:col-span-3">
+                      <input
+                        type="text"
+                        placeholder="Catatan / keterangan pembelian (opsional)..."
+                        value={newDebtNotes}
+                        onChange={(e) => setNewDebtNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white text-xs"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingDebt(false)}
+                        className="flex-1 py-2 rounded-xl border border-[#dfcebe] bg-[#fcf9f5] text-xs font-bold text-[#5c3c26]"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 py-2 rounded-xl bg-[#166534] hover:bg-[#14532d] text-white text-xs font-bold shadow-xs transition-all flex items-center justify-center space-x-1"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
               {/* Form Bayar Hutang */}
               {payingDebt && (
                 <div className="p-4 bg-[#fcf5ed] border border-[#eed7c4] rounded-2xl space-y-3 animate-fadeIn">
@@ -490,6 +752,160 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                   <span className="text-[11px] text-amber-700 font-medium mt-1 block">Kirim pengingat WhatsApp</span>
                 </div>
               </div>
+
+              {/* Action Bar: Tambah Piutang Baru */}
+              <div className="flex items-center justify-between pt-1">
+                <h4 className="font-extrabold text-sm text-[#3d2617]">Daftar Piutang Bon Belanja Pelanggan</h4>
+                <button
+                  onClick={() => setIsAddingReceivable(!isAddingReceivable)}
+                  className="px-3.5 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs transition-all active:scale-95"
+                >
+                  <Plus className="w-4 h-4 text-amber-200" />
+                  <span>+ Catat Piutang Pelanggan</span>
+                </button>
+              </div>
+
+              {/* Form Input Piutang Pelanggan Baru */}
+              {isAddingReceivable && (
+                <form onSubmit={handleSaveNewReceivable} className="p-4 sm:p-5 bg-white border border-[#ddc3aa] rounded-2xl shadow-xs space-y-3.5 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-[#eed7c4] pb-2">
+                    <div className="flex items-center space-x-2">
+                      <Users className="w-4 h-4 text-[#96633b]" />
+                      <span className="font-black text-sm text-[#3d2617]">Catat Piutang / Bon Belanja Pelanggan Baru</span>
+                    </div>
+                    <button type="button" onClick={() => setIsAddingReceivable(false)} className="text-[#856b59] hover:text-[#332219]">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <CustomSelect
+                        label="Pilih Pelanggan Terdaftar:"
+                        value={newRecCustomerId}
+                        onChange={(val) => {
+                          setNewRecCustomerId(val);
+                          const c = customers.find(cust => cust.id === val);
+                          if (c) setNewRecCustomerName(c.name);
+                        }}
+                        placeholder="-- Pilih Pelanggan --"
+                        options={customers.map(c => ({
+                          value: c.id,
+                          label: `${c.name} (${c.code || 'PLG'})`,
+                          sublabel: c.phone ? `Telp: ${c.phone}` : undefined
+                        }))}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Atau ketik nama pelanggan/bon..."
+                        value={newRecCustomerName}
+                        onChange={(e) => setNewRecCustomerName(e.target.value)}
+                        className="mt-1 w-full px-3 py-1.5 border border-[#dfcebe] rounded-xl bg-[#fcf9f5] text-xs font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#543c2e] block mb-1">Nomor Nota / Struk Bon Kasir:</label>
+                      <input
+                        type="text"
+                        placeholder="contoh: BON-2026-001"
+                        value={newRecReceiptNumber}
+                        onChange={(e) => setNewRecReceiptNumber(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#543c2e] block mb-1">Nominal Piutang (Rp):</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Rp 0"
+                        value={newRecAmount || ''}
+                        onChange={(e) => setNewRecAmount(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-black text-amber-800"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Pengaturan Tanggal Jatuh Tempo */}
+                  <div className="p-3 bg-[#fdfaf7] rounded-xl border border-[#eed7c4] space-y-2 text-xs">
+                    <label className="font-bold text-[#543c2e] flex items-center space-x-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-[#96633b]" />
+                      <span>Atur Tanggal Jatuh Tempo Piutang:</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { days: 7, label: '+7 Hari (1 Minggu)' },
+                        { days: 14, label: '+14 Hari (2 Minggu)' },
+                        { days: 30, label: '+30 Hari (1 Bulan)' },
+                        { days: 45, label: '+45 Hari' },
+                        { days: 60, label: '+60 Hari (2 Bulan)' }
+                      ].map(({ days, label }) => {
+                        const target = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+                        const isSelected = newRecDueDate === target;
+                        return (
+                          <button
+                            key={days}
+                            type="button"
+                            onClick={() => setNewRecDueDate(target)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                              isSelected
+                                ? 'bg-[#96633b] text-white border-[#96633b] shadow-2xs'
+                                : 'bg-white hover:bg-[#faebd7] text-[#5c3c26] border-[#dfcebe]'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center space-x-2 pt-0.5">
+                      <input
+                        type="date"
+                        value={newRecDueDate}
+                        onChange={(e) => setNewRecDueDate(e.target.value)}
+                        className="px-3 py-1.5 border border-[#dfcebe] rounded-xl bg-white font-mono text-xs font-bold"
+                        required
+                      />
+                      {newRecDueDate && (
+                        <span className="text-[11px] font-bold text-[#96633b] bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200">
+                          ⏰ Batas bayar: {new Date(newRecDueDate).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-center">
+                    <div className="sm:col-span-3">
+                      <input
+                        type="text"
+                        placeholder="Catatan / keterangan bon belanja (opsional)..."
+                        value={newRecNotes}
+                        onChange={(e) => setNewRecNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white text-xs"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingReceivable(false)}
+                        className="flex-1 py-2 rounded-xl border border-[#dfcebe] bg-[#fcf9f5] text-xs font-bold text-[#5c3c26]"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 py-2 rounded-xl bg-[#166534] hover:bg-[#14532d] text-white text-xs font-bold shadow-xs transition-all flex items-center justify-center space-x-1"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
 
               {/* Form Terima Pembayaran Piutang */}
               {payingReceivable && (

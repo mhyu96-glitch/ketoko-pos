@@ -28,11 +28,24 @@ import {
   Coins, 
   Store,
   CheckCircle2,
-  Search
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import type { Product, Transaction, User } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
+
+export interface SoldProductSummary {
+  id: string;
+  name: string;
+  barcode: string;
+  unit: string;
+  totalQty: number;
+  totalRevenue: number;
+  lastSoldAt: string;
+  cashiers: string[];
+  trxCount: number;
+}
 
 interface DashboardViewProps {
   products?: Product[];
@@ -48,6 +61,7 @@ interface DashboardViewProps {
   onOpenNewProduct?: () => void;
   onOpenMemberModal?: () => void;
   onOpenPrinterSettings?: () => void;
+  onRefreshTransactions?: () => Promise<void> | void;
   isOnline?: boolean;
   pendingSyncCount?: number;
 }
@@ -66,12 +80,15 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   onOpenNewProduct,
   onOpenMemberModal,
   onOpenPrinterSettings,
+  onRefreshTransactions,
   isOnline = true,
   pendingSyncCount = 0
 }) => {
   const [localProducts, setLocalProducts] = React.useState<Product[]>([]);
   const [localTransactions, setLocalTransactions] = React.useState<Transaction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [soldSearchQuery, setSoldSearchQuery] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   React.useEffect(() => {
     if (!initialProducts) {
@@ -81,6 +98,21 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       db.transactions.toArray().then(setLocalTransactions);
     }
   }, [initialProducts, initialTransactions]);
+
+  const handleRefreshTransactions = async () => {
+    setIsRefreshing(true);
+    try {
+      if (onRefreshTransactions) {
+        await onRefreshTransactions();
+      }
+      const freshTrx = await db.transactions.toArray();
+      setLocalTransactions(freshTrx);
+    } catch (e) {
+      console.warn('Gagal refresh data transaksi:', e);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
 
   const products = initialProducts || localProducts;
   const transactions = initialTransactions || localTransactions;
@@ -99,12 +131,28 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     cashPercent,
     nonCashPercent,
     avgBasketValue,
-    recentTrxList
+    recentTrxList,
+    todaySoldProducts,
+    todayRevenue,
+    todayItemsSold,
+    todayTrxCount
   } = useMemo(() => {
     let revenue = 0;
     let itemsSold = 0;
     let cash = 0;
     let nonCash = 0;
+
+    let tRevenueToday = 0;
+    let tItemsSoldToday = 0;
+    let tTrxCountToday = 0;
+
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const isTrxToday = (dStr?: string) => {
+      if (!dStr) return false;
+      return dStr.startsWith(todayDateStr) || new Date(dStr).toDateString() === new Date().toDateString();
+    };
+
+    const soldMap = new Map<string, SoldProductSummary>();
 
     const tLen = transactions.length;
     for (let i = 0; i < tLen; i++) {
@@ -118,6 +166,52 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       const itLen = t.items.length;
       for (let j = 0; j < itLen; j++) {
         itemsSold += t.items[j].qty;
+      }
+
+      const isCurrentDay = isTrxToday(t.created_at);
+      if (isCurrentDay) {
+        tTrxCountToday++;
+        tRevenueToday += t.grand_total;
+
+        if (Array.isArray(t.items)) {
+          for (let j = 0; j < itLen; j++) {
+            const item = t.items[j];
+            tItemsSoldToday += item.qty;
+            const pId = item.product_id;
+            const pName = item.product_name || 'Produk';
+            const subtotal = item.subtotal_item || ((item.price_applied || 0) * item.qty);
+            const cashier = t.cashier_name || 'Kasir';
+
+            const prod = products.find(p => p.id === pId);
+            const barcode = prod?.barcode || '';
+            const unit = prod?.unit || 'Pcs';
+
+            const existing = soldMap.get(pId);
+            if (existing) {
+              existing.totalQty += item.qty;
+              existing.totalRevenue += subtotal;
+              existing.trxCount += 1;
+              if (!existing.cashiers.includes(cashier)) {
+                existing.cashiers.push(cashier);
+              }
+              if (new Date(t.created_at).getTime() > new Date(existing.lastSoldAt).getTime()) {
+                existing.lastSoldAt = t.created_at;
+              }
+            } else {
+              soldMap.set(pId, {
+                id: pId,
+                name: pName,
+                barcode: barcode,
+                unit: unit,
+                totalQty: item.qty,
+                totalRevenue: subtotal,
+                lastSoldAt: t.created_at,
+                cashiers: [cashier],
+                trxCount: 1
+              });
+            }
+          }
+        }
       }
     }
 
@@ -142,6 +236,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const ncPct = revenue > 0 ? 100 - cPct : 0;
     const avgBasket = tLen > 0 ? Math.round(revenue / tLen) : 0;
     const recent = [...transactions].reverse().slice(0, 4);
+    const sortedTodaySold = Array.from(soldMap.values()).sort((a, b) => b.totalQty - a.totalQty);
 
     return {
       totalRevenue: revenue,
@@ -154,9 +249,23 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       cashPercent: cPct,
       nonCashPercent: ncPct,
       avgBasketValue: avgBasket,
-      recentTrxList: recent
+      recentTrxList: recent,
+      todaySoldProducts: sortedTodaySold,
+      todayRevenue: tRevenueToday,
+      todayItemsSold: tItemsSoldToday,
+      todayTrxCount: tTrxCountToday
     };
   }, [products, transactions, searchQuery]);
+
+  const filteredTodaySold = useMemo(() => {
+    if (!soldSearchQuery.trim()) return todaySoldProducts;
+    const q = soldSearchQuery.toLowerCase().trim();
+    return todaySoldProducts.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.barcode.toLowerCase().includes(q) ||
+      p.cashiers.some(c => c.toLowerCase().includes(q))
+    );
+  }, [todaySoldProducts, soldSearchQuery]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f8f5f1] p-4 sm:p-6 space-y-5">
@@ -382,6 +491,118 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
         {/* Left Column: Structured Low Stock Table & Distribution (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
           
+          {/* Card: Rincian Produk Terjual Hari Ini (Live Rekap Kasir) */}
+          <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs p-4 sm:p-5 flex flex-col space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f0e4d7] gap-2">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                  <Package className="w-4 h-4 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-[#3d2617] text-sm leading-tight flex items-center space-x-1.5">
+                    <span>Produk Terjual Hari Ini</span>
+                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                      <span>Live Kasir</span>
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-[#8a6b53]">Rincian item barang yang telah dibeli konsumen pada {todayTrxCount} transaksi hari ini</p>
+                </div>
+              </div>
+
+              {/* Controls: Search & Refresh */}
+              <div className="flex items-center space-x-2">
+                <div className="relative w-full sm:w-44">
+                  <Search className="w-3.5 h-3.5 text-[#8a6b53] absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Cari produk / kasir..."
+                    value={soldSearchQuery}
+                    onChange={(e) => setSoldSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-[#fcf8f4] text-[#2a1a12] rounded-xl border border-[#dfcebe] text-xs focus:bg-white focus:border-[#7c4e2f]"
+                  />
+                </div>
+                <button
+                  onClick={handleRefreshTransactions}
+                  disabled={isRefreshing}
+                  title="Sinkron & ambil data penjualan terbaru"
+                  className="px-2.5 py-1.5 rounded-xl bg-[#faebd7] hover:bg-[#eed7c4] text-[#7c4e2f] font-bold text-xs border border-[#ebdccf] transition-all flex items-center space-x-1 shadow-2xs active:scale-95 disabled:opacity-50 shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick KPI Strip for Sold Items */}
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="p-2.5 rounded-2xl bg-[#fcf9f5] border border-[#ebdccf]">
+                <span className="text-[10px] text-[#8a6b53] block font-medium">Varian Terjual</span>
+                <span className="font-mono font-bold text-sm text-[#3d2617]">{todaySoldProducts.length} <span className="text-[10px] font-normal text-[#8a6b53]">SKU</span></span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-[#edf5ee] border border-[#cce2cf]">
+                <span className="text-[10px] text-[#166534] block font-medium">Total Fisik Terjual</span>
+                <span className="font-mono font-extrabold text-sm text-[#166534]">{todayItemsSold} <span className="text-[10px] font-normal text-[#166534]">Pcs</span></span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-[#faebd7]/70 border border-[#eed7c4]">
+                <span className="text-[10px] text-[#7c4e2f] block font-medium">Omset Produk Hari Ini</span>
+                <span className="font-mono font-black text-sm text-[#7c4e2f] whitespace-nowrap">{formatRupiah(todayRevenue)}</span>
+              </div>
+            </div>
+
+            {/* List or Table */}
+            {filteredTodaySold.length === 0 ? (
+              <div className="py-8 text-center text-[#8a6b53] text-xs flex flex-col items-center">
+                <ShoppingBag className="w-8 h-8 text-[#96633b] mb-2 opacity-50" />
+                <p className="font-bold text-[#3d2617]">Belum Ada Produk Terjual Hari Ini</p>
+                <p className="text-[11px] text-[#8a6b53] mt-0.5">Saat kasir memproses transaksi penjualan, daftar barang akan langsung tercatat di sini.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin">
+                {filteredTodaySold.map((p, idx) => (
+                  <div
+                    key={p.id}
+                    className="p-3 rounded-2xl bg-[#fcfaf7] hover:bg-[#f6eee4] border border-[#ebdccf] flex items-center justify-between text-xs transition-colors"
+                  >
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <span className="w-5 text-center font-mono text-[10px] font-bold text-[#a08573] shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-[#2a1a12] truncate max-w-[180px] sm:max-w-[280px]">
+                          {p.name}
+                        </div>
+                        <div className="text-[10px] text-[#8a6b53] font-mono mt-0.5 flex flex-wrap items-center gap-1.5">
+                          {p.barcode && (
+                            <span className="flex items-center">
+                              <Barcode className="w-3 h-3 mr-0.5 inline text-[#a08573]" />
+                              {p.barcode}
+                            </span>
+                          )}
+                          <span className="text-[#96633b] font-medium">
+                            Kasir: {p.cashiers.join(', ')}
+                          </span>
+                          <span className="text-[#a08573]">
+                            • {new Date(p.lastSoldAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0 pl-2">
+                      <div className="font-mono font-black text-xs text-[#166534] bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 inline-block">
+                        {p.totalQty} {p.unit}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-[#7c4e2f] mt-0.5">
+                        {formatRupiah(p.totalRevenue)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Card: Low Stock Table */}
           <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs p-4 sm:p-5 flex flex-col space-y-3.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f0e4d7] gap-2">

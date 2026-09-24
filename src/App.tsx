@@ -78,8 +78,9 @@ export const App: React.FC = () => {
     return null;
   });
 
-  // Master Data Products & Enterprise entities
+  // Master Data Products, Transactions & Enterprise entities
   const [products, setProducts] = useState<Product[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isCatalogSeeding] = useState<boolean>(false);
@@ -359,7 +360,34 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Initialize DB and Products on mount & global shortcut events & update checker
+  // Load latest cashier transactions from LAN Server, Supabase, or local Dexie
+  const loadTransactions = useCallback(async () => {
+    try {
+      if (lanService.isClientMode()) {
+        try {
+          const centralTrx = await lanService.fetchCentralTransactions(100);
+          if (centralTrx && centralTrx.length > 0) {
+            setTransactions(centralTrx);
+            return;
+          }
+        } catch (err) {
+          console.warn('[App] Gagal fetch transaksi dari LAN Server:', err);
+        }
+      } else if (navigator.onLine) {
+        try {
+          await syncService.pullTransactionsFromSupabase(100);
+        } catch (err) {
+          console.warn('[App] Gagal pull transaksi dari Supabase:', err);
+        }
+      }
+      const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
+      setTransactions(allTrx);
+    } catch (err) {
+      console.warn('[App] Gagal memuat data transaksi:', err);
+    }
+  }, []);
+
+  // Initialize DB, Products and Transactions on mount & global shortcut events & update checker
   useEffect(() => {
     // Ensure clean initial state (wipe any old dummy products on first launch of this update)
     const cleanMigrated = localStorage.getItem('ketoko_clean_fresh_v2');
@@ -367,11 +395,14 @@ export const App: React.FC = () => {
       db.products.clear().then(() => {
         localStorage.setItem('ketoko_clean_fresh_v2', 'true');
         loadLocalProducts();
+        loadTransactions();
       }).catch(() => {
         loadLocalProducts();
+        loadTransactions();
       });
     } else {
       loadLocalProducts();
+      loadTransactions();
     }
 
     const handleOpenShift = () => setIsShiftReportOpen(true);
@@ -396,7 +427,7 @@ export const App: React.FC = () => {
       } catch {}
     }, 2500);
 
-    // Listen to Real-time SSE Stock Updates from Central LAN Server when in Client Mode
+    // Listen to Real-time SSE Stock & Transaction Updates from Central LAN Server when in Client Mode
     let unsubSse: (() => void) | null = null;
     if (lanService.isClientMode()) {
       unsubSse = lanService.initEventSource(
@@ -422,6 +453,11 @@ export const App: React.FC = () => {
             }
             return [prod, ...prev];
           });
+        },
+        // onTransactionCreated (Live sync into Admin dashboard)
+        () => {
+          loadTransactions();
+          loadLocalProducts();
         }
       );
     }
@@ -432,15 +468,24 @@ export const App: React.FC = () => {
       window.removeEventListener('ketoko_open_shift_report', handleOpenShift);
       window.removeEventListener('ketoko_open_cash_drawer', handleOpenDrawer);
     };
-  }, [loadLocalProducts]);
+  }, [loadLocalProducts, loadTransactions]);
 
-  // Manual Sync trigger
+  // Auto-refresh transactions whenever admin navigates to dashboard
+  useEffect(() => {
+    if (currentView === 'dashboard') {
+      loadTransactions();
+    }
+  }, [currentView, loadTransactions]);
+
+  // Manual & Auto-sync trigger: synchronizes transactions, restocks, debts/receivables
   const handleManualSync = useCallback(async () => {
     if (!isOnline || isSyncingRef.current) return;
     isSyncingRef.current = true;
     setIsSyncing(true);
     try {
-      await syncService.reconcileQueue();
+      await syncService.syncAllData();
+      await loadTransactions();
+      await loadLocalProducts();
       const count = await syncService.getPendingCount();
       setPendingSyncCount(count);
     } catch (e) {
@@ -449,16 +494,15 @@ export const App: React.FC = () => {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [isOnline]);
+  }, [isOnline, loadTransactions, loadLocalProducts]);
 
-  // Non-blocking background sync timer (every 60s without infinite loops)
+  // Non-blocking background sync timer (every 15s to keep cashier & admin in sync)
   useEffect(() => {
     if (!isOnline) return;
 
-    // Recurring sync every 60 seconds
     const interval = setInterval(() => {
       handleManualSync();
-    }, 60000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [isOnline, handleManualSync]);
@@ -590,6 +634,9 @@ export const App: React.FC = () => {
         return qtySold ? { ...p, stock: Math.max(0, p.stock - qtySold) } : p;
       });
     });
+
+    // Update in-memory transactions state immediately
+    setTransactions((prev) => [newTrx, ...prev]);
 
     const pending = await syncService.getPendingCount();
     setPendingSyncCount(pending);
@@ -826,6 +873,8 @@ export const App: React.FC = () => {
       {currentView === 'dashboard' ? (
         <DashboardView
           products={products}
+          transactions={transactions}
+          onRefreshTransactions={loadTransactions}
           currentUser={currentUser}
           onGoToPOS={() => setCurrentView('pos')}
           onOpenRecentTrx={() => setIsRecentTrxOpen(true)}

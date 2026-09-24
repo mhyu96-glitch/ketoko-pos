@@ -12,6 +12,8 @@ import { db } from '../db';
 import type { Purchase, PurchaseReturn, SalesReturn, Supplier, Product } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { CustomSelect } from './CustomSelect';
+import { lanService } from '../services/lanService';
+import { syncService } from '../services/syncService';
 
 interface PurchasesAndReturnsModalProps {
   isOpen: boolean;
@@ -118,6 +120,27 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
   }, [isOpen, initialTab]);
 
   const loadData = async () => {
+    // 1. Tarik dari LAN jika mode klien
+    if (lanService.isClientMode()) {
+      try {
+        const centralPurchases = await lanService.fetchCentralPurchases();
+        if (centralPurchases && centralPurchases.length > 0) {
+          await db.purchases.bulkPut(centralPurchases);
+        }
+      } catch (err) {
+        console.warn('[Purchases] Gagal tarik pembelian dari LAN:', err);
+      }
+    }
+
+    // 2. Tarik dari Supabase jika online
+    if (navigator.onLine) {
+      try {
+        await syncService.pullPurchasesFromSupabase();
+      } catch (err) {
+        console.warn('[Purchases] Gagal tarik pembelian dari Supabase:', err);
+      }
+    }
+
     const allPurchases = await db.purchases.toArray();
     const allPRet = await db.purchaseReturns.toArray();
     const allSRet = await db.salesReturns.toArray();
@@ -159,13 +182,16 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     setPoQty(1);
   };
 
-  // Handle Save Purchase (Tambah Stok Otomatis)
+  // Handle Save Purchase (Tambah Stok Otomatis & Sinkron)
   const handleSavePurchase = async () => {
     if (!poInvoice.trim() || !poSupplierId || poItems.length === 0) return;
     const sup = suppliers.find((s) => s.id === poSupplierId);
     if (!sup) return;
 
     const totalBill = poItems.reduce((acc, it) => acc + it.subtotal, 0);
+    const dueDateValue = poPaymentType === 'TEMPO' 
+      ? (poDueDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]) 
+      : undefined;
 
     const newPurchase: Purchase = {
       id: `pur-${Date.now()}`,
@@ -182,14 +208,14 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
       })),
       total: totalBill,
       payment_type: poPaymentType,
-      due_date: poPaymentType === 'TEMPO' ? poDueDate : undefined,
+      due_date: dueDateValue,
       status: 'RECEIVED'
     };
 
-    // 1. Save Purchase
+    // 1. Simpan Pembelian ke Dexie Lokal
     await db.purchases.put(newPurchase);
 
-    // 2. Increase Stock for each product
+    // 2. Tambah Stok Fisik untuk Setiap Barang
     for (const it of poItems) {
       const p = await db.products.get(it.product.id);
       if (p) {
@@ -199,7 +225,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
       }
     }
 
-    // 3. If TEMPO, also record into Debts (Hutang Usaha)
+    // 3. Jika TEMPO (Invoice), catat otomatis ke Hutang Usaha (Debts)
     if (poPaymentType === 'TEMPO') {
       await db.debts.put({
         id: `debt-${Date.now()}`,
@@ -211,10 +237,31 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
         paid_amount: 0,
         remaining_amount: totalBill,
         invoice_date: new Date().toISOString().split('T')[0],
-        due_date: poDueDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+        due_date: dueDateValue || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
         status: 'UNPAID',
         notes: `Faktur Pembelian ${poInvoice}`
       });
+    }
+
+    // 4. Sinkronisasi ke LAN Server (Multi-Kasir Terpusat)
+    if (lanService.isClientMode()) {
+      try {
+        await lanService.submitPurchase(newPurchase);
+      } catch (err) {
+        console.warn('[Purchases] Gagal kirim pembelian ke LAN server:', err);
+      }
+    }
+
+    // 5. Sinkronisasi ke Cloud Supabase
+    if (navigator.onLine) {
+      try {
+        await syncService.pushPurchaseToSupabase(newPurchase);
+        if (poPaymentType === 'TEMPO') {
+          await syncService.syncDebtsAndReceivables();
+        }
+      } catch (err) {
+        console.warn('[Purchases] Gagal kirim pembelian ke Supabase:', err);
+      }
     }
 
     setIsAddingPurchase(false);
@@ -454,23 +501,64 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                     />
 
                     <CustomSelect
-                      label="Metode Pembayaran:"
+                      label="Metode Pembayaran (Cash / Invoice):"
                       value={poPaymentType}
-                      onChange={(val) => setPoPaymentType(val as any)}
+                      onChange={(val) => {
+                        setPoPaymentType(val as any);
+                        if (val === 'TEMPO' && !poDueDate) {
+                          setPoDueDate(new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]);
+                        }
+                      }}
                       options={[
-                        { value: 'CASH', label: 'Tunai (Cash / Lunas)' },
-                        { value: 'TEMPO', label: 'Tempo (Hutang Usaha)' }
+                        { value: 'CASH', label: '💵 Beli Cash (Tunai Lunas)' },
+                        { value: 'TEMPO', label: '📄 Beli Invoice (Tempo / Hutang)' }
                       ]}
                     />
+
                     {poPaymentType === 'TEMPO' && (
-                      <div>
-                        <label className="font-bold text-[#543c2e] block mb-1">Tgl Jatuh Tempo:</label>
-                        <input
-                          type="date"
-                          value={poDueDate}
-                          onChange={(e) => setPoDueDate(e.target.value)}
-                          className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono"
-                        />
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="font-bold text-[#543c2e] block text-xs">
+                          Jatuh Tempo Berapa Lama:
+                        </label>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {[
+                            { days: 7, label: '7 Hari' },
+                            { days: 14, label: '14 Hari' },
+                            { days: 30, label: '30 Hari' },
+                            { days: 45, label: '45 Hari' },
+                            { days: 60, label: '60 Hari' }
+                          ].map(({ days, label }) => {
+                            const target = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+                            const isSelected = poDueDate === target;
+                            return (
+                              <button
+                                key={days}
+                                type="button"
+                                onClick={() => setPoDueDate(target)}
+                                className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all ${
+                                  isSelected
+                                    ? 'bg-[#96633b] text-white border-[#96633b] shadow-2xs'
+                                    : 'bg-white hover:bg-[#faebd7] text-[#5c3c26] border-[#dfcebe]'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center space-x-2 pt-1">
+                          <input
+                            type="date"
+                            value={poDueDate}
+                            onChange={(e) => setPoDueDate(e.target.value)}
+                            className="px-2.5 py-1.5 border border-[#dfcebe] rounded-xl bg-white font-mono text-xs"
+                          />
+                          {poDueDate && (
+                            <span className="text-[11px] font-bold text-[#96633b] bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                              📅 Tempo: {new Date(poDueDate).toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

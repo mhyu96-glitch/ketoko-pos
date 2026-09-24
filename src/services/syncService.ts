@@ -353,6 +353,277 @@ export class SyncService {
   async getRecentTransactions(limit = 20): Promise<Transaction[]> {
     return await db.transactions.orderBy('created_at').reverse().limit(limit).toArray();
   }
+
+  /**
+   * Tarik transaksi kasir terbaru dari Cloud Supabase agar Admin bisa melihat penjualan kasir
+   */
+  async pullTransactionsFromSupabase(limit = 200): Promise<{ count: number; error?: string }> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return { count: 0, error: 'Supabase tidak aktif' };
+
+    try {
+      const { data: cloudTrx, error: trxErr } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (trxErr) throw trxErr;
+      if (!cloudTrx || cloudTrx.length === 0) return { count: 0 };
+
+      const trxIds = cloudTrx.map(t => t.id);
+
+      // Ambil detail items transaksi
+      const { data: cloudItems, error: itemsErr } = await supabase
+        .from('transaction_items')
+        .select('*')
+        .in('transaction_id', trxIds);
+
+      if (itemsErr) console.warn('[SyncService] Gagal ambil items transaksi:', itemsErr);
+
+      const itemsMap = new Map<string, any[]>();
+      if (cloudItems) {
+        for (const item of cloudItems) {
+          const list = itemsMap.get(item.transaction_id) || [];
+          list.push({
+            product_id: item.product_id,
+            product_name: item.product_name,
+            qty: item.qty,
+            buy_price: item.cost_price,
+            price_applied: item.unit_price,
+            is_wholesale: false,
+            subtotal_item: item.subtotal
+          });
+          itemsMap.set(item.transaction_id, list);
+        }
+      }
+
+      const formatted: Transaction[] = cloudTrx.map(t => ({
+        id: t.id,
+        receipt_number: t.receipt_number,
+        branch_id: t.branch_id || 'BR-01',
+        cashier_id: t.cashier_id || 'KASIR-01',
+        cashier_name: t.cashier_name || 'Kasir',
+        member_id: t.customer_id || undefined,
+        items: itemsMap.get(t.id) || [],
+        subtotal: Number(t.subtotal) || 0,
+        discount_amount: Number(t.discount_amount) || 0,
+        tax_amount: Number(t.tax_amount) || 0,
+        grand_total: Number(t.grand_total) || 0,
+        cash_given: Number(t.cash_given) || Number(t.grand_total) || 0,
+        change_returned: Number(t.change_due) || 0,
+        payment_method: (t.payment_method || 'CASH') as any,
+        created_at: t.created_at,
+        synced: true,
+        synced_at: t.synced_at
+      }));
+
+      await db.transactions.bulkPut(formatted);
+      return { count: formatted.length };
+    } catch (err: any) {
+      console.warn('[SyncService] Gagal tarik transaksi dari Supabase:', err.message);
+      return { count: 0, error: err.message };
+    }
+  }
+
+  /**
+   * Upload faktur pembelian barang ke Cloud Supabase
+   */
+  async pushPurchaseToSupabase(purchase: any): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+
+    try {
+      const { error } = await supabase.from('purchases').upsert({
+        id: purchase.id,
+        invoice_number: purchase.invoice_number,
+        supplier_id: purchase.supplier_id,
+        supplier_name: purchase.supplier_name,
+        date: purchase.date,
+        payment_type: purchase.payment_type || 'CASH',
+        due_date: purchase.due_date || null,
+        subtotal: purchase.subtotal || purchase.total,
+        discount: purchase.discount || 0,
+        total: purchase.total,
+        status: purchase.status || 'RECEIVED',
+        cashier_name: purchase.cashier_name || 'Admin',
+        notes: purchase.notes || null,
+        items: purchase.items || [],
+        created_at: purchase.created_at || new Date().toISOString()
+      });
+
+      if (error) {
+        console.warn('[SyncService] Gagal upload pembelian ke Supabase (tabel purchases mungkin belum ada):', error.message);
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Tarik data pembelian barang dari Cloud Supabase
+   */
+  async pullPurchasesFromSupabase(limit = 100): Promise<{ count: number }> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return { count: 0 };
+
+    try {
+      const { data, error } = await supabase
+        .from('purchases')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error || !data || data.length === 0) return { count: 0 };
+
+      const parsedPurchases = data.map((p: any) => ({
+        id: p.id,
+        invoice_number: p.invoice_number,
+        supplier_id: p.supplier_id,
+        supplier_name: p.supplier_name,
+        date: p.date,
+        payment_type: p.payment_type,
+        due_date: p.due_date,
+        subtotal: p.subtotal,
+        discount: p.discount,
+        total: p.total,
+        status: p.status,
+        cashier_name: p.cashier_name,
+        notes: p.notes,
+        items: Array.isArray(p.items) ? p.items : (typeof p.items === 'string' ? JSON.parse(p.items) : []),
+        created_at: p.created_at
+      }));
+
+      await db.purchases.bulkPut(parsedPurchases);
+      return { count: parsedPurchases.length };
+    } catch {
+      return { count: 0 };
+    }
+  }
+
+  /**
+   * Sinkronisasi Hutang & Piutang dengan Supabase
+   */
+  async syncDebtsAndReceivables(): Promise<void> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    try {
+      // 1. Push local debts
+      const localDebts = await db.debts.toArray();
+      if (localDebts.length > 0) {
+        await supabase.from('debts').upsert(localDebts.map(d => ({
+          id: d.id,
+          supplier_id: d.supplier_id,
+          supplier_name: d.supplier_name,
+          invoice_number: d.invoice_number,
+          amount: d.total_amount,
+          paid_amount: d.paid_amount,
+          due_date: d.due_date,
+          status: d.status,
+          notes: d.notes,
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })));
+      }
+
+      // 2. Pull cloud debts
+      const { data: cloudDebts } = await supabase.from('debts').select('*');
+      if (cloudDebts && cloudDebts.length > 0) {
+        await db.debts.bulkPut(cloudDebts.map((d: any) => ({
+          id: d.id,
+          supplier_id: d.supplier_id,
+          supplier_name: d.supplier_name,
+          invoice_number: d.invoice_number,
+          total_amount: Number(d.amount) || 0,
+          paid_amount: Number(d.paid_amount) || 0,
+          remaining_amount: Math.max(0, (Number(d.amount) || 0) - (Number(d.paid_amount) || 0)),
+          due_date: d.due_date,
+          status: d.status,
+          notes: d.notes,
+          created_at: d.created_at
+        })));
+      }
+
+      // 3. Push local receivables
+      const localRecs = await db.receivables.toArray();
+      if (localRecs.length > 0) {
+        await supabase.from('receivables').upsert(localRecs.map(r => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          customer_name: r.customer_name,
+          transaction_id: r.transaction_id,
+          receipt_number: r.receipt_number,
+          amount: r.total_amount,
+          paid_amount: r.paid_amount,
+          due_date: r.due_date,
+          status: r.status,
+          notes: r.notes,
+          created_at: r.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })));
+      }
+
+      // 4. Pull cloud receivables
+      const { data: cloudRecs } = await supabase.from('receivables').select('*');
+      if (cloudRecs && cloudRecs.length > 0) {
+        await db.receivables.bulkPut(cloudRecs.map((r: any) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          customer_name: r.customer_name,
+          transaction_id: r.transaction_id,
+          receipt_number: r.receipt_number,
+          total_amount: Number(r.amount) || 0,
+          paid_amount: Number(r.paid_amount) || 0,
+          remaining_amount: Math.max(0, (Number(r.amount) || 0) - (Number(r.paid_amount) || 0)),
+          due_date: r.due_date,
+          status: r.status,
+          notes: r.notes,
+          created_at: r.created_at
+        })));
+      }
+    } catch (err: any) {
+      console.warn('[SyncService] Gagal sinkron hutang piutang:', err.message);
+    }
+  }
+
+  /**
+   * Sinkronkan seluruh data (Master Barang, Transaksi Kasir, Pembelian, Hutang Piutang)
+   */
+  async syncAllData(): Promise<{ success: boolean; message: string }> {
+    try {
+      this.isSyncing = true;
+      this.notifyStatusChange();
+
+      // Upload antrean pending transaksi dulu
+      await this.reconcileQueue();
+
+      // Tarik transaksi terbaru kasir
+      await this.pullTransactionsFromSupabase();
+
+      // Tarik katalog produk terbaru
+      await this.pullFromSupabase();
+
+      // Tarik data pembelian
+      await this.pullPurchasesFromSupabase();
+
+      // Sinkron hutang piutang
+      await this.syncDebtsAndReceivables();
+
+      this.lastSyncTime = new Date().toISOString();
+      localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);
+      this.notifyStatusChange();
+
+      return { success: true, message: 'Semua data berhasil disinkronkan dengan Cloud' };
+    } catch (err: any) {
+      return { success: false, message: 'Sinkronisasi gagal: ' + err.message };
+    } finally {
+      this.isSyncing = false;
+      this.notifyStatusChange();
+    }
+  }
 }
 
 export const syncService = new SyncService();
