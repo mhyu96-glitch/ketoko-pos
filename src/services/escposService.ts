@@ -592,19 +592,11 @@ export function generateDotMatrixHTML(
   const isContinuousHalf = paperSize === 'CONTINUOUS_HALF';
   const isContinuousFull = paperSize === 'CONTINUOUS_FULL' || paperSize === 'FULL_CONTINUOUS';
 
-  const paperLabel = isA4Half
-    ? 'A4 Di Bagi 2 (A5)'
-    : isA4Full
-    ? 'A4 Full (Portrait)'
-    : isContinuousHalf
-    ? 'Continuous Form 1/2'
-    : 'Continuous Form Full';
-
-  let pageSizeCss = '210mm 148.5mm';
-  let pageMarginCss = '4mm 6mm';
+  let pageSizeCss = 'A4 portrait';
+  let pageMarginCss = '5mm 8mm';
   if (isA4Full) {
     pageSizeCss = 'A4 portrait';
-    pageMarginCss = '8mm 10mm';
+    pageMarginCss = '8mm 12mm';
   } else if (isContinuousHalf) {
     pageSizeCss = '216mm 140mm';
     pageMarginCss = '4mm 6mm';
@@ -613,19 +605,183 @@ export function generateDotMatrixHTML(
     pageMarginCss = '6mm 8mm';
   }
 
-  const isCompact = isA4Half || isContinuousHalf;
   const storeName = storeProfile?.name || config?.headerText?.split('\n')[0] || 'CV. TUMBUH MAKMUR AIR CONINDO';
   const storeAddr = storeProfile?.address || config?.headerText?.split('\n')[1] || 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu';
   const storePhone = storeProfile?.phone || config?.headerText?.split('\n')[2] || '0811 5121 215';
   
   const terbilangText = numberToWordsID(transaction.grand_total);
   const totalQty = transaction.items.reduce((sum, it) => sum + it.qty, 0);
+  const netSubtotal = Math.max(1, transaction.subtotal - (transaction.discount_amount || 0));
+  const effectiveTaxRate = transaction.tax_amount > 0 ? Math.round((transaction.tax_amount / netSubtotal) * 100) : 0;
+
+  // Render a complete, proportional invoice block
+  function renderInvoiceBlock(copyLabel: string, isFullA4Size: boolean) {
+    const minRows = isFullA4Size ? 10 : 4;
+    const emptyRowsNeeded = Math.max(0, minRows - transaction.items.length);
+
+    return `
+      <div class="faktur-block ${isFullA4Size ? 'block-full' : 'block-half'}">
+        <!-- Header Toko & Judul Faktur -->
+        <table class="header-table">
+          <tr>
+            <td style="width: 55%; vertical-align: top;">
+              <div class="store-title">${storeName.toUpperCase()}</div>
+              <div class="store-sub">SPAREPART & PENDINGIN RUANGAN AC</div>
+              <div class="store-addr">${storeAddr}</div>
+              <div class="store-addr">Telp / WA: <b>${storePhone}</b></div>
+            </td>
+            <td style="width: 45%; text-align: right; vertical-align: top;">
+              <div class="faktur-title">FAKTUR PENJUALAN</div>
+              <div class="copy-tag">${copyLabel}</div>
+              <div class="trx-info">No. Faktur : <b class="font-mono">${transaction.receipt_number}</b></div>
+              <div class="trx-info">Tanggal    : <b>${new Date(transaction.created_at).toLocaleDateString('id-ID')} ${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</b></div>
+            </td>
+          </tr>
+        </table>
+
+        <div class="sep-line"></div>
+
+        <!-- Info Pelanggan & Kasir -->
+        <table class="info-table">
+          <tr>
+            <td style="width: 55%;">
+              <div>Kepada Yth : <b class="cust-highlight">${transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM'}</b></div>
+              <div>Status     : <span class="status-box">${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</span></div>
+            </td>
+            <td style="width: 45%; text-align: right;">
+              <div>Kasir      : <b>${transaction.cashier_name || 'Kasir Toko'}</b></div>
+              <div>Pembayaran : <b>${transaction.payment_method}</b></div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Tabel Rincian Barang -->
+        <table class="item-table">
+          <thead>
+            <tr>
+              <th style="width: 5%; text-align: center;">NO</th>
+              <th style="width: 47%;">NAMA BARANG</th>
+              <th class="text-right" style="width: 10%;">QTY</th>
+              <th class="text-center" style="width: 8%;">SAT</th>
+              <th class="text-right" style="width: 15%;">HARGA (RP)</th>
+              <th class="text-right" style="width: 15%;">TOTAL (RP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${transaction.items.map((it, idx) => `
+            <tr>
+              <td class="text-center font-mono">${idx + 1}.</td>
+              <td class="item-name">${it.product_name.toUpperCase()}</td>
+              <td class="text-right font-mono font-bold">${it.qty}</td>
+              <td class="text-center">${(it as any).unit || 'PCS'}</td>
+              <td class="text-right font-mono">${formatRupiah(it.price_applied).replace('Rp ', '')}</td>
+              <td class="text-right font-mono font-bold">${formatRupiah(it.subtotal_item).replace('Rp ', '')}</td>
+            </tr>`).join('')}
+            ${Array.from({ length: emptyRowsNeeded }).map((_, i) => `
+            <tr class="empty-row">
+              <td class="text-center font-mono text-muted">${transaction.items.length + i + 1}.</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <div class="sep-line"></div>
+
+        <!-- Total & Perhitungan -->
+        <table class="footer-table">
+          <tr>
+            <td style="width: 54%; padding-right: 12px; vertical-align: top;">
+              <div class="terbilang-box">
+                <div class="terbilang-label">TERBILANG:</div>
+                <div class="terbilang-text">${terbilangText}</div>
+              </div>
+              <div class="notice-box">
+                * Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian tertulis.<br/>
+                * Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.
+              </div>
+            </td>
+            <td style="width: 46%; vertical-align: top;">
+              <table class="summary-table">
+                <tr>
+                  <td>Total Item / Qty:</td>
+                  <td class="text-right font-mono">${totalQty} Pcs (${transaction.items.length} Item)</td>
+                </tr>
+                <tr>
+                  <td>Subtotal:</td>
+                  <td class="text-right font-mono">${formatRupiah(transaction.subtotal)}</td>
+                </tr>
+                ${transaction.discount_amount > 0 ? `
+                <tr>
+                  <td style="color: #b91c1c;">Potongan Diskon:</td>
+                  <td class="text-right font-mono" style="color: #b91c1c;">-${formatRupiah(transaction.discount_amount)}</td>
+                </tr>` : ''}
+                ${transaction.tax_amount > 0 ? `
+                <tr>
+                  <td>PPN (${effectiveTaxRate}%):</td>
+                  <td class="text-right font-mono">${formatRupiah(transaction.tax_amount)}</td>
+                </tr>` : ''}
+                <tr class="grand-total-row">
+                  <td>TOTAL AKHIR:</td>
+                  <td class="text-right font-mono grand-val">${formatRupiah(transaction.grand_total)}</td>
+                </tr>
+                <tr>
+                  <td>Bayar (${transaction.payment_method}):</td>
+                  <td class="text-right font-mono">${formatRupiah(transaction.cash_given)}</td>
+                </tr>
+                <tr>
+                  <td>Kembalian:</td>
+                  <td class="text-right font-mono font-bold">${formatRupiah(transaction.change_returned)}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Tanda Tangan -->
+        <table class="sig-table">
+          <tr>
+            <td style="width: 50%;">
+              <div class="sig-role">Tanda Terima / Pembeli,</div>
+              <div class="sig-space"></div>
+              <div class="sig-line">( ........................................ )</div>
+            </td>
+            <td style="width: 50%;">
+              <div class="sig-role">Hormat Kami / Kasir,</div>
+              <div class="sig-space"></div>
+              <div class="sig-line">( ${transaction.cashier_name || 'Kasir'} )</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+  }
+
+  // Dual Copy for A4_HALF on A4 paper (fills top and bottom), single copy for A4_FULL and Continuous
+  const bodyContent = isA4Half
+    ? `
+      <div class="page-container dual-page">
+        ${renderInvoiceBlock('LEMBAR 1: ASLI (UNTUK PEMBELI)', false)}
+        <div class="cut-separator">
+          <span>✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - POTONG DI SINI / TEAR HERE - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ✂</span>
+        </div>
+        ${renderInvoiceBlock('LEMBAR 2: SALINAN (UNTUK ARSIP TOKO / KASIR)', false)}
+      </div>
+    `
+    : `
+      <div class="page-container single-page">
+        ${renderInvoiceBlock(isA4Full ? 'LEMBAR ASLI FAKTUR PENJUALAN' : 'FAKTUR PENJUALAN CONTINUOUS FORM', isA4Full)}
+      </div>
+    `;
 
   return `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>Faktur Penjualan (${paperLabel}) - ${transaction.receipt_number}</title>
+  <title>Faktur Penjualan - ${transaction.receipt_number}</title>
   <style>
     @page {
       size: ${pageSizeCss};
@@ -638,243 +794,186 @@ export function generateDotMatrixHTML(
     }
     body {
       font-family: 'Courier New', Courier, monospace, 'Lucida Console';
-      font-size: ${isCompact ? '10px' : '11.5px'};
-      line-height: ${isCompact ? '1.2' : '1.3'};
+      font-size: ${isA4Full ? '12px' : '10.5px'};
+      line-height: ${isA4Full ? '1.3' : '1.2'};
       color: #000000;
       background: #ffffff;
       -webkit-print-color-adjust: exact;
     }
-    .faktur-container {
+    .page-container {
       width: 100%;
-      max-width: ${isA4Full ? '780px' : '760px'};
+      max-width: 100%;
       margin: 0 auto;
-      padding: ${isCompact ? '2px' : '6px'};
     }
-    .header-table {
+    .dual-page {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+    }
+    .single-page {
+      min-height: ${isA4Full ? '260mm' : 'auto'};
+    }
+    .faktur-block {
+      width: 100%;
+      padding: 2px 0;
+    }
+    .block-full {
+      padding: 6px 0;
+    }
+    .cut-separator {
+      text-align: center;
+      font-size: 8.5px;
+      color: #444;
+      margin: 4px 0 6px 0;
+      letter-spacing: 1px;
+      user-select: none;
+    }
+    .header-table, .info-table, .footer-table, .sig-table, .item-table, .summary-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: ${isCompact ? '2px' : '4px'};
-    }
-    .header-table td {
-      vertical-align: top;
-      font-size: ${isCompact ? '10px' : '11px'};
     }
     .store-title {
-      font-size: ${isCompact ? '13px' : '15px'};
+      font-size: ${isA4Full ? '18px' : '14.5px'};
       font-weight: 900;
       letter-spacing: 0.5px;
+      line-height: 1.1;
     }
-    .faktur-badge {
-      font-size: ${isCompact ? '13px' : '15px'};
+    .store-sub {
+      font-size: ${isA4Full ? '11px' : '9px'};
+      font-weight: bold;
+      color: #222;
+      margin-top: 1px;
+    }
+    .store-addr {
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      color: #333;
+    }
+    .faktur-title {
+      font-size: ${isA4Full ? '18px' : '14.5px'};
       font-weight: 900;
-      text-align: right;
       letter-spacing: 1px;
+      line-height: 1.1;
     }
-    .paper-tag {
-      font-size: 8.5px;
-      color: #555;
-      font-weight: normal;
+    .copy-tag {
       display: inline-block;
-      border: 1px solid #999;
+      font-size: 8.5px;
+      font-weight: 800;
+      border: 1px solid #000;
       border-radius: 3px;
       padding: 0 4px;
-      margin-left: 4px;
+      margin: 2px 0;
+      background: #f0f0f0;
+    }
+    .trx-info {
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
     }
     .sep-line {
       border: none;
       border-top: 1px dashed #000000;
-      margin: ${isCompact ? '2px 0' : '4px 0'};
+      margin: 3px 0;
     }
-    .sep-double {
-      border: none;
-      border-top: 2px solid #000000;
-      margin: ${isCompact ? '2px 0' : '4px 0'};
+    .info-table td {
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      padding: 1px 0;
+    }
+    .cust-highlight {
+      font-size: ${isA4Full ? '12px' : '10px'};
+    }
+    .status-box {
+      font-weight: 800;
+      border-bottom: 1px dotted #000;
     }
     .item-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: ${isCompact ? '2px 0' : '4px 0'};
+      margin: 3px 0;
     }
     .item-table th {
       text-align: left;
-      font-size: ${isCompact ? '9.5px' : '11px'};
-      padding: ${isCompact ? '2px 2px' : '3.5px 3px'};
-      border-top: 1px solid #000000;
-      border-bottom: 1px solid #000000;
-      font-weight: 800;
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      padding: ${isA4Full ? '4px 3px' : '2.5px 2px'};
+      border-top: 1.5px solid #000000;
+      border-bottom: 1.5px solid #000000;
+      font-weight: 900;
+      background: #f7f7f7;
     }
     .item-table td {
-      padding: ${isCompact ? '1.5px 2px' : '3px 3px'};
-      font-size: ${isCompact ? '9.5px' : '11px'};
+      padding: ${isA4Full ? '4px 3px' : '2.5px 2px'};
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      border-bottom: 1px dotted #ddd;
+    }
+    .item-name {
+      font-weight: 700;
+    }
+    .empty-row td {
+      height: ${isA4Full ? '22px' : '16px'};
+      border-bottom: 1px dotted #e5e5e5;
+    }
+    .text-muted {
+      color: #ccc;
     }
     .text-right { text-align: right; }
     .text-center { text-align: center; }
-    .footer-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: ${isCompact ? '2px' : '4px'};
-    }
-    .footer-table td {
-      vertical-align: top;
-      font-size: ${isCompact ? '9.5px' : '11px'};
-    }
+    .font-mono { font-family: 'Courier New', Courier, monospace; }
+    .font-bold { font-weight: bold; }
     .terbilang-box {
       border: 1px dashed #000000;
-      padding: ${isCompact ? '2px 4px' : '4px 6px'};
+      padding: 4px 6px;
+      background: #fafafa;
+      margin-bottom: 4px;
+    }
+    .terbilang-label {
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+    }
+    .terbilang-text {
+      font-size: ${isA4Full ? '11px' : '9px'};
       font-style: italic;
-      font-size: ${isCompact ? '9px' : '10.5px'};
-      margin: ${isCompact ? '2px 0' : '4px 0'};
+      font-weight: 700;
+    }
+    .notice-box {
+      font-size: ${isA4Full ? '10px' : '8.5px'};
+      color: #333;
+      line-height: 1.25;
+    }
+    .summary-table td {
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      padding: 1px 0;
+    }
+    .grand-total-row td {
+      font-weight: 900;
+      border-top: 1.5px solid #000000;
+      border-bottom: 1.5px solid #000000;
+      padding: 2.5px 0 !important;
+    }
+    .grand-val {
+      font-size: ${isA4Full ? '14px' : '11.5px'};
     }
     .sig-table {
-      width: 100%;
-      margin-top: ${isCompact ? '4px' : '10px'};
-      border-collapse: collapse;
+      margin-top: ${isA4Full ? '12px' : '5px'};
       text-align: center;
     }
-    .sig-table td {
-      width: 50%;
-      font-size: ${isCompact ? '9.5px' : '11px'};
+    .sig-role {
+      font-size: ${isA4Full ? '11px' : '9.5px'};
+      font-weight: bold;
     }
     .sig-space {
-      height: ${isCompact ? '26px' : '46px'};
+      height: ${isA4Full ? '50px' : '28px'};
+    }
+    .sig-line {
+      font-size: ${isA4Full ? '11px' : '9.5px'};
+      font-weight: bold;
     }
     @media print {
       body { background: transparent; }
       .no-print { display: none !important; }
-      .faktur-container { max-width: 100%; padding: 0; }
       tr { page-break-inside: avoid; }
-      .footer-table { page-break-inside: avoid; }
-      .sig-table { page-break-inside: avoid; }
+      .footer-table, .sig-table { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
-  <div class="faktur-container">
-    <!-- Header Toko & Judul Faktur -->
-    <table class="header-table">
-      <tr>
-        <td style="width: 58%;">
-          <div class="store-title">${storeName.toUpperCase()}</div>
-          <div>${storeAddr}</div>
-          <div>Telp: ${storePhone}</div>
-        </td>
-        <td style="width: 42%; text-align: right;">
-          <div class="faktur-badge">FAKTUR PENJUALAN <span class="paper-tag">${paperLabel}</span></div>
-          <div>No. Faktur : <b>${transaction.receipt_number}</b></div>
-          <div>Tanggal    : ${new Date(transaction.created_at).toLocaleDateString('id-ID')} ${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</div>
-        </td>
-      </tr>
-    </table>
-
-    <hr class="sep-line" />
-
-    <!-- Info Pelanggan & Kasir -->
-    <table class="header-table">
-      <tr>
-        <td style="width: 58%;">
-          <div>Kepada Yth : <b>${transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM'}</b></div>
-          <div>Status     : ${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</div>
-        </td>
-        <td style="width: 42%; text-align: right;">
-          <div>Kasir      : ${transaction.cashier_name || 'Kasir'}</div>
-          <div>Pembayaran : ${transaction.payment_method}</div>
-        </td>
-      </tr>
-    </table>
-
-    <!-- Tabel Rincian Barang -->
-    <table class="item-table">
-      <thead>
-        <tr>
-          <th style="width: 5%;">NO</th>
-          <th style="width: 45%;">NAMA BARANG</th>
-          <th class="text-right" style="width: 10%;">QTY</th>
-          <th class="text-center" style="width: 10%;">SAT</th>
-          <th class="text-right" style="width: 15%;">HARGA (RP)</th>
-          <th class="text-right" style="width: 15%;">TOTAL (RP)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${transaction.items.map((it, idx) => `
-        <tr>
-          <td>${idx + 1}.</td>
-          <td>${it.product_name.toUpperCase()}</td>
-          <td class="text-right">${it.qty}</td>
-          <td class="text-center">${(it as any).unit || 'PCS'}</td>
-          <td class="text-right">${formatRupiah(it.price_applied).replace('Rp ', '')}</td>
-          <td class="text-right">${formatRupiah(it.subtotal_item).replace('Rp ', '')}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-
-    <hr class="sep-line" />
-
-    <!-- Total & Perhitungan -->
-    <table class="footer-table">
-      <tr>
-        <td style="width: 55%; padding-right: 12px;">
-          <div class="terbilang-box">
-            <b>Terbilang:</b> ${terbilangText}
-          </div>
-          <div style="font-size: 9.5px; margin-top: 4px; color: #333;">
-            * Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian.
-          </div>
-        </td>
-        <td style="width: 45%;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td>Total Qty</td>
-              <td class="text-right">${totalQty} Pcs (${transaction.items.length} Item)</td>
-            </tr>
-            <tr>
-              <td>Subtotal</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.subtotal)}</td>
-            </tr>
-            ${transaction.discount_amount > 0 ? `
-            <tr>
-              <td>Diskon Promo</td>
-              <td class="text-right font-mono text-danger">-${formatRupiah(transaction.discount_amount)}</td>
-            </tr>` : ''}
-            ${transaction.tax_amount > 0 ? `
-            <tr>
-              <td>PPN (${Math.round((transaction.tax_amount / Math.max(1, transaction.subtotal - (transaction.discount_amount || 0))) * 100)}%)</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.tax_amount)}</td>
-            </tr>` : ''}
-            <tr style="border-top: 1px solid #000; font-weight: 800; font-size: 12px;">
-              <td style="padding-top: 3px;">TOTAL AKHIR</td>
-              <td class="text-right font-mono" style="padding-top: 3px;">${formatRupiah(transaction.grand_total)}</td>
-            </tr>
-            <tr>
-              <td>Bayar (${transaction.payment_method})</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.cash_given)}</td>
-            </tr>
-            <tr>
-              <td>Kembalian</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.change_returned)}</td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-
-    <!-- Tanda Tangan Penerima & Hormat Kami -->
-    <table class="sig-table">
-      <tr>
-        <td>
-          <div>Tanda Terima / Pembeli,</div>
-          <div class="sig-space"></div>
-          <div>( ........................... )</div>
-        </td>
-        <td>
-          <div>Hormat Kami / Kasir,</div>
-          <div class="sig-space"></div>
-          <div>( ${transaction.cashier_name || 'Kasir'} )</div>
-        </td>
-      </tr>
-    </table>
-
-    <hr class="sep-double" style="margin-top: 8px;" />
-  </div>
+  ${bodyContent}
 
   <script>
     window.onload = function() {

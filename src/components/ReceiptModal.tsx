@@ -274,10 +274,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     ? 'bg-[#166534] text-white shadow-xs ring-1 ring-[#166534]'
                     : 'bg-white text-[#5c3c26] border border-[#ddc3aa] hover:bg-[#faebd7]'
                 }`}
-                title="Kertas HVS A4 standar dipotong menjadi 2 bagian (A5 Landscape 210 x 148 mm) - Paling Hemat"
+                title="1 Lembar kertas A4 berisi 2 Faktur (Atas: Asli Pembeli, Bawah: Salinan Kasir) - Mengisi penuh kertas tanpa sisa kosong di bawah"
               >
-                <span>📄 A4 Di Bagi 2</span>
-                <span className="text-[9px] opacity-80 font-normal">(A5)</span>
+                <span>📄 A4 Di Bagi 2 (2 Rangkap)</span>
               </button>
 
               {/* Option: A4 Full */}
@@ -289,9 +288,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     ? 'bg-[#166534] text-white shadow-xs ring-1 ring-[#166534]'
                     : 'bg-white text-[#5c3c26] border border-[#ddc3aa] hover:bg-[#faebd7]'
                 }`}
-                title="Satu lembar kertas HVS A4 utuh penuh (Portrait 210 x 297 mm)"
+                title="1 Lembar HVS A4 utuh penuh (Faktur Tunggal Besar Portrait 210 x 297 mm)"
               >
-                <span>📃 A4 Full</span>
+                <span>📃 A4 Full Page</span>
               </button>
 
               {/* Option: Continuous Form 1/2 */}
