@@ -183,10 +183,20 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {/* Change Amount Box (Uang Kembalian / Status Pembayaran) */}
           <div className="p-4 rounded-3xl bg-gradient-to-br from-white to-[#fcf9f5] border-2 border-[#ddc3aa] shadow-sm text-center space-y-1 relative overflow-hidden">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#8a6b53]">
-              {transaction.payment_method === 'CASH' ? 'Uang Kembalian Kasir' : 'Status Pelunasan'}
+              {transaction.payment_method === 'CASH'
+                ? 'Uang Kembalian Kasir'
+                : transaction.payment_method === 'TEMPO'
+                  ? 'Sisa Piutang / Bon Pelanggan'
+                  : 'Status Pelunasan'}
             </span>
-            <div className="font-mono font-black text-2xl sm:text-3xl text-[#166534] tracking-tight">
-              {transaction.payment_method === 'CASH' ? formatRupiah(changeDue) : 'LUNAS (NON-TUNAI)'}
+            <div className={`font-mono font-black text-2xl sm:text-3xl tracking-tight ${
+              transaction.payment_method === 'TEMPO' ? 'text-amber-800' : 'text-[#166534]'
+            }`}>
+              {transaction.payment_method === 'CASH'
+                ? formatRupiah(changeDue)
+                : transaction.payment_method === 'TEMPO'
+                  ? formatRupiah(Math.max(0, transaction.grand_total - (transaction.cash_given || 0)))
+                  : 'LUNAS (NON-TUNAI)'}
             </div>
 
             {transaction.payment_method === 'CASH' && (
@@ -194,6 +204,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <span>Uang Diterima: <b className="font-mono text-[#3d2617]">{formatRupiah(cashGiven)}</b></span>
                 <span className="text-[#ddc3aa]">•</span>
                 <span>Total Belanja: <b className="font-mono text-[#3d2617]">{formatRupiah(transaction.grand_total)}</b></span>
+              </div>
+            )}
+
+            {transaction.payment_method === 'TEMPO' && (
+              <div className="flex items-center justify-center space-x-3 pt-1 text-xs text-amber-900 font-medium">
+                {transaction.due_date && (
+                  <span>Jatuh Tempo: <b className="font-mono font-bold text-amber-950">{transaction.due_date}</b></span>
+                )}
+                <span className="text-amber-300">•</span>
+                <span>DP: <b className="font-mono font-bold">{formatRupiah(transaction.cash_given || 0)}</b></span>
+                {transaction.customer_name && (
+                  <>
+                    <span className="text-amber-300">•</span>
+                    <span>Pelanggan: <b className="font-bold">{transaction.customer_name}</b></span>
+                  </>
+                )}
               </div>
             )}
           </div>

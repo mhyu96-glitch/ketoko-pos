@@ -465,9 +465,28 @@ export const App: React.FC = () => {
           });
         },
         // onTransactionCreated (Live sync into Admin dashboard)
-        () => {
-          loadTransactions();
-          loadLocalProducts();
+        (data) => {
+          const trx = data?.transaction;
+          if (trx && trx.id) {
+            db.transactions.put(trx).catch(() => {});
+            setTransactions((prev) => {
+              if (prev.some(t => t.id === trx.id)) return prev;
+              return [trx, ...prev];
+            });
+            window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+          } else {
+            loadTransactions();
+          }
+          if (data?.updated_stocks && Array.isArray(data.updated_stocks)) {
+            const stockMap = new Map<string, number>(data.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+            for (const s of data.updated_stocks) {
+              db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+            }
+            setProducts((prev) => prev.map(p => {
+              const s = stockMap.get(p.id);
+              return s !== undefined ? { ...p, stock: s } : p;
+            }));
+          }
         },
         // onTransactionDeleted (Live sync across LAN cashiers)
         (trxId) => {
@@ -493,6 +512,29 @@ export const App: React.FC = () => {
               db.syncQueue.delete(trxId).catch(() => {});
               setTransactions((prev) => prev.filter((t) => t.id !== trxId));
               window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+            }
+            return;
+          }
+
+          if (event.data?.type === 'transaction_created') {
+            const trx = event.data.transaction;
+            if (trx && trx.id) {
+              db.transactions.put(trx).catch(() => {});
+              setTransactions((prev) => {
+                if (prev.some(t => t.id === trx.id)) return prev;
+                return [trx, ...prev];
+              });
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            }
+            if (event.data?.updated_stocks && Array.isArray(event.data.updated_stocks)) {
+              const stockMap = new Map<string, number>(event.data.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              for (const s of event.data.updated_stocks) {
+                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(p.id);
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
             }
             return;
           }
@@ -559,10 +601,23 @@ export const App: React.FC = () => {
               }
             }
           })
-          .on('broadcast', { event: 'transaction_created' }, ({ payload }) => {
-            loadTransactions();
+          .on('broadcast', { event: 'transaction_created' }, async ({ payload }) => {
+            const trx = payload?.transaction || (payload?.items ? payload : null);
+            if (trx && trx.id) {
+              await db.transactions.put(trx).catch(() => {});
+              setTransactions((prev) => {
+                if (prev.some(t => t.id === trx.id)) return prev;
+                return [trx, ...prev];
+              });
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            } else {
+              loadTransactions();
+            }
             if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
               const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              for (const s of payload.updated_stocks) {
+                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
               setProducts((prev) => prev.map(p => {
                 const s = stockMap.get(p.id);
                 return s !== undefined ? { ...p, stock: s } : p;
@@ -581,10 +636,33 @@ export const App: React.FC = () => {
           .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
             if (Array.isArray(payload)) {
               const stockMap = new Map<string, number>(payload.map((s: any) => [s.id, Number(s.stock) || 0]));
+              for (const s of payload) {
+                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
               setProducts((prev) => prev.map(p => {
                 const s = stockMap.get(p.id);
                 return s !== undefined ? { ...p, stock: s } : p;
               }));
+            }
+          })
+          .on('broadcast', { event: 'debt_receivable_updated' }, async () => {
+            await syncService.syncDebtsAndReceivables().catch(() => {});
+            const nowStr = new Date().toISOString().split('T')[0];
+            const debts = await db.debts.toArray();
+            const recs = await db.receivables.toArray();
+            const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
+            const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
+            setOverdueCount(overdueDebts + overdueRecs);
+          })
+          .on('broadcast', { event: 'receivable_created' }, async ({ payload }) => {
+            if (payload && payload.id) {
+              await db.receivables.put(payload).catch(() => {});
+              const nowStr = new Date().toISOString().split('T')[0];
+              const debts = await db.debts.toArray();
+              const recs = await db.receivables.toArray();
+              const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
+              const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
+              setOverdueCount(overdueDebts + overdueRecs);
             }
           })
           .on(
@@ -727,9 +805,12 @@ export const App: React.FC = () => {
 
   // Handle Payment Completion
   const handleProcessPayment = async (paymentData: {
-    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER';
+    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO';
     cash_given: number;
     change_returned: number;
+    customer_name?: string;
+    due_date?: string;
+    notes?: string;
   }) => {
     if (cartItems.length === 0) return;
 
@@ -751,6 +832,7 @@ export const App: React.FC = () => {
       cashier_name: currentUser?.name || 'Kasir',
       branch_id: currentUser?.branch_id || 'BR-01',
       member_id: memberId || undefined,
+      customer_name: paymentData.customer_name || (memberId ? `Member #${memberId}` : undefined),
       items: [...cartItems],
       subtotal,
       discount_amount: discountAmount,
@@ -759,6 +841,8 @@ export const App: React.FC = () => {
       payment_method: paymentData.payment_method,
       cash_given: paymentData.cash_given,
       change_returned: paymentData.change_returned,
+      due_date: paymentData.due_date,
+      notes: paymentData.notes,
       synced: false,
       created_at: now.toISOString()
     };
@@ -784,6 +868,50 @@ export const App: React.FC = () => {
 
     // 1. Record transaction into IndexedDB & SyncQueue (local offline resilience)
     await syncService.saveTransactionOffline(newTrx);
+
+    // 1.b Catat Piutang Pelanggan otomatis jika transaksi dibayar secara TEMPO / BON
+    if (paymentData.payment_method === 'TEMPO') {
+      try {
+        const custName = paymentData.customer_name || (memberId ? `Member #${memberId}` : 'Pelanggan Umum');
+        const dp = Number(paymentData.cash_given) || 0;
+        const remaining = Math.max(0, grandTotal - dp);
+        const dueDateVal = paymentData.due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+
+        const newRec: ReceivableItem = {
+          id: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          customer_id: memberId || `PLG-${Date.now()}`,
+          customer_name: custName,
+          receipt_number: receiptNumber,
+          transaction_id: newTrx.id,
+          invoice_date: now.toISOString().split('T')[0],
+          total_amount: grandTotal,
+          paid_amount: dp,
+          remaining_amount: remaining,
+          due_date: dueDateVal,
+          status: remaining === 0 ? 'PAID' : (dp > 0 ? 'PARTIAL' : 'UNPAID'),
+          notes: paymentData.notes || `Penjualan Bon Nota ${receiptNumber}`,
+          created_at: now.toISOString()
+        };
+
+        await db.receivables.put(newRec);
+
+        // Update overdue badge
+        const nowStr = now.toISOString().split('T')[0];
+        const debts = await db.debts.toArray();
+        const recs = await db.receivables.toArray();
+        const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
+        const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
+        setOverdueCount(overdueDebts + overdueRecs);
+
+        // Broadcast piutang baru ke semua terminal
+        syncService.broadcastCloudEvent('receivable_created', newRec);
+        if (navigator.onLine) {
+          syncService.syncDebtsAndReceivables().catch(() => {});
+        }
+      } catch (err) {
+        console.warn('[App] Gagal mencatat piutang pelanggan:', err);
+      }
+    }
 
     // Update in-memory stock instantly without heavy full DB reload
     setProducts((prev) => {
@@ -1096,6 +1224,7 @@ export const App: React.FC = () => {
           isOpen={isPaymentOpen}
           onClose={() => setIsPaymentOpen(false)}
           grandTotal={grandTotal}
+          customerName={memberId ? `Member #${memberId}` : ''}
           onProcessPayment={handleProcessPayment}
           isTouchscreenMode={isTouchscreenMode}
           onToggleTouchscreen={handleToggleTouchscreen}

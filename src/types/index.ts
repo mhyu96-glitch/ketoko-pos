@@ -57,9 +57,12 @@ export interface Transaction {
   discount_amount: number;
   tax_amount: number;
   grand_total: number;
-  payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER';
+  payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO';
   cash_given: number;
   change_returned: number;
+  customer_name?: string;
+  due_date?: string;
+  notes?: string;
   created_at: string;
   synced: boolean;
   synced_at?: string;

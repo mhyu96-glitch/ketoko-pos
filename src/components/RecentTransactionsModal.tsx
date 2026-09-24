@@ -55,7 +55,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     }
   }, [isOpen]);
 
-  // Real-time listener: jika transaksi dihapus oleh admin di terminal/tab lain, hapus dari list langsung tanpa refresh
+  // Real-time listener: jika transaksi dibuat atau dihapus oleh kasir/admin di terminal/tab mana saja, update list langsung tanpa refresh
   useEffect(() => {
     const handleRemoteDelete = (e: any) => {
       const id = e.detail?.id;
@@ -63,8 +63,21 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
         setTransactions(prev => prev.filter(t => t.id !== id));
       }
     };
+    const handleRemoteCreate = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setTransactions(prev => {
+          if (prev.some(t => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
     window.addEventListener('ketoko_transaction_deleted', handleRemoteDelete);
-    return () => window.removeEventListener('ketoko_transaction_deleted', handleRemoteDelete);
+    window.addEventListener('ketoko_transaction_created', handleRemoteCreate);
+    return () => {
+      window.removeEventListener('ketoko_transaction_deleted', handleRemoteDelete);
+      window.removeEventListener('ketoko_transaction_created', handleRemoteCreate);
+    };
   }, []);
 
   const loadTransactions = async () => {
@@ -303,7 +316,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
           {/* Payment Method Filter Chips */}
           <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
-            {['ALL', 'CASH', 'QRIS', 'DEBIT', 'TRANSFER'].map((method) => (
+            {['ALL', 'CASH', 'QRIS', 'DEBIT', 'TRANSFER', 'TEMPO'].map((method) => (
               <button
                 key={method}
                 onClick={() => setSelectedMethod(method)}
@@ -313,7 +326,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                     : 'bg-[#f5ebe0] text-[#5c3c26] hover:bg-[#ebd7c5] border-[#ddc3aa]'
                 }`}
               >
-                {method === 'ALL' ? 'Semua Metode' : method}
+                {method === 'ALL' ? 'Semua Metode' : method === 'TEMPO' ? 'TEMPO / BON' : method}
               </button>
             ))}
 
@@ -349,11 +362,16 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                     </span>
 
                     {/* Payment Method Badge */}
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#f5ebe0] text-[#5c3c26] border border-[#ddc3aa] flex items-center">
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center ${
+                      trx.payment_method === 'TEMPO' 
+                        ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                        : 'bg-[#f5ebe0] text-[#5c3c26] border-[#ddc3aa]'
+                    }`}>
                       {trx.payment_method === 'CASH' && <Banknote className="w-3 h-3 mr-1 text-[#96633b]" />}
                       {trx.payment_method === 'QRIS' && <QrCode className="w-3 h-3 mr-1 text-sky-600" />}
                       {trx.payment_method === 'DEBIT' && <CreditCard className="w-3 h-3 mr-1 text-indigo-600" />}
-                      {trx.payment_method}
+                      {trx.payment_method === 'TEMPO' && <Clock className="w-3 h-3 mr-1 text-amber-700" />}
+                      {trx.payment_method === 'TEMPO' ? `TEMPO (${trx.due_date || 'Bon'})` : trx.payment_method}
                     </span>
 
                     {/* Sync Status Badge */}
@@ -394,7 +412,15 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                     <span>Kasir: <b className="text-[#5c3c26]">{trx.cashier_name || 'Siti Kasir'}</b></span>
                     <span>•</span>
                     <span>{trx.items.reduce((acc, it) => acc + it.qty, 0)} pcs ({trx.items.length} SKU)</span>
-                    {trx.member_id && (
+                    {trx.customer_name && (
+                      <>
+                        <span>•</span>
+                        <span className="text-amber-900 font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                          Pelanggan: {trx.customer_name}
+                        </span>
+                      </>
+                    )}
+                    {trx.member_id && !trx.customer_name && (
                       <>
                         <span>•</span>
                         <span className="text-[#96633b] font-semibold">Member: {trx.member_id}</span>

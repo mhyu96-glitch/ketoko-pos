@@ -511,6 +511,26 @@ function handleHttpRequest(req, res) {
 
         // 3. Broadcast Real-time Event ke seluruh kasir yang terhubung
         broadcastSseEvent('transaction_created', {
+          transaction: {
+            id: trxId,
+            receipt_number: trx.receipt_number || `NOTA-${Date.now().toString().slice(-6)}`,
+            cashier_id: trx.cashier_id || 'KASIR-01',
+            cashier_name: trx.cashier_name || 'Kasir Toko',
+            terminal_id: terminalId,
+            subtotal: Number(trx.subtotal) || 0,
+            discount_amount: Number(trx.discount_amount) || 0,
+            tax_amount: Number(trx.tax_amount) || 0,
+            grand_total: Number(trx.grand_total) || 0,
+            payment_method: trx.payment_method || 'CASH',
+            cash_given: Number(trx.cash_given) || Number(trx.grand_total) || 0,
+            change_returned: Number(trx.change_returned) || 0,
+            customer_name: trx.customer_name,
+            due_date: trx.due_date,
+            notes: trx.notes,
+            items: trx.items,
+            created_at: createdAt,
+            synced: true
+          },
           transaction_id: trxId,
           receipt_number: trx.receipt_number,
           terminal_id: terminalId,

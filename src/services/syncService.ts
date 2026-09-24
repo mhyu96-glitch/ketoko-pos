@@ -158,8 +158,50 @@ export class SyncService {
       await db.syncQueue.put(queueItem);
     });
 
-    // Broadcast ke komputer admin/kasir lain di cloud (jaringan berbeda)
+    // 1. Update stok di tabel products Supabase Cloud secara langsung jika online
+    if (navigator.onLine && updatedStocks.length > 0) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          for (const s of updatedStocks) {
+            Promise.resolve(
+              supabase
+                .from('products')
+                .update({ stock: s.stock, updated_at: new Date().toISOString() })
+                .eq('id', s.id)
+            ).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal update stok produk di Supabase:', err);
+      }
+    }
+
+    // 2. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({
+          type: 'transaction_created',
+          transaction,
+          updated_stocks: updatedStocks
+        });
+        bc.close();
+      }
+    } catch {}
+
+    // 3. Dispatch DOM event untuk komponen lokal di window yang sama
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('ketoko_transaction_created', {
+          detail: { transaction, updated_stocks: updatedStocks }
+        })
+      );
+    }
+
+    // 4. Siarkan broadcast ke komputer kasir/admin di cloud (antar jaringan berbeda)
     this.broadcastCloudEvent('transaction_created', {
+      transaction,
       ...transaction,
       updated_stocks: updatedStocks
     });
@@ -766,6 +808,11 @@ export class SyncService {
           created_at: r.created_at
         })));
       }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ketoko_debt_receivable_updated'));
+      }
+      this.broadcastCloudEvent('debt_receivable_updated', { timestamp: new Date().toISOString() });
     } catch (err: any) {
       console.warn('[SyncService] Gagal sinkron hutang piutang:', err.message);
     }
