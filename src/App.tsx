@@ -902,6 +902,7 @@ export const App: React.FC = () => {
             setActiveReceipt(trx);
             setIsReceiptOpen(true);
           }}
+          userRole={currentUser?.role}
         />
       )}
 

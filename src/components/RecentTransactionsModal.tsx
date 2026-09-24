@@ -13,7 +13,10 @@ import {
   QrCode, 
   CreditCard, 
   Receipt, 
-  Eye 
+  Eye,
+  Trash2,
+  FileSpreadsheet,
+  AlertTriangle
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction } from '../types';
@@ -23,22 +26,29 @@ interface RecentTransactionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectReceipt: (trx: Transaction) => void;
+  userRole?: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | 'MANAGER';
 }
 
 export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = ({
   isOpen,
   onClose,
-  onSelectReceipt
+  onSelectReceipt,
+  userRole
 }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState('');
   const [selectedMethod, setSelectedMethod] = useState<string>('ALL');
   const [isLoading, setIsLoading] = useState(false);
   const [viewingItemsTrx, setViewingItemsTrx] = useState<Transaction | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteStatus, setDeleteStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  const canDelete = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
 
   useEffect(() => {
     if (isOpen) {
       loadTransactions();
+      setDeleteStatus(null);
     }
   }, [isOpen]);
 
@@ -51,6 +61,135 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
       console.error('Failed to load transactions:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteTransaction = async (trxId: string) => {
+    try {
+      await db.transactions.delete(trxId);
+      await db.syncQueue.delete(trxId);
+      setTransactions(prev => prev.filter(t => t.id !== trxId));
+      setDeleteConfirmId(null);
+      setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus oleh Admin.' });
+      setTimeout(() => setDeleteStatus(null), 3000);
+    } catch (err: any) {
+      setDeleteStatus({ success: false, message: 'Gagal menghapus: ' + err.message });
+    }
+  };
+
+  const handlePrintDailyReport = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTrx = transactions.filter(t => new Date(t.created_at) >= today);
+    
+    const totalSales = todayTrx.reduce((s, t) => s + t.grand_total, 0);
+    const totalItems = todayTrx.reduce((s, t) => s + t.items.reduce((a, it) => a + it.qty, 0), 0);
+    const cashSales = todayTrx.filter(t => t.payment_method === 'CASH').reduce((s, t) => s + t.grand_total, 0);
+    const qrisSales = todayTrx.filter(t => t.payment_method === 'QRIS').reduce((s, t) => s + t.grand_total, 0);
+    const debitSales = todayTrx.filter(t => t.payment_method === 'DEBIT').reduce((s, t) => s + t.grand_total, 0);
+    const transferSales = todayTrx.filter(t => t.payment_method === 'TRANSFER').reduce((s, t) => s + t.grand_total, 0);
+    const totalDiscount = todayTrx.reduce((s, t) => s + t.discount_amount, 0);
+    const totalTax = todayTrx.reduce((s, t) => s + t.tax_amount, 0);
+
+    const savedStore = localStorage.getItem('ketoko_store_profile');
+    const store = savedStore ? JSON.parse(savedStore) : {};
+    const storeName = store.name || 'CV. TUMBUH MAKMUR AIR CONINDO';
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Laporan Penjualan Hari Ini - ${today.toLocaleDateString('id-ID')}</title>
+  <style>
+    @page { size: 210mm 148.5mm; margin: 6mm 10mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 10.5px; color: #000; background: #fff; }
+    .report { width: 100%; padding: 2px 0; }
+    h1 { font-size: 15px; font-weight: 900; text-align: center; margin-bottom: 2px; }
+    h2 { font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 6px; color: #333; }
+    .sep { border-top: 1.5px dashed #000; margin: 5px 0; }
+    .summary-tbl { width: 100%; border-collapse: collapse; margin: 4px 0; }
+    .summary-tbl td { padding: 2.5px 4px; font-size: 10.5px; }
+    .summary-tbl .label { font-weight: 700; width: 55%; }
+    .summary-tbl .val { text-align: right; font-family: 'Courier New', monospace; font-weight: 700; }
+    .item-tbl { width: 100%; border-collapse: collapse; margin: 4px 0; }
+    .item-tbl th { text-align: left; font-size: 9.5px; padding: 3px 2px; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; font-weight: 900; background: #f5f5f5; }
+    .item-tbl td { padding: 2px; font-size: 9.5px; border-bottom: 1px dotted #ddd; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .font-mono { font-family: 'Courier New', monospace; }
+    .grand { font-size: 13px; font-weight: 900; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 4px 0 !important; }
+    .footer { margin-top: 8px; font-size: 8.5px; text-align: center; color: #666; }
+    @media print { body { background: transparent; } }
+  </style>
+</head>
+<body>
+  <div class="report">
+    <h1>${storeName.toUpperCase()}</h1>
+    <h2>LAPORAN PENJUALAN HARIAN — ${today.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</h2>
+    <div class="sep"></div>
+    
+    <table class="summary-tbl">
+      <tr><td class="label">Total Transaksi:</td><td class="val">${todayTrx.length} Nota</td></tr>
+      <tr><td class="label">Total Produk Terjual:</td><td class="val">${totalItems} Pcs</td></tr>
+    </table>
+    <div class="sep"></div>
+
+    <table class="summary-tbl">
+      <tr><td class="label">💵 Penjualan CASH:</td><td class="val font-mono">${formatRupiah(cashSales)}</td></tr>
+      <tr><td class="label">📱 Penjualan QRIS:</td><td class="val font-mono">${formatRupiah(qrisSales)}</td></tr>
+      <tr><td class="label">💳 Penjualan DEBIT:</td><td class="val font-mono">${formatRupiah(debitSales)}</td></tr>
+      <tr><td class="label">🏦 Penjualan TRANSFER:</td><td class="val font-mono">${formatRupiah(transferSales)}</td></tr>
+    </table>
+    <div class="sep"></div>
+
+    <table class="summary-tbl">
+      <tr><td class="label">Subtotal Penjualan:</td><td class="val font-mono">${formatRupiah(todayTrx.reduce((s, t) => s + t.subtotal, 0))}</td></tr>
+      ${totalDiscount > 0 ? `<tr><td class="label" style="color:#b91c1c;">Potongan Diskon:</td><td class="val font-mono" style="color:#b91c1c;">-${formatRupiah(totalDiscount)}</td></tr>` : ''}
+      ${totalTax > 0 ? `<tr><td class="label">PPN / Pajak:</td><td class="val font-mono">${formatRupiah(totalTax)}</td></tr>` : ''}
+      <tr class="grand"><td class="label">TOTAL PENJUALAN HARI INI:</td><td class="val font-mono">${formatRupiah(totalSales)}</td></tr>
+    </table>
+
+    ${todayTrx.length > 0 ? `
+    <div class="sep"></div>
+    <table class="item-tbl">
+      <thead>
+        <tr>
+          <th class="text-center" style="width:5%">NO</th>
+          <th style="width:30%">NO. STRUK</th>
+          <th style="width:20%">WAKTU</th>
+          <th style="width:12%">METODE</th>
+          <th class="text-right" style="width:15%">ITEM</th>
+          <th class="text-right" style="width:18%">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${todayTrx.map((t, i) => `
+        <tr>
+          <td class="text-center font-mono">${i + 1}.</td>
+          <td class="font-mono" style="font-weight:700">${t.receipt_number}</td>
+          <td>${new Date(t.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+          <td>${t.payment_method}</td>
+          <td class="text-right font-mono">${t.items.reduce((a, it) => a + it.qty, 0)} pcs</td>
+          <td class="text-right font-mono" style="font-weight:700">${formatRupiah(t.grand_total)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ` : ''}
+
+    <div class="footer">
+      Dicetak pada ${new Date().toLocaleString('id-ID')} • Laporan ini dihasilkan otomatis oleh Ketoko POS
+    </div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},300);};</script>
+</body>
+</html>`;
+    
+    const printWindow = window.open('', '_blank', 'width=850,height=600');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
     }
   };
 
@@ -261,7 +400,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                     )}
                   </div>
 
-                  {/* Actions: View Items & Print Receipt */}
+                  {/* Actions: View Items, Print Receipt & Delete (Admin) */}
                   <div className="flex items-center space-x-1.5">
                     <button
                       onClick={() => setViewingItemsTrx(viewingItemsTrx?.id === trx.id ? null : trx)}
@@ -283,6 +422,35 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                       <Printer className="w-3.5 h-3.5 text-amber-200" />
                       <span>Cetak</span>
                     </button>
+
+                    {canDelete && (
+                      deleteConfirmId === trx.id ? (
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => handleDeleteTransaction(trx.id)}
+                            className="px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center space-x-1 transition-all shadow-xs animate-fadeIn"
+                            title="Konfirmasi Hapus Permanen"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Ya, Hapus!</span>
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            className="px-2 py-1.5 rounded-xl bg-[#f5ebe0] hover:bg-[#ebd7c5] text-[#5c3c26] text-xs font-semibold border border-[#ddc3aa] transition-colors"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirmId(trx.id)}
+                          className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-colors"
+                          title="Hapus Transaksi (Admin Only)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
 
@@ -319,15 +487,48 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
           )}
         </div>
 
+        {/* Delete Status Notification */}
+        {deleteStatus && (
+          <div className={`mx-3 mt-2 p-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2 animate-fadeIn ${
+            deleteStatus.success
+              ? 'bg-[#edf5ee] border border-[#cce2cf] text-[#166534]'
+              : 'bg-rose-50 border border-rose-200 text-rose-700'
+          }`}>
+            {deleteStatus.success ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+            )}
+            <span>{deleteStatus.message}</span>
+          </div>
+        )}
+
         {/* 5. Footer */}
         <div className="p-3.5 border-t border-[#e5d0be] bg-white flex items-center justify-between text-xs text-[#8a6b53]">
-          <span>Menampilkan {filtered.length} dari {transactions.length} transaksi</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl font-bold shadow-xs transition-colors"
-          >
-            Tutup
-          </button>
+          <div className="flex items-center space-x-2">
+            <span>Menampilkan {filtered.length} dari {transactions.length} transaksi</span>
+            {canDelete && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-bold">
+                🔐 Admin: Bisa Hapus
+              </span>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handlePrintDailyReport}
+              className="px-3 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-bold shadow-xs transition-colors flex items-center space-x-1.5"
+              title="Cetak Laporan Penjualan Hari Ini"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Cetak Laporan Hari Ini</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl font-bold shadow-xs transition-colors"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
 
       </div>
