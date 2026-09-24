@@ -555,6 +555,69 @@ function handleHttpRequest(req, res) {
     });
   }
 
+  // 6.b Hapus Transaksi Terpusat oleh Admin & Kembalikan Stok Produk
+  if (pathname === '/api/lan/transactions/delete' && req.method === 'POST') {
+    return readJsonBody((payload) => {
+      const trxId = payload.transaction_id || payload.id;
+      if (!trxId) {
+        return sendJson(400, { error: 'ID Transaksi wajib diisi' });
+      }
+
+      sqliteDb.exec('BEGIN TRANSACTION;');
+      try {
+        const trx = sqliteDb.prepare('SELECT * FROM transactions WHERE id = ?').get(trxId);
+        const updatedStocks = [];
+
+        if (trx && trx.items_json) {
+          try {
+            const items = JSON.parse(trx.items_json);
+            const updateStockStmt = sqliteDb.prepare(`
+              UPDATE products 
+              SET stock = stock + ?, updated_at = ?
+              WHERE id = ?
+            `);
+            const getStockStmt = sqliteDb.prepare('SELECT id, stock FROM products WHERE id = ?');
+            const now = new Date().toISOString();
+
+            for (const item of items) {
+              const prodId = item.product_id || item.id;
+              const qty = Number(item.qty) || 0;
+              if (prodId && qty > 0) {
+                updateStockStmt.run(qty, now, prodId);
+                const current = getStockStmt.get(prodId);
+                if (current) {
+                  updatedStocks.push({ id: prodId, stock: current.stock });
+                }
+              }
+            }
+          } catch {}
+        }
+
+        sqliteDb.prepare('DELETE FROM transactions WHERE id = ?').run(trxId);
+        sqliteDb.exec('COMMIT;');
+
+        // Broadcast Real-time Event ke seluruh kasir yang terhubung
+        broadcastSseEvent('transaction_deleted', {
+          transaction_id: trxId,
+          updated_stocks: updatedStocks
+        });
+        if (updatedStocks.length > 0) {
+          broadcastSseEvent('stock_updated', updatedStocks);
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          message: 'Transaksi berhasil dihapus dari server pusat',
+          transaction_id: trxId,
+          updated_stocks: updatedStocks
+        });
+      } catch (err) {
+        try { sqliteDb.exec('ROLLBACK;'); } catch {}
+        return sendJson(500, { error: 'Gagal menghapus transaksi di server: ' + err.message });
+      }
+    });
+  }
+
   // 7. Push Batch Transaksi Offline dari Klien yang Baru Saja Reconnect
   if (pathname === '/api/lan/sync/push' && req.method === 'POST') {
     return readJsonBody((payload) => {

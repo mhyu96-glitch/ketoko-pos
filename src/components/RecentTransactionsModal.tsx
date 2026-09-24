@@ -21,19 +21,22 @@ import {
 import { db } from '../db';
 import type { Transaction } from '../types';
 import { formatRupiah } from '../services/escposService';
+import { syncService } from '../services/syncService';
 
 interface RecentTransactionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectReceipt: (trx: Transaction) => void;
   userRole?: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | 'MANAGER';
+  onTransactionDeleted?: (trxId: string) => void;
 }
 
 export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = ({
   isOpen,
   onClose,
   onSelectReceipt,
-  userRole
+  userRole,
+  onTransactionDeleted
 }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState('');
@@ -52,6 +55,18 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     }
   }, [isOpen]);
 
+  // Real-time listener: jika transaksi dihapus oleh admin di terminal/tab lain, hapus dari list langsung tanpa refresh
+  useEffect(() => {
+    const handleRemoteDelete = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setTransactions(prev => prev.filter(t => t.id !== id));
+      }
+    };
+    window.addEventListener('ketoko_transaction_deleted', handleRemoteDelete);
+    return () => window.removeEventListener('ketoko_transaction_deleted', handleRemoteDelete);
+  }, []);
+
   const loadTransactions = async () => {
     setIsLoading(true);
     try {
@@ -66,11 +81,12 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
   const handleDeleteTransaction = async (trxId: string) => {
     try {
-      await db.transactions.delete(trxId);
-      await db.syncQueue.delete(trxId);
+      // Hapus transaksi secara realtime (Lokal, LAN, Cloud Supabase) & otomatis kembalikan stok
+      await syncService.deleteTransaction(trxId);
       setTransactions(prev => prev.filter(t => t.id !== trxId));
       setDeleteConfirmId(null);
-      setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus oleh Admin.' });
+      setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus & stok barang otomatis dikembalikan.' });
+      onTransactionDeleted?.(trxId);
       setTimeout(() => setDeleteStatus(null), 3000);
     } catch (err: any) {
       setDeleteStatus({ success: false, message: 'Gagal menghapus: ' + err.message });

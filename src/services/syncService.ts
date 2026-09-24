@@ -318,6 +318,80 @@ export class SyncService {
   }
 
   /**
+   * Menghapus transaksi secara real-time ke seluruh terminal (Lokal, Tab lain, LAN, dan Cloud Supabase)
+   * Otomatis mengembalikan stok fisik produk yang terjual ke rak toko
+   */
+  async deleteTransaction(trxId: string): Promise<boolean> {
+    const trx = await db.transactions.get(trxId);
+    const updatedStocks: Array<{ id: string; stock: number }> = [];
+
+    // 1. Kembalikan stok fisik barang yang terjual di nota ini
+    if (trx && Array.isArray(trx.items)) {
+      for (const item of trx.items) {
+        const prodId = item.product_id;
+        const addQty = Number(item.qty) || 0;
+        if (prodId && addQty > 0) {
+          const prod = await db.products.get(prodId);
+          if (prod) {
+            const restoredStock = (prod.stock || 0) + addQty;
+            await this.syncProductChange({
+              ...prod,
+              stock: restoredStock
+            });
+            updatedStocks.push({ id: prodId, stock: restoredStock });
+          }
+        }
+      }
+    }
+
+    // 2. Hapus dari IndexedDB lokal & antrean sync
+    await db.transactions.delete(trxId);
+    await db.syncQueue.delete(trxId);
+
+    // 3. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({ type: 'transaction_deleted', transaction_id: trxId, updated_stocks: updatedStocks });
+        bc.close();
+      }
+    } catch {}
+
+    // 4. Kirim hapus ke LAN Server (jika aktif)
+    lanService.deleteTransaction(trxId, trx?.items).catch(() => {});
+
+    // 5. Hapus dari Cloud Supabase & Broadcast ke seluruh komputer lain (berbeda jaringan)
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          await supabase.from('transaction_items').delete().eq('transaction_id', trxId);
+          await supabase.from('transactions').delete().eq('id', trxId);
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal hapus transaksi dari Supabase:', err);
+      }
+    }
+
+    // Siarkan realtime broadcast ke semua kasir di cloud
+    this.broadcastCloudEvent('transaction_deleted', {
+      transaction_id: trxId,
+      updated_stocks: updatedStocks
+    });
+    if (updatedStocks.length > 0) {
+      this.broadcastCloudEvent('stock_updated', updatedStocks);
+    }
+
+    // Dispatch DOM event untuk komponen lokal
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+    }
+
+    this.notifyStatusChange();
+    return true;
+  }
+
+  /**
    * Menyinkronkan perubahan produk & stok secara menyeluruh ke seluruh terminal:
    * 1. Simpan ke IndexedDB lokal (Dexie)
    * 2. Broadcast ke tab lain di browser via BroadcastChannel

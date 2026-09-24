@@ -468,6 +468,14 @@ export const App: React.FC = () => {
         () => {
           loadTransactions();
           loadLocalProducts();
+        },
+        // onTransactionDeleted (Live sync across LAN cashiers)
+        (trxId) => {
+          if (!trxId) return;
+          db.transactions.delete(trxId).catch(() => {});
+          db.syncQueue.delete(trxId).catch(() => {});
+          setTransactions((prev) => prev.filter((t) => t.id !== trxId));
+          window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
         }
       );
     }
@@ -478,6 +486,17 @@ export const App: React.FC = () => {
       if (typeof BroadcastChannel !== 'undefined') {
         bc = new BroadcastChannel('ketoko_product_sync');
         bc.onmessage = (event) => {
+          if (event.data?.type === 'transaction_deleted') {
+            const trxId = event.data.transaction_id;
+            if (trxId) {
+              db.transactions.delete(trxId).catch(() => {});
+              db.syncQueue.delete(trxId).catch(() => {});
+              setTransactions((prev) => prev.filter((t) => t.id !== trxId));
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+            }
+            return;
+          }
+
           const prod = event.data?.product || event.data;
           if (prod && prod.id) {
             db.products.put(prod).catch(() => {});
@@ -548,6 +567,15 @@ export const App: React.FC = () => {
                 const s = stockMap.get(p.id);
                 return s !== undefined ? { ...p, stock: s } : p;
               }));
+            }
+          })
+          .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
+            const trxId = payload?.transaction_id || payload?.id;
+            if (trxId) {
+              await db.transactions.delete(trxId).catch(() => {});
+              await db.syncQueue.delete(trxId).catch(() => {});
+              setTransactions((prev) => prev.filter((t) => t.id !== trxId));
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
             }
           })
           .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
@@ -1091,6 +1119,9 @@ export const App: React.FC = () => {
             setIsReceiptOpen(true);
           }}
           userRole={currentUser?.role}
+          onTransactionDeleted={(deletedId) => {
+            setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
+          }}
         />
       )}
 
@@ -1140,6 +1171,7 @@ export const App: React.FC = () => {
           onClose={() => setIsShiftReportOpen(false)}
           cashierName={currentUser?.name}
           branchId={currentUser?.branch_id}
+          transactions={transactions}
         />
       )}
 
