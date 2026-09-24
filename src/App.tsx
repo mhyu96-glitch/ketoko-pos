@@ -273,8 +273,28 @@ export const App: React.FC = () => {
           setProducts(all);
         }
       } else {
-        // 1. Fetch all products into state (Clean start; products are injected/imported per store as needed)
-        const all = await db.products.toArray();
+        // 1. Fetch all products into state (Auto-seed from /data/products.json if empty or containing old dummy products)
+        let all = await db.products.toArray();
+        const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
+        if (all.length === 0 || hasOldDummy) {
+          try {
+            const res = await fetch('/data/products.json');
+            if (res.ok) {
+              const defaultProds = await res.json();
+              if (defaultProds && defaultProds.length > 0) {
+                await db.products.clear();
+                const chunkSize = 1000;
+                for (let i = 0; i < defaultProds.length; i += chunkSize) {
+                  await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
+                }
+                all = defaultProds;
+                console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
+              }
+            }
+          } catch (err) {
+            console.warn('[App] Gagal auto-load /data/products.json:', err);
+          }
+        }
         setProducts(all);
       }
 
@@ -610,6 +630,26 @@ export const App: React.FC = () => {
     api.setToken(null);
   };
 
+  const handleInjectCatalog = async () => {
+    try {
+      const res = await fetch('/data/products.json');
+      if (res.ok) {
+        const prods = await res.json();
+        if (prods && prods.length > 0) {
+          await db.products.clear();
+          const chunkSize = 1000;
+          for (let i = 0; i < prods.length; i += chunkSize) {
+            await db.products.bulkPut(prods.slice(i, i + chunkSize));
+          }
+          setProducts(prods);
+          alert(`Berhasil menginjeksi ${prods.length.toLocaleString('id-ID')} data produk sparepart AC CV. Tumbuh Makmur ke sistem kasir!`);
+        }
+      }
+    } catch (err) {
+      alert('Gagal menginjeksi katalog: ' + err);
+    }
+  };
+
   // If not logged in, render login modal
   if (!currentUser) {
     return <LoginModal onLoginSuccess={handleLoginSuccess} />;
@@ -625,6 +665,8 @@ export const App: React.FC = () => {
           onEnterStorePos={() => setCurrentView('pos')}
           onOpenLanModal={() => setIsLanModalOpen(true)}
           onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
+          onInjectCatalog={handleInjectCatalog}
+          totalProductsLoaded={products.length}
         />
 
         {/* LAN Network, Cloudflare Tunnel & Supabase Cloud */}
