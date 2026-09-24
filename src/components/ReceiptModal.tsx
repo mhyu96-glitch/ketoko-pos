@@ -274,9 +274,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     ? 'bg-[#166534] text-white shadow-xs ring-1 ring-[#166534]'
                     : 'bg-white text-[#5c3c26] border border-[#ddc3aa] hover:bg-[#faebd7]'
                 }`}
-                title="1 Lembar kertas A4 berisi 2 Faktur (Atas: Asli Pembeli, Bawah: Salinan Kasir) - Mengisi penuh kertas tanpa sisa kosong di bawah"
+                title="Kertas A4 dipotong 2 / A5 Landscape (210 x 148 mm) - Faktur tunggal proporsional mengisi kertas"
               >
-                <span>📄 A4 Di Bagi 2 (2 Rangkap)</span>
+                <span>📄 A4 Bagi 2 (A5)</span>
               </button>
 
               {/* Option: A4 Full */}
@@ -288,9 +288,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     ? 'bg-[#166534] text-white shadow-xs ring-1 ring-[#166534]'
                     : 'bg-white text-[#5c3c26] border border-[#ddc3aa] hover:bg-[#faebd7]'
                 }`}
-                title="1 Lembar HVS A4 utuh penuh (Faktur Tunggal Besar Portrait 210 x 297 mm)"
+                title="1 Lembar HVS A4 utuh penuh (Portrait 210 x 297 mm) - Faktur besar memenuhi 1 halaman A4"
               >
-                <span>📃 A4 Full Page</span>
+                <span>📃 A4 Full (1 Lembar)</span>
               </button>
 
               {/* Option: Continuous Form 1/2 */}
@@ -347,7 +347,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                           ? 'Continuous 1/2'
                           : config.dotMatrixPaperSize === 'CONTINUOUS_FULL' || config.dotMatrixPaperSize === 'FULL_CONTINUOUS'
                           ? 'Continuous Full'
-                          : 'A4 Di Bagi 2'
+                          : 'A4 Bagi 2'
                       })`}
                 </span>
               </button>
