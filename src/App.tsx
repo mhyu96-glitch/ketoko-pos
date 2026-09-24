@@ -260,24 +260,9 @@ export const App: React.FC = () => {
           setProducts(all);
         }
       } else {
-        // 1. Fetch all products into state
+        // 1. Fetch all products into state (Clean start; products are injected/imported per store as needed)
         const all = await db.products.toArray();
-        if (all.length > 0) {
-          setProducts(all);
-        } else {
-          // If fresh device / empty local DB, auto-pull catalog from Supabase Cloud
-          try {
-            const pullRes = await syncService.pullFromSupabase();
-            if (pullRes && pullRes.count > 0) {
-              const cloudProds = await db.products.toArray();
-              setProducts(cloudProds);
-            } else {
-              setProducts([]);
-            }
-          } catch {
-            setProducts([]);
-          }
-        }
+        setProducts(all);
       }
 
       // Ensure active users for CV. Tumbuh Makmur Air Conindo are registered

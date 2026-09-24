@@ -64,7 +64,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       licensePlan: 'PRO LIFETIME (Aktif)',
       adminUser: 'suciawati (Owner)',
       cashierUser: 'noor (Kasir Toko)',
-      productsCount: '24.531 Produk Ready',
+      productsCount: 'Katalog Sparepart AC (Inject Terdaftar)',
       status: 'ONLINE'
     }
   ]);
@@ -202,8 +202,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             </div>
             <div>
               <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Cloud Database (Supabase)</div>
-              <div className="text-sm font-black text-sky-300">24.531 Produk Ready</div>
-              <div className="text-[10px] text-stone-400">quhjgsoqjcumckoshjtv</div>
+              <div className="text-sm font-black text-sky-300">24.531 Master Catalog</div>
+              <div className="text-[10px] text-stone-400">Siap Inject (Sparepart AC)</div>
             </div>
           </div>
 
