@@ -17,6 +17,31 @@ export class SyncService {
   private isSyncing = false;
   private lastSyncTime: string | null = localStorage.getItem('ketoko_last_sync_time');
   private lastError: string | null = null;
+  private cloudLiveChannel: any = null;
+
+  public getCloudLiveChannel() {
+    if (this.cloudLiveChannel) return this.cloudLiveChannel;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    this.cloudLiveChannel = supabase.channel('ketoko_global_live_sync');
+    this.cloudLiveChannel.subscribe();
+    return this.cloudLiveChannel;
+  }
+
+  public broadcastCloudEvent(event: string, payload: any) {
+    try {
+      const ch = this.getCloudLiveChannel();
+      if (ch) {
+        ch.send({
+          type: 'broadcast',
+          event,
+          payload
+        });
+      }
+    } catch (err) {
+      console.warn('[Sync] Broadcast cloud event error:', err);
+    }
+  }
 
   getStatus(): SyncStatusInfo {
     const config = getSupabaseConfig();
@@ -107,15 +132,19 @@ export class SyncService {
   }
 
   async saveTransactionOffline(transaction: Transaction): Promise<void> {
+    const updatedStocks: Array<{ id: string; stock: number }> = [];
+
     await db.transaction('rw', db.transactions, db.products, db.syncQueue, async () => {
       await db.transactions.put(transaction);
 
       for (const item of transaction.items) {
         const prod = await db.products.get(item.product_id);
         if (prod) {
+          const newStock = Math.max(0, prod.stock - item.qty);
           await db.products.update(item.product_id, {
-            stock: Math.max(0, prod.stock - item.qty)
+            stock: newStock
           });
+          updatedStocks.push({ id: item.product_id, stock: newStock });
         }
       }
 
@@ -128,6 +157,15 @@ export class SyncService {
       };
       await db.syncQueue.put(queueItem);
     });
+
+    // Broadcast ke komputer admin/kasir lain di cloud (jaringan berbeda)
+    this.broadcastCloudEvent('transaction_created', {
+      ...transaction,
+      updated_stocks: updatedStocks
+    });
+    if (updatedStocks.length > 0) {
+      this.broadcastCloudEvent('stock_updated', updatedStocks);
+    }
 
     this.notifyStatusChange();
 
@@ -307,12 +345,37 @@ export class SyncService {
     // 3. Kirim ke LAN Server terpusat (jika aktif)
     lanService.submitProduct(updatedProd).catch(() => {});
 
-    // 4. Kirim ke Supabase Cloud (jika online & terkonfigurasi)
+    // 4. Kirim ke Supabase Cloud & Broadcast ke seluruh komputer kasir/admin (berbeda jaringan)
     if (navigator.onLine) {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
-          await supabase.from('products').upsert(updatedProd, { onConflict: 'id' });
+          // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
+          const cloudPayload = {
+            id: String(updatedProd.id),
+            barcode: updatedProd.barcode || '',
+            name: updatedProd.name,
+            category: updatedProd.category || 'Kebutuhan Umum',
+            buy_price: Number(updatedProd.buy_price) || 0,
+            retail_price: Number(updatedProd.retail_price) || 0,
+            wholesale_price: Number(updatedProd.wholesale_price) || 0,
+            stock: Number(updatedProd.stock) || 0,
+            unit: updatedProd.unit || 'Pcs',
+            rack_location: updatedProd.rack_location || 'Rak Utama',
+            image_url: updatedProd.image_url || '',
+            updated_at: updatedProd.updated_at
+          };
+
+          const { error: upsertErr } = await supabase
+            .from('products')
+            .upsert(cloudPayload, { onConflict: 'id' });
+
+          if (upsertErr) {
+            console.warn('[Sync] Gagal upsert produk ke Supabase:', upsertErr.message);
+          }
+
+          // Siarkan langsung event real-time ke seluruh komputer kasir di jaringan mana saja
+          this.broadcastCloudEvent('product_updated', updatedProd);
         }
       } catch (e) {
         console.warn('[Sync] Gagal push produk ke Supabase:', e);
@@ -472,6 +535,9 @@ export class SyncService {
    * Upload faktur pembelian barang ke Cloud Supabase
    */
   async pushPurchaseToSupabase(purchase: any): Promise<boolean> {
+    // Siarkan event ke seluruh komputer kasir/admin di jaringan berbeda
+    this.broadcastCloudEvent('purchase_created', purchase);
+
     const supabase = getSupabaseClient();
     if (!supabase) return false;
 

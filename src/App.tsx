@@ -301,6 +301,17 @@ export const App: React.FC = () => {
           }
         }
         setProducts(all);
+
+        // 2. Tarik pembaruan produk & stok terbaru dari Cloud Supabase (dari komputer lain di jaringan berbeda)
+        if (navigator.onLine) {
+          syncService.pullFromSupabase().then((res) => {
+            if (res && res.count > 0) {
+              db.products.toArray().then((fresh) => {
+                if (fresh && fresh.length > 0) setProducts(fresh);
+              });
+            }
+          }).catch(() => {});
+        }
       }
 
       // Ensure active users for CV. Tumbuh Makmur Air Conindo are registered
@@ -484,13 +495,70 @@ export const App: React.FC = () => {
       }
     } catch {}
 
-    // 3. Supabase Cloud Realtime listener for cross-device live sync
+    // 3. Supabase Cloud Realtime listener for cross-device & cross-network live sync
     let supabaseChannel: any = null;
     try {
       const supabase = getSupabaseClient();
       if (supabase) {
         supabaseChannel = supabase
-          .channel('public:products_live')
+          .channel('ketoko_global_live_sync')
+          .on('broadcast', { event: 'product_updated' }, ({ payload }) => {
+            const prod = payload as Product;
+            if (prod && prod.id) {
+              db.products.put(prod).catch(() => {});
+              setProducts((prev) => {
+                const idx = prev.findIndex(p => p.id === prod.id);
+                if (idx >= 0) {
+                  const copy = [...prev];
+                  copy[idx] = { ...copy[idx], ...prod };
+                  return copy;
+                }
+                return [prod, ...prev];
+              });
+            }
+          })
+          .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
+            if (payload && payload.id) {
+              await db.purchases.put(payload).catch(() => {});
+              if (Array.isArray(payload.items)) {
+                for (const it of payload.items) {
+                  const prodId = it.product_id || it.id;
+                  const addQty = Number(it.qty) || 0;
+                  if (prodId && addQty > 0) {
+                    const existing = await db.products.get(prodId);
+                    if (existing) {
+                      const updated = {
+                        ...existing,
+                        stock: (existing.stock || 0) + addQty,
+                        buy_price: it.buy_price || existing.buy_price
+                      };
+                      await db.products.put(updated);
+                      setProducts((prev) => prev.map(p => p.id === prodId ? updated : p));
+                    }
+                  }
+                }
+              }
+            }
+          })
+          .on('broadcast', { event: 'transaction_created' }, ({ payload }) => {
+            loadTransactions();
+            if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(p.id);
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
+            }
+          })
+          .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
+            if (Array.isArray(payload)) {
+              const stockMap = new Map<string, number>(payload.map((s: any) => [s.id, Number(s.stock) || 0]));
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(p.id);
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
+            }
+          })
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'products' },
@@ -513,7 +581,7 @@ export const App: React.FC = () => {
           .subscribe();
       }
     } catch (err) {
-      console.warn('[App] Realtime Supabase products subscription error:', err);
+      console.warn('[App] Realtime Supabase subscription error:', err);
     }
 
     return () => {

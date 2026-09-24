@@ -14,6 +14,7 @@ import { formatRupiah } from '../services/escposService';
 import { CustomSelect } from './CustomSelect';
 import { lanService } from '../services/lanService';
 import { syncService } from '../services/syncService';
+import { getSupabaseClient } from '../api/supabaseClient';
 
 interface PurchasesAndReturnsModalProps {
   isOpen: boolean;
@@ -119,6 +120,10 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
       if (initialTab === 'add_purchase') {
         setActiveTab('history');
         setIsAddingPurchase(true);
+        if (!poInvoice) {
+          const rand = Math.floor(100 + Math.random() * 900);
+          setPoInvoice(`FB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${rand}`);
+        }
       } else {
         setActiveTab(initialTab);
         setIsAddingPurchase(false);
@@ -152,7 +157,40 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     const allPurchases = await db.purchases.toArray();
     const allPRet = await db.purchaseReturns.toArray();
     const allSRet = await db.salesReturns.toArray();
-    const allSuppliers = await db.suppliers.toArray();
+    let allSuppliers = await db.suppliers.toArray();
+
+    // Pastikan supplier tidak kosong agar user langsung punya opsi
+    if (allSuppliers.length === 0) {
+      const defaultSuppliers: Supplier[] = [
+        {
+          id: 'sup-001',
+          code: 'SUP-01',
+          name: 'Distributor AC & Sparepart Utama',
+          sales_contact: 'Bpk. Hendra',
+          phone: '0812-3456-7890',
+          address: 'Samarinda',
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'sup-002',
+          code: 'SUP-02',
+          name: 'Supplier Umum / Mitra Toko',
+          sales_contact: 'Admin Toko',
+          phone: '0811-5121-215',
+          address: 'Samarinda',
+          created_at: new Date().toISOString()
+        }
+      ];
+      await db.suppliers.bulkPut(defaultSuppliers);
+      allSuppliers = defaultSuppliers;
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          await supabase.from('suppliers').upsert(defaultSuppliers as any);
+        }
+      } catch {}
+    }
+
     const allProducts = await db.products.toArray();
 
     setPurchases(allPurchases);
@@ -160,14 +198,28 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     setSalesReturns(allSRet);
     setSuppliers(allSuppliers);
     setProducts(allProducts);
+
+    if (!poSupplierId && allSuppliers.length > 0) {
+      setPoSupplierId(allSuppliers[0].id);
+    }
   };
 
   // Add Item to Draft Purchase
   const handleAddItemToPo = () => {
-    if (!poSelectedProdId || poQty <= 0) return;
-    const prod = products.find((p) => p.id === poSelectedProdId);
-    if (!prod) return;
+    let targetProd = products.find((p) => p.id === poSelectedProdId);
+    if (!targetProd && poSearchResults.length > 0) {
+      targetProd = poSearchResults[0];
+    }
+    if (!targetProd) {
+      alert('⚠️ Silakan cari dan pilih produk dari daftar pencarian terlebih dahulu.');
+      return;
+    }
+    if (poQty <= 0) {
+      alert('⚠️ Jumlah (Qty) harus minimal 1.');
+      return;
+    }
 
+    const prod = targetProd;
     const existingIndex = poItems.findIndex((it) => it.product.id === prod.id);
     if (existingIndex >= 0) {
       const updated = [...poItems];
@@ -187,14 +239,32 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     }
 
     setPoSelectedProdId('');
+    setPoProductSearch('');
+    setIsPoSearching(false);
     setPoQty(1);
   };
 
   // Handle Save Purchase (Tambah Stok Otomatis & Sinkron)
   const handleSavePurchase = async () => {
-    if (!poInvoice.trim() || !poSupplierId || poItems.length === 0) return;
-    const sup = suppliers.find((s) => s.id === poSupplierId);
-    if (!sup) return;
+    if (poItems.length === 0) {
+      alert('⚠️ Faktur pembelian masih kosong!\n\nSilakan:\n1. Cari nama/barcode barang di kolom "Cari nama barang"\n2. Tentukan Qty barang masuk\n3. Klik tombol "+ Tambah Item"\n\nSetelah item muncul di tabel faktur, klik "Simpan & Tambah Stok Masuk".');
+      return;
+    }
+
+    const invoiceNo = poInvoice.trim() || `FB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    let sup = suppliers.find((s) => s.id === poSupplierId);
+    if (!sup) {
+      sup = suppliers[0] || {
+        id: 'sup-001',
+        code: 'SUP-01',
+        name: 'Supplier Umum / Mitra Toko',
+        contact_person: 'Admin',
+        phone: '',
+        address: 'Samarinda',
+        current_payable: 0,
+        created_at: new Date().toISOString()
+      };
+    }
 
     const totalBill = poItems.reduce((acc, it) => acc + it.subtotal, 0);
     const dueDateValue = poPaymentType === 'TEMPO' 
@@ -203,7 +273,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
 
     const newPurchase: Purchase = {
       id: `pur-${Date.now()}`,
-      invoice_number: poInvoice.trim(),
+      invoice_number: invoiceNo,
       supplier_id: sup.id,
       supplier_name: sup.name,
       date: new Date().toISOString().split('T')[0],
@@ -223,13 +293,13 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     // 1. Simpan Pembelian ke Dexie Lokal
     await db.purchases.put(newPurchase);
 
-    // 2. Tambah Stok Fisik untuk Setiap Barang & Sinkronkan
+    // 2. Tambah Stok Fisik untuk Setiap Barang & Sinkronkan ke Semua Komputer
     for (const it of poItems) {
       const p = await db.products.get(it.product.id);
       if (p) {
         await syncService.syncProductChange({
           ...p,
-          stock: p.stock + it.qty,
+          stock: (p.stock || 0) + it.qty,
           buy_price: it.buy_price || p.buy_price
         });
       }
@@ -242,15 +312,18 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
         supplier_id: sup.id,
         supplier_code: sup.code,
         supplier_name: sup.name,
-        invoice_number: poInvoice.trim(),
+        invoice_number: invoiceNo,
         total_amount: totalBill,
         paid_amount: 0,
         remaining_amount: totalBill,
         invoice_date: new Date().toISOString().split('T')[0],
         due_date: dueDateValue || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
         status: 'UNPAID',
-        notes: `Faktur Pembelian ${poInvoice}`
+        notes: `Faktur Pembelian ${invoiceNo}`
       });
+      if (navigator.onLine) {
+        syncService.syncDebtsAndReceivables().catch(() => {});
+      }
     }
 
     // 4. Sinkronisasi ke LAN Server (Multi-Kasir Terpusat)
@@ -262,7 +335,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
       }
     }
 
-    // 5. Sinkronisasi ke Cloud Supabase
+    // 5. Sinkronisasi & Realtime Broadcast ke Cloud Supabase (Komputer lain berbeda jaringan)
     if (navigator.onLine) {
       try {
         await syncService.pushPurchaseToSupabase(newPurchase);
@@ -273,6 +346,8 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
         console.warn('[Purchases] Gagal kirim pembelian ke Supabase:', err);
       }
     }
+
+    alert(`✅ Faktur Pembelian "${invoiceNo}" Berhasil Disimpan!\n\nStok produk telah bertambah dan disinkronkan ke seluruh terminal kasir.`);
 
     setIsAddingPurchase(false);
     setPoInvoice('');
@@ -444,7 +519,16 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
           <div>
             {activeTab === 'history' && (
               <button
-                onClick={() => setIsAddingPurchase(true)}
+                onClick={() => {
+                  if (!poInvoice) {
+                    const rand = Math.floor(100 + Math.random() * 900);
+                    setPoInvoice(`FB-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${rand}`);
+                  }
+                  if (!poSupplierId && suppliers.length > 0) {
+                    setPoSupplierId(suppliers[0].id);
+                  }
+                  setIsAddingPurchase(true);
+                }}
                 className="px-3.5 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs transition-all active:scale-95"
               >
                 <Plus className="w-4 h-4" />
@@ -591,6 +675,12 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                               setPoProductSearch(e.target.value);
                               setIsPoSearching(true);
                             }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddItemToPo();
+                              }
+                            }}
                             className="w-full pl-8 pr-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-medium focus:border-[#96633b]"
                           />
                         </div>
@@ -625,18 +715,21 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                           type="number"
                           min="1"
                           value={poQty}
-                          onChange={(e) => setPoQty(Number(e.target.value))}
+                          onChange={(e) => setPoQty(Math.max(1, Number(e.target.value) || 1))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddItemToPo();
+                            }
+                          }}
                           placeholder="Qty..."
                           className="w-full px-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
                         />
                       </div>
                       <button
-                        onClick={() => {
-                          handleAddItemToPo();
-                          setPoProductSearch('');
-                        }}
-                        disabled={!poSelectedProdId}
-                        className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95"
+                        onClick={handleAddItemToPo}
+                        disabled={!poSelectedProdId && poSearchResults.length === 0}
+                        className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
                       >
                         + Tambah Item
                       </button>
