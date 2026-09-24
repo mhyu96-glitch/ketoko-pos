@@ -22,6 +22,7 @@ import {
   CreditCard,
   ArrowRight,
   RotateCcw,
+  PlusCircle,
   ArrowDownToLine,
   ArrowUpFromLine,
   ClipboardCheck,
@@ -44,7 +45,7 @@ interface TopMenuBarProps {
   onOpenQATest: () => void;
   onOpenPrinterSettings: () => void;
   onOpenRestock: () => void;
-  onOpenPurchaseOrder: () => void;
+  onOpenPurchaseOrder?: () => void;
   onOpenMemberModal: () => void;
   onOpenShiftReport: () => void;
   onOpenBarcodeLabels?: () => void;
@@ -54,7 +55,7 @@ interface TopMenuBarProps {
   onOpenOmsetChart?: () => void;
   onOpenCustomerSupplier?: (tab?: 'customer' | 'supplier') => void;
   onOpenDebtReceivable?: (tab?: 'debt' | 'receivable' | 'report') => void;
-  onOpenPurchasesAndReturns?: (tab?: 'history' | 'purchase_return' | 'sales_return') => void;
+  onOpenPurchasesAndReturns?: (tab?: 'history' | 'purchase_return' | 'sales_return' | 'add_purchase') => void;
   onOpenStockAdjustments?: (tab?: 'in' | 'out' | 'opname') => void;
   onOpenStoreSettings?: (tab?: 'profile' | 'theme' | 'csv' | 'backup' | 'users') => void;
   onOpenPWAInstall?: () => void;
@@ -71,7 +72,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
   onOpenQATest,
   onOpenPrinterSettings,
   onOpenRestock,
-  onOpenPurchaseOrder,
+  onOpenPurchaseOrder: _onOpenPurchaseOrder,
   onOpenMemberModal,
   onOpenShiftReport,
   onOpenBarcodeLabels,
@@ -360,20 +361,20 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     </div>
                   </button>
 
-                  {/* Purchase Order (PO) */}
+                  {/* Tambah Pembelian (Input Faktur Beli Baru) */}
                   <button
                     onClick={() => {
-                      onOpenPurchaseOrder();
+                      onOpenPurchasesAndReturns?.('add_purchase');
                       setOpenDropdown(null);
                     }}
                     className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
                   >
-                    <div className="w-8 h-8 rounded-xl bg-[#f5ece3] text-[#543c2e] flex items-center justify-center shrink-0">
-                      <Truck className="w-4 h-4" />
+                    <div className="w-8 h-8 rounded-xl bg-[#edf5ee] text-[#166534] flex items-center justify-center shrink-0">
+                      <PlusCircle className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Pesanan Pembelian (PO)</div>
-                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Order barang ke distributor</div>
+                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Tambah Pembelian</div>
+                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Input faktur masuk, supplier & tempo</div>
                     </div>
                   </button>
 

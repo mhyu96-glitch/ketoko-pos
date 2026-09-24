@@ -18,7 +18,7 @@ import { syncService } from '../services/syncService';
 interface PurchasesAndReturnsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'history' | 'purchase_return' | 'sales_return';
+  initialTab?: 'history' | 'purchase_return' | 'sales_return' | 'add_purchase';
   onUpdated?: () => void;
 }
 
@@ -28,7 +28,9 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
   initialTab = 'history',
   onUpdated
 }) => {
-  const [activeTab, setActiveTab] = useState<'history' | 'purchase_return' | 'sales_return'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'history' | 'purchase_return' | 'sales_return'>(
+    initialTab === 'add_purchase' ? 'history' : initialTab
+  );
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>([]);
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([]);
@@ -114,7 +116,13 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      if (initialTab === 'add_purchase') {
+        setActiveTab('history');
+        setIsAddingPurchase(true);
+      } else {
+        setActiveTab(initialTab);
+        setIsAddingPurchase(false);
+      }
       loadData();
     }
   }, [isOpen, initialTab]);

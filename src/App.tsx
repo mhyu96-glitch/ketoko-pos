@@ -136,7 +136,7 @@ export const App: React.FC = () => {
   const [debtReceivableTab, setDebtReceivableTab] = useState<'debt' | 'receivable' | 'report'>('debt');
 
   const [isPurchasesReturnsOpen, setIsPurchasesReturnsOpen] = useState(false);
-  const [purchasesReturnsTab, setPurchasesReturnsTab] = useState<'history' | 'purchase_return' | 'sales_return'>('history');
+  const [purchasesReturnsTab, setPurchasesReturnsTab] = useState<'history' | 'purchase_return' | 'sales_return' | 'add_purchase'>('history');
 
   const [isStockAdjustmentsOpen, setIsStockAdjustmentsOpen] = useState(false);
   const [stockAdjustmentsTab, setStockAdjustmentsTab] = useState<'in' | 'out' | 'opname'>('in');
