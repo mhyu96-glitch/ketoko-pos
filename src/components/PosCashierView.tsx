@@ -41,6 +41,8 @@ interface PosCashierViewProps {
   setMemberId: (id: string) => void;
   taxEnabled: boolean;
   setTaxEnabled: (enabled: boolean) => void;
+  taxRate?: number;
+  onTaxRateChange?: (rate: number) => void;
   subtotal: number;
   wholesaleSavings: number;
   discountAmount: number;
@@ -182,6 +184,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   setMemberId,
   taxEnabled,
   setTaxEnabled,
+  taxRate = 11,
+  onTaxRateChange,
   subtotal,
   wholesaleSavings,
   discountAmount,
@@ -201,6 +205,14 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   // Quick cash tender input state
   const [cashGivenInput, setCashGivenInput] = useState<string>('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER'>('CASH');
+
+  // Dynamic tax rate modal state
+  const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
+  const [tempTaxRate, setTempTaxRate] = useState<string>(String(taxRate));
+
+  useEffect(() => {
+    setTempTaxRate(String(taxRate));
+  }, [taxRate]);
   
   // Held / Pending carts state
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>(() => {
@@ -615,20 +627,37 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                 <UserCheck className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#8a6b53]" />
               </div>
 
-              <button
-                type="button"
-                onClick={() => setTaxEnabled(!taxEnabled)}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs transition-colors shadow-2xs shrink-0 ${
+              {/* Dynamic Tax Rate Badge with Quick Edit & Toggle Checkbox */}
+              <div className="relative shrink-0 flex items-center">
+                <div className={`flex items-center rounded-xl border text-xs shadow-2xs overflow-hidden transition-all ${
                   taxEnabled
-                    ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf] font-bold'
-                    : 'bg-[#fcf8f4] text-[#7c4e2f] border-[#dfcebe] font-medium'
-                }`}
-              >
-                <span>PPN 11%</span>
-                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${taxEnabled ? 'bg-[#15803d] text-white' : 'bg-[#e5d0be]'}`}>
-                  {taxEnabled && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                    ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf]'
+                    : 'bg-[#fcf8f4] text-[#7c4e2f] border-[#dfcebe]'
+                }`}>
+                  {/* Clickable Tax percentage label to edit rate */}
+                  <button
+                    type="button"
+                    onClick={() => setIsTaxModalOpen(true)}
+                    title="Klik untuk ubah persentase pajak PPN (bisa diset berapa aja: 0%, 10%, 11%, 12%, dsb)"
+                    className="px-2 py-1.5 font-bold hover:bg-black/5 flex items-center space-x-1 transition-colors"
+                  >
+                    <span>PPN {taxRate}%</span>
+                    <span className="text-[10px] opacity-70">✏️</span>
+                  </button>
+
+                  {/* Toggle Checkmark button */}
+                  <button
+                    type="button"
+                    onClick={() => setTaxEnabled(!taxEnabled)}
+                    title={taxEnabled ? 'Pajak Aktif (Klik untuk nonaktifkan)' : 'Pajak Mati (Klik untuk aktifkan)'}
+                    className="px-2 py-1.5 border-l border-inherit hover:bg-black/5 transition-colors flex items-center justify-center"
+                  >
+                    <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${taxEnabled ? 'bg-[#15803d] text-white' : 'bg-[#e5d0be]'}`}>
+                      {taxEnabled && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                    </div>
+                  </button>
                 </div>
-              </button>
+              </div>
             </div>
 
             {/* Breakdown lines */}
@@ -658,8 +687,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
               {taxAmount > 0 && (
                 <div className="flex justify-between text-[#8a6b53]">
-                  <span>PPN (11%)</span>
-                  <span className="font-mono">{formatRupiah(taxAmount)}</span>
+                  <span>PPN ({taxRate}%)</span>
+                  <span className="font-mono font-bold text-[#332219]">{formatRupiah(taxAmount)}</span>
                 </div>
               )}
             </div>
@@ -1015,6 +1044,98 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Tax Rate Setting Modal */}
+      {isTaxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-xs rounded-3xl shadow-2xl p-5 space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-[#ebdccf] pb-2">
+              <div className="flex items-center space-x-2">
+                <div className="p-1.5 rounded-xl bg-emerald-100 text-emerald-800">
+                  <Percent className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-[#3d2617]">Atur Persentase Pajak</h4>
+                  <p className="text-[10px] text-[#8a6b53]">Masukkan tarif PPN berapa saja</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTaxModalOpen(false)}
+                className="text-stone-400 hover:text-stone-700 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Preset Buttons */}
+            <div>
+              <label className="text-[10px] font-bold text-[#8a6b53] uppercase block mb-1.5">Pilihan Cepat:</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[0, 5, 10, 11, 12].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      onTaxRateChange?.(preset);
+                      setTempTaxRate(String(preset));
+                      setIsTaxModalOpen(false);
+                    }}
+                    className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                      taxRate === preset 
+                        ? 'bg-[#166534] text-white border-[#166534] shadow-xs' 
+                        : 'bg-white text-[#5c3c26] border-[#ddc3aa] hover:bg-[#faebd7]'
+                    }`}
+                  >
+                    {preset}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Input */}
+            <div>
+              <label className="text-[10px] font-bold text-[#8a6b53] uppercase block mb-1.5">Atau Masukkan Angka Bebas (%):</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={tempTaxRate}
+                  onChange={(e) => setTempTaxRate(e.target.value)}
+                  placeholder="e.g. 11"
+                  className="w-full pl-3 pr-8 py-2 rounded-xl bg-white border border-[#ddc3aa] text-xs font-bold text-[#3d2617] focus:outline-none focus:border-[#96633b]"
+                />
+                <span className="absolute right-3 top-2 text-stone-500 font-bold text-xs">%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsTaxModalOpen(false)}
+                className="flex-1 py-2 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-bold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parseFloat(tempTaxRate);
+                  if (!isNaN(parsed) && parsed >= 0) {
+                    onTaxRateChange?.(parsed);
+                  }
+                  setIsTaxModalOpen(false);
+                }}
+                className="flex-1 py-2 rounded-xl bg-[#96633b] hover:bg-[#83532e] text-white text-xs font-extrabold shadow-xs transition-all active:scale-95"
+              >
+                Terapkan
+              </button>
+            </div>
           </div>
         </div>
       )}

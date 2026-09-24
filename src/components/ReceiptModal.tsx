@@ -241,7 +241,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               )}
               {transaction.tax_amount > 0 && (
                 <div className="flex justify-between text-[#8a6b53]">
-                  <span>PPN (11%):</span>
+                  <span>
+                    PPN ({
+                      Math.max(1, transaction.subtotal - (transaction.discount_amount || 0)) > 0
+                        ? Math.round((transaction.tax_amount / Math.max(1, transaction.subtotal - (transaction.discount_amount || 0))) * 100)
+                        : 11
+                    }%):
+                  </span>
                   <span className="font-mono font-bold text-[#3d2617]">{formatRupiah(transaction.tax_amount)}</span>
                 </div>
               )}

@@ -207,6 +207,8 @@ export const App: React.FC = () => {
     setMemberId,
     taxEnabled,
     setTaxEnabled,
+    taxRate,
+    setTaxRate,
     addItem: addToCart,
     updateQuantity: updateCartQty,
     removeItem: removeCartItem,
@@ -218,6 +220,17 @@ export const App: React.FC = () => {
     grandTotal,
     totalItemCount
   } = useCart();
+
+  // Listen for global tax rate updates
+  useEffect(() => {
+    const handleTaxRateChanged = (e: any) => {
+      if (typeof e.detail === 'number') {
+        setTaxRate(e.detail);
+      }
+    };
+    window.addEventListener('ketoko_tax_rate_changed', handleTaxRateChanged);
+    return () => window.removeEventListener('ketoko_tax_rate_changed', handleTaxRateChanged);
+  }, [setTaxRate]);
 
   const isSyncingRef = useRef(false);
 
@@ -799,6 +812,8 @@ export const App: React.FC = () => {
           setMemberId={setMemberId}
           taxEnabled={taxEnabled}
           setTaxEnabled={setTaxEnabled}
+          taxRate={taxRate}
+          onTaxRateChange={setTaxRate}
           subtotal={subtotal}
           wholesaleSavings={wholesaleSavings}
           discountAmount={discountAmount}

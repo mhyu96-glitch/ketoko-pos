@@ -209,7 +209,9 @@ export class ESCPOSBuilder {
     }
 
     if (transaction.tax_amount > 0) {
-      this.addLine(formatRow('PPN (11%)', formatRupiah(transaction.tax_amount), width));
+      const netBase = Math.max(1, transaction.subtotal - (transaction.discount_amount || 0));
+      const ratePercent = Math.round((transaction.tax_amount / netBase) * 100);
+      this.addLine(formatRow(`PPN (${ratePercent}%)`, formatRupiah(transaction.tax_amount), width));
     }
 
     this.bold(true)
@@ -835,7 +837,7 @@ export function generateDotMatrixHTML(
             </tr>` : ''}
             ${transaction.tax_amount > 0 ? `
             <tr>
-              <td>PPN (11%)</td>
+              <td>PPN (${Math.round((transaction.tax_amount / Math.max(1, transaction.subtotal - (transaction.discount_amount || 0))) * 100)}%)</td>
               <td class="text-right font-mono">${formatRupiah(transaction.tax_amount)}</td>
             </tr>` : ''}
             <tr style="border-top: 1px solid #000; font-weight: 800; font-size: 12px;">

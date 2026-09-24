@@ -46,7 +46,8 @@ const DEFAULT_STORE_PROFILE: StoreProfile = {
   phone: '0812-3456-7890',
   footer_message: 'Terima kasih atas kunjungan Anda! Barang yang dibeli dapat ditukar max 3 hari.',
   logo_base64: '',
-  npwp: '01.234.567.8-721.000'
+  npwp: '01.234.567.8-721.000',
+  tax_rate: 11
 };
 
 export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
@@ -127,6 +128,9 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   // Save Store Profile
   const handleSaveProfile = () => {
     localStorage.setItem('ketoko_store_profile', JSON.stringify(storeProfile));
+    const rateToSave = typeof storeProfile.tax_rate === 'number' ? storeProfile.tax_rate : 11;
+    localStorage.setItem('ketoko_tax_rate', String(rateToSave));
+    window.dispatchEvent(new CustomEvent('ketoko_tax_rate_changed', { detail: rateToSave }));
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 3000);
     onProfileUpdated?.();
@@ -728,6 +732,24 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                       onChange={(e) => setStoreProfile({ ...storeProfile, npwp: e.target.value })}
                       className="w-full px-3 py-2 border border-[#ddc3aa] rounded-xl bg-white font-mono focus:border-[#96633b]"
                     />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#5c3c26] block mb-1">Tarif Pajak PPN Default (%):</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={storeProfile.tax_rate ?? 11}
+                        onChange={(e) => setStoreProfile({ ...storeProfile, tax_rate: parseFloat(e.target.value) || 0 })}
+                        placeholder="Contoh: 11 (bisa diisi berapa aja)"
+                        className="w-full pl-3 pr-8 py-2 border border-[#ddc3aa] rounded-xl bg-white font-bold text-[#3d2617] focus:border-[#96633b]"
+                      />
+                      <span className="absolute right-3 top-2 text-stone-500 font-bold text-xs">%</span>
+                    </div>
+                    <span className="text-[10px] text-[#8a6b53] mt-0.5 block">Bisa dimasukkan angka berapa saja (misal: 0, 10, 11, 12, dll).</span>
                   </div>
 
                   <div className="sm:col-span-2">

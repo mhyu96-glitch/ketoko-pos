@@ -287,5 +287,6 @@ export interface StoreProfile {
   npwp?: string;
   footer_message: string;
   logo_base64?: string;
+  tax_rate?: number;
 }
 

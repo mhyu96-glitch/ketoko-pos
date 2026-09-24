@@ -20,6 +20,8 @@ interface CartViewProps {
   setMemberId?: React.Dispatch<React.SetStateAction<string>> | ((id: string) => void);
   taxEnabled?: boolean;
   setTaxEnabled?: React.Dispatch<React.SetStateAction<boolean>> | ((enabled: boolean) => void);
+  taxRate?: number;
+  onTaxRateChange?: (rate: number) => void;
   onUpdateQty: (productId: string, newQty: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
@@ -39,6 +41,8 @@ export const CartView: React.FC<CartViewProps> = ({
   setMemberId: externalSetMemberId,
   taxEnabled: externalTaxEnabled,
   setTaxEnabled: externalSetTaxEnabled,
+  taxRate = 11,
+  onTaxRateChange,
   onUpdateQty,
   onRemoveItem,
   onClearCart,
@@ -59,6 +63,18 @@ export const CartView: React.FC<CartViewProps> = ({
 
   const taxEnabled = externalTaxEnabled !== undefined ? externalTaxEnabled : internalTaxEnabled;
   const setTaxEnabled = externalSetTaxEnabled || setInternalTaxEnabled;
+
+  const handleEditTax = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onTaxRateChange) return;
+    const input = window.prompt(`Masukkan tarif pajak PPN (%) [saat ini: ${taxRate}%]:`, String(taxRate));
+    if (input !== null) {
+      const parsed = parseFloat(input);
+      if (!isNaN(parsed) && parsed >= 0) {
+        onTaxRateChange(parsed);
+      }
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-3xl border border-[#e5d0be] shadow-xs overflow-hidden">
@@ -187,19 +203,31 @@ export const CartView: React.FC<CartViewProps> = ({
             <UserPlus className="w-3.5 h-3.5 absolute left-2 top-2 text-[#8a6b53]" />
           </div>
 
-          <button
-            onClick={() => setTaxEnabled(!taxEnabled)}
-            className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-colors shadow-xs ${
-              taxEnabled
-                ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf] font-semibold'
-                : 'bg-white text-[#5c3c26] border-[#ddc3aa]'
-            }`}
-          >
-            <span>PPN (11%)</span>
-            <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${taxEnabled ? 'bg-[#15803d] text-white' : 'bg-[#e5d0be]'}`}>
-              {taxEnabled && <Check className="w-3 h-3 stroke-[3]" />}
-            </div>
-          </button>
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={() => setTaxEnabled(!taxEnabled)}
+              className={`flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-colors shadow-xs ${
+                taxEnabled
+                  ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf] font-semibold'
+                  : 'bg-white text-[#5c3c26] border-[#ddc3aa]'
+              }`}
+            >
+              <span>PPN ({taxRate}%)</span>
+              <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${taxEnabled ? 'bg-[#15803d] text-white' : 'bg-[#e5d0be]'}`}>
+                {taxEnabled && <Check className="w-3 h-3 stroke-[3]" />}
+              </div>
+            </button>
+            {onTaxRateChange && (
+              <button
+                type="button"
+                onClick={handleEditTax}
+                title="Ubah persentase pajak PPN"
+                className="p-1.5 rounded-xl border border-[#ddc3aa] bg-white hover:bg-[#faebd7] text-[#7c4e2f] text-xs font-bold"
+              >
+                ✏️
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Calculation Lines */}
@@ -229,7 +257,7 @@ export const CartView: React.FC<CartViewProps> = ({
 
           {taxAmount > 0 && (
             <div className="flex justify-between text-[#8a6b53]">
-              <span>PPN (11%)</span>
+              <span>PPN ({taxRate}%)</span>
               <span className="font-mono">{formatRupiah(taxAmount)}</span>
             </div>
           )}

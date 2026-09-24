@@ -5,6 +5,25 @@ export function useCart() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [memberId, setMemberId] = useState<string>('');
   const [taxEnabled, setTaxEnabled] = useState<boolean>(true);
+  const [taxRate, setTaxRateState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('ketoko_tax_rate');
+      if (saved !== null) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0) return parsed;
+      }
+    } catch {}
+    return 11;
+  });
+
+  const setTaxRate = useCallback((newRate: number) => {
+    const validRate = Math.max(0, Math.min(100, isNaN(newRate) ? 0 : newRate));
+    setTaxRateState(validRate);
+    try {
+      localStorage.setItem('ketoko_tax_rate', String(validRate));
+      window.dispatchEvent(new CustomEvent('ketoko_tax_rate_changed', { detail: validRate }));
+    } catch {}
+  }, []);
 
   // Add item or increment qty with wholesale evaluation
   const addItem = useCallback((product: Product, quantityToAdd = 1) => {
@@ -102,9 +121,9 @@ export function useCart() {
     // Member discount e.g. 5% if member is active
     const disc = memberId.trim().length > 0 ? Math.round(sub * 0.05) : 0;
     
-    // Tax 11% (PPN) after discount
+    // Tax (PPN) after discount based on dynamic taxRate
     const taxableBase = Math.max(0, sub - disc);
-    const tax = taxEnabled ? Math.round(taxableBase * 0.11) : 0;
+    const tax = taxEnabled ? Math.round(taxableBase * (taxRate / 100)) : 0;
     const grand = taxableBase + tax;
 
     return {
@@ -115,7 +134,7 @@ export function useCart() {
       grandTotal: grand,
       totalItemCount: totalItems
     };
-  }, [items, memberId, taxEnabled]);
+  }, [items, memberId, taxEnabled, taxRate]);
 
   return {
     items,
@@ -123,6 +142,8 @@ export function useCart() {
     setMemberId,
     taxEnabled,
     setTaxEnabled,
+    taxRate,
+    setTaxRate,
     addItem,
     updateQuantity,
     removeItem,
