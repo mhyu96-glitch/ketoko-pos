@@ -257,6 +257,101 @@ export class SyncService {
     }
   }
 
+  /**
+   * Dorong seluruh transaksi lokal yang belum ada di Supabase Cloud (sinkronisasi 2 arah otomatis)
+   */
+  async pushLocalTransactionsToSupabase(): Promise<{ pushedCount: number }> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !navigator.onLine) return { pushedCount: 0 };
+
+    try {
+      const allLocal = await db.transactions.toArray();
+      if (!allLocal || allLocal.length === 0) return { pushedCount: 0 };
+
+      // Cek ID transaksi yang sudah ada di Supabase Cloud
+      const { data: cloudIdsData } = await supabase.from('transactions').select('id');
+      const cloudIdSet = new Set((cloudIdsData || []).map((t: any) => String(t.id)));
+
+      // Ambil transaksi yang belum ada di Cloud atau ditandai belum synced
+      const toPush = allLocal.filter((t) => !cloudIdSet.has(String(t.id)) || !t.synced);
+      if (toPush.length === 0) return { pushedCount: 0 };
+
+      let pushed = 0;
+      for (const trx of toPush) {
+        try {
+          let validCustomerId: string | null = null;
+          if (trx.member_id) {
+            validCustomerId = await this.ensureCustomerExists(supabase, trx.member_id, trx.customer_name);
+          }
+
+          const trxPayload: any = {
+            id: String(trx.id),
+            receipt_number: trx.receipt_number,
+            branch_id: trx.branch_id || 'BR-01',
+            cashier_id: trx.cashier_id || 'KASIR-01',
+            cashier_name: trx.cashier_name || 'Kasir Toko',
+            customer_id: validCustomerId,
+            customer_name: trx.customer_name || (validCustomerId ? `Member #${validCustomerId}` : null),
+            subtotal: Number(trx.subtotal) || 0,
+            discount_amount: Number(trx.discount_amount) || 0,
+            tax_amount: Number(trx.tax_amount) || 0,
+            grand_total: Number(trx.grand_total) || 0,
+            cash_given: Number(trx.cash_given) || Number(trx.grand_total) || 0,
+            change_due: Number(trx.change_returned) || 0,
+            payment_method: trx.payment_method || 'CASH',
+            payment_status: trx.payment_method === 'TEMPO' ? (Number(trx.cash_given) >= Number(trx.grand_total) ? 'PAID' : 'PENDING') : 'PAID',
+            notes: trx.notes || (trx.due_date ? `Jatuh Tempo: ${trx.due_date}` : null),
+            created_at: trx.created_at || new Date().toISOString(),
+            synced_at: new Date().toISOString()
+          };
+
+          let { error: headerErr } = await supabase.from('transactions').upsert(trxPayload, { onConflict: 'id' });
+          if (headerErr && (headerErr.code === '23503' || headerErr.message?.includes('violates foreign key constraint'))) {
+            trxPayload.customer_id = null;
+            const retry = await supabase.from('transactions').upsert(trxPayload, { onConflict: 'id' });
+            headerErr = retry.error;
+          }
+
+          if (!headerErr) {
+            if (trx.items && trx.items.length > 0) {
+              await supabase.from('transaction_items').delete().eq('transaction_id', trx.id);
+              const itemsPayload = trx.items.map((it) => ({
+                transaction_id: trx.id,
+                product_id: String(it.product_id),
+                product_name: it.product_name,
+                qty: Number(it.qty) || 1,
+                unit: it.unit || 'Pcs',
+                cost_price: Number(it.buy_price) || 0,
+                unit_price: Number(it.price_applied) || 0,
+                subtotal: Number(it.subtotal_item) || 0,
+                created_at: trx.created_at || new Date().toISOString()
+              }));
+              await supabase.from('transaction_items').insert(itemsPayload);
+            }
+
+            await db.transactions.update(trx.id, {
+              synced: true,
+              synced_at: new Date().toISOString()
+            });
+            await db.syncQueue.delete(trx.id).catch(() => {});
+            pushed++;
+          }
+        } catch (err) {
+          console.warn('[SyncService] Gagal push transaksi ke Supabase:', trx.id, err);
+        }
+      }
+
+      if (pushed > 0) {
+        this.broadcastCloudEvent('transaction_created', { count: pushed, timestamp: new Date().toISOString() });
+      }
+
+      return { pushedCount: pushed };
+    } catch (err: any) {
+      console.warn('[SyncService] Gagal sinkronisasi transaksi lokal ke Cloud:', err.message);
+      return { pushedCount: 0 };
+    }
+  }
+
   async reconcileQueue(branchId = 'BR-01'): Promise<{ syncedCount: number; failedCount: number }> {
     if (this.isSyncing) return { syncedCount: 0, failedCount: 0 };
 
@@ -270,7 +365,27 @@ export class SyncService {
         .equals('pending')
         .or('status')
         .equals('failed')
+        .or('status')
+        .equals('syncing')
         .toArray();
+
+      // Kumpulkan juga transaksi di db.transactions yang belum synced
+      const unsyncedTransactions = await db.transactions
+        .filter((t) => !t.synced)
+        .toArray();
+
+      const queueIds = new Set(pendingItems.map((p) => p.id));
+      for (const trx of unsyncedTransactions) {
+        if (!queueIds.has(trx.id)) {
+          pendingItems.push({
+            id: trx.id,
+            payload: trx,
+            status: 'pending',
+            attempts: 0,
+            created_at: trx.created_at || new Date().toISOString()
+          });
+        }
+      }
 
       if (pendingItems.length === 0) {
         this.isSyncing = false;
@@ -920,10 +1035,13 @@ export class SyncService {
       this.isSyncing = true;
       this.notifyStatusChange();
 
-      // Upload antrean pending transaksi dulu
+      // 1. Dorong transaksi lokal yang belum ada di Cloud ke Supabase
+      await this.pushLocalTransactionsToSupabase();
+
+      // 2. Upload antrean pending transaksi
       await this.reconcileQueue();
 
-      // Tarik transaksi terbaru kasir
+      // 3. Tarik transaksi terbaru kasir
       await this.pullTransactionsFromSupabase();
 
       // Tarik katalog produk terbaru

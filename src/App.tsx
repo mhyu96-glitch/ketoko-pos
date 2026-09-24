@@ -387,9 +387,12 @@ export const App: React.FC = () => {
         }
       } else if (navigator.onLine) {
         try {
+          // 1. Dorong seluruh transaksi lokal yang belum tercatat di Cloud ke Supabase
+          await syncService.pushLocalTransactionsToSupabase();
+          // 2. Tarik transaksi kasir terbaru dari Supabase
           await syncService.pullTransactionsFromSupabase(100);
         } catch (err) {
-          console.warn('[App] Gagal pull transaksi dari Supabase:', err);
+          console.warn('[App] Gagal sync transaksi dengan Supabase:', err);
         }
       }
       const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
