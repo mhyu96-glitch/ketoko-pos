@@ -10,7 +10,6 @@ import {
   EyeOff
 } from 'lucide-react';
 import { db } from '../db';
-import { MOCK_USERS } from '../api/mockData';
 import type { User } from '../types';
 
 interface LoginModalProps {
@@ -22,47 +21,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen = true,
   onLoginSuccess
 }) => {
-  const [username, setUsername] = useState('kasir');
-  const [password, setPassword] = useState('kasir123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isCoveringEyes, setIsCoveringEyes] = useState(false);
   const [isTypingUser, setIsTypingUser] = useState(false);
   const [pupilShift, setPupilShift] = useState({ x: 0, y: 0, rot: 0 });
+  const passwordInputRef = React.useRef<HTMLInputElement>(null);
 
   if (isOpen === false) return null;
 
-  const handleQuickLogin = async (role: 'ADMIN' | 'CASHIER') => {
-    setIsLoading(true);
+  const handleSelectQuickAccount = (uname: string) => {
+    setUsername(uname);
+    setPassword('');
     setError(null);
-    try {
-      const user = role === 'ADMIN' 
-        ? {
-            id: 'usr-001',
-            username: 'suciawati',
-            name: 'suciawati Ramadhani',
-            role: 'ADMIN' as const,
-            branch_id: 'BR-01'
-          }
-        : {
-            id: 'usr-002',
-            username: 'noor',
-            name: 'Noor Afifah',
-            role: 'CASHIER' as const,
-            branch_id: 'BR-01'
-          };
-
-      try {
-        await db.users.put(user);
-      } catch {}
-
-      onLoginSuccess(user);
-    } catch (err: any) {
-      setError('Gagal login: ' + err.message);
-    } finally {
-      setIsLoading(false);
-    }
+    setTimeout(() => {
+      passwordInputRef.current?.focus();
+    }, 100);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,9 +48,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
 
     const cleanUser = username.trim();
+    const cleanPass = password.trim();
+
+    if (!cleanUser) {
+      setError('Silakan masukkan Username');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!cleanPass) {
+      setError('Silakan masukkan Kata Sandi (Password)');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      // 1. Check for Superadmin / Developer Master account
+      // 1. Akun Superadmin / Developer Master
       if (cleanUser.toLowerCase() === 'superadmin' || cleanUser.toLowerCase() === 'developer') {
+        const validSuperPins = ['5858', 'superadmin', 'developer58', 'tumbuhmakmur'];
+        if (!validSuperPins.includes(cleanPass.toLowerCase())) {
+          throw new Error('Kata sandi Superadmin salah! Akses ditolak.');
+        }
+
         const superUser: User = {
           id: 'usr-000',
           username: cleanUser,
@@ -86,54 +82,73 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         return;
       }
 
-      // 2. Try finding in db.users
+      // 2. Akun Owner Toko (suciawati / admin)
+      if (cleanUser.toLowerCase() === 'suciawati' || cleanUser.toLowerCase() === 'admin') {
+        const validAdminPass = ['admin123', '123456', 'suciawati123', 'tumbuhmakmur', 'admin'];
+        let matched = validAdminPass.includes(cleanPass.toLowerCase());
+
+        const existingInDb = await db.users.where('username').equalsIgnoreCase(cleanUser).first();
+        if (existingInDb && (existingInDb as any).password) {
+          matched = (existingInDb as any).password === cleanPass;
+        }
+
+        if (!matched) {
+          throw new Error('Kata sandi salah! Masukkan password akun ' + cleanUser);
+        }
+
+        const ownerUser: User = {
+          id: 'usr-001',
+          username: cleanUser,
+          name: 'suciawati Ramadhani',
+          role: 'ADMIN',
+          branch_id: 'BR-01'
+        };
+        try { await db.users.put(ownerUser); } catch {}
+        onLoginSuccess(ownerUser);
+        return;
+      }
+
+      // 3. Akun Kasir (noor / kasir)
+      if (cleanUser.toLowerCase() === 'noor' || cleanUser.toLowerCase() === 'kasir') {
+        const validKasirPass = ['kasir123', '123456', 'noor123', 'kasir'];
+        let matched = validKasirPass.includes(cleanPass.toLowerCase());
+
+        const existingInDb = await db.users.where('username').equalsIgnoreCase(cleanUser).first();
+        if (existingInDb && (existingInDb as any).password) {
+          matched = (existingInDb as any).password === cleanPass;
+        }
+
+        if (!matched) {
+          throw new Error('Kata sandi kasir salah! Masukkan password akun ' + cleanUser);
+        }
+
+        const cashierUser: User = {
+          id: 'usr-002',
+          username: cleanUser,
+          name: 'Noor Afifah',
+          role: 'CASHIER',
+          branch_id: 'BR-01'
+        };
+        try { await db.users.put(cashierUser); } catch {}
+        onLoginSuccess(cashierUser);
+        return;
+      }
+
+      // 4. Akun lainnya dari DB Users
       let user: User | undefined = await db.users.where('username').equalsIgnoreCase(cleanUser).first();
       if (!user) {
         user = await db.usersLocal.where('username').equalsIgnoreCase(cleanUser).first();
       }
 
-      // 3. If not found in IndexedDB, check MOCK_USERS / presets
-      if (!user) {
-        const mockEntry = (MOCK_USERS as any)[cleanUser.toLowerCase()];
-        if (mockEntry) {
-          user = { ...mockEntry.user, username: cleanUser };
-        } else if (cleanUser.toLowerCase().includes('admin')) {
-          user = {
-            id: 'usr-' + Date.now(),
-            username: cleanUser,
-            name: cleanUser === 'admin_pusat' ? 'suciawati Ramadhani' : cleanUser,
-            role: 'ADMIN',
-            branch_id: 'BR-01'
-          };
-        } else if (cleanUser.toLowerCase().includes('kasir')) {
-          user = {
-            id: 'usr-' + Date.now(),
-            username: cleanUser,
-            name: cleanUser === 'kasir_toko1' ? 'Noor Afifah' : cleanUser,
-            role: 'CASHIER',
-            branch_id: 'BR-01'
-          };
-        } else {
-          // General fallback: auto create and login as Owner/Admin
-          user = {
-            id: 'usr-' + Date.now(),
-            username: cleanUser,
-            name: cleanUser,
-            role: 'ADMIN',
-            branch_id: 'BR-01'
-          };
+      if (user) {
+        if ((user as any).password && (user as any).password !== cleanPass) {
+          throw new Error('Kata sandi salah!');
         }
-        
-        if (user) {
-          try { await db.users.put(user); } catch {}
-        }
+        onLoginSuccess(user);
+        return;
       }
 
-      if (user) {
-        onLoginSuccess(user);
-      } else {
-        throw new Error('Gagal mengautentikasi pengguna.');
-      }
+      throw new Error(`Username "${cleanUser}" tidak terdaftar di sistem toko.`);
     } catch (err: any) {
       setError(err.message || 'Login gagal');
     } finally {
@@ -327,15 +342,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* Quick Role Selection Buttons */}
         <div className="mb-5 space-y-2">
           <div className="text-[11px] font-bold text-[#8a6b53] uppercase tracking-wider text-center">
-            Pilih Mode Akses Login Cepat:
+            Pilih Akun Petugas:
           </div>
           
           <div className="grid grid-cols-2 gap-2.5">
             {/* Kasir Quick Button */}
             <button
               type="button"
-              onClick={() => handleQuickLogin('CASHIER')}
-              className="p-3 rounded-2xl border border-[#ddc3aa] bg-white hover:bg-[#f5ebe0] text-left transition-all group flex flex-col justify-between shadow-2xs"
+              onClick={() => handleSelectQuickAccount('noor')}
+              className={`p-3 rounded-2xl border text-left transition-all group flex flex-col justify-between shadow-2xs ${
+                username === 'noor' 
+                  ? 'border-[#96633b] bg-[#faebd7]/70 ring-2 ring-[#96633b]/30' 
+                  : 'border-[#ddc3aa] bg-white hover:bg-[#f5ebe0]'
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="p-1 rounded-lg bg-[#96633b] text-white">
@@ -354,8 +373,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Admin Quick Button */}
             <button
               type="button"
-              onClick={() => handleQuickLogin('ADMIN')}
-              className="p-3 rounded-2xl border border-[#ddc3aa] bg-white hover:bg-[#f5ebe0] text-left transition-all group flex flex-col justify-between shadow-2xs"
+              onClick={() => handleSelectQuickAccount('suciawati')}
+              className={`p-3 rounded-2xl border text-left transition-all group flex flex-col justify-between shadow-2xs ${
+                username === 'suciawati' 
+                  ? 'border-[#83532e] bg-[#faebd7]/70 ring-2 ring-[#83532e]/30' 
+                  : 'border-[#ddc3aa] bg-white hover:bg-[#f5ebe0]'
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="p-1 rounded-lg bg-[#83532e] text-amber-200">
@@ -378,7 +401,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <div className="w-full border-t border-[#ddc3aa]" />
           </div>
           <div className="relative flex justify-center text-[10px] uppercase font-bold text-[#8a6b53]">
-            <span className="bg-[#fcf9f5] px-2">atau login manual</span>
+            <span className="bg-[#fcf9f5] px-2">Masukkan Kata Sandi</span>
           </div>
         </div>
 
@@ -405,18 +428,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => handleUsernameChange(e.target.value)}
                 required
                 className="w-full pl-9 pr-4 py-2 bg-white text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#96633b] focus:ring-1 focus:ring-[#96633b] placeholder:text-[#8a6b53] font-medium"
-                placeholder="Username (admin / kasir)"
+                placeholder="Username (e.g. suciawati / noor / superadmin)"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#5c3c26] mb-1 block">Password</label>
+            <label className="text-xs font-semibold text-[#5c3c26] mb-1 block">Kata Sandi (Password)</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8a6b53]">
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                ref={passwordInputRef}
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onFocus={() => {
@@ -430,7 +454,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full pl-9 pr-10 py-2 bg-white text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#96633b] focus:ring-1 focus:ring-[#96633b] placeholder:text-[#8a6b53]"
-                placeholder="••••••••••••"
+                placeholder={username ? `Masukkan kata sandi untuk ${username}...` : "••••••••••••"}
               />
               <button
                 type="button"

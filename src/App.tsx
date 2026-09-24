@@ -44,56 +44,23 @@ export const App: React.FC = () => {
   // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings')
   const [currentView, setCurrentView] = useState<NavView>('pos');
 
-  // Authentication state
+  // Authentication state (Wajib login untuk seluruh akses Online & Offline)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('ketoko_current_user');
-    if (saved) {
+    // 1. Cek sesi login aktif di tab browser saat ini
+    const sessionSaved = sessionStorage.getItem('ketoko_current_user');
+    if (sessionSaved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (
-          parsed.name === 'Owner Toko' || 
-          parsed.name === 'Budi Manager (Owner)' || 
-          parsed.username === 'admin' || 
-          parsed.username === 'admin_pusat'
-        ) {
-          const updated: User = {
-            id: 'usr-001',
-            username: 'suciawati',
-            name: 'suciawati Ramadhani',
-            role: 'ADMIN',
-            branch_id: 'BR-01'
-          };
-          localStorage.setItem('ketoko_current_user', JSON.stringify(updated));
-          return updated;
+        const parsed = JSON.parse(sessionSaved);
+        if (parsed && parsed.role && parsed.name) {
+          return parsed;
         }
-        if (
-          parsed.name === 'Kasir Toko' || 
-          parsed.name === 'Siti Kasir' || 
-          parsed.username === 'kasir' || 
-          parsed.username === 'kasir_toko1'
-        ) {
-          const updated: User = {
-            id: 'usr-002',
-            username: 'noor',
-            name: 'Noor Afifah',
-            role: 'CASHIER',
-            branch_id: 'BR-01'
-          };
-          localStorage.setItem('ketoko_current_user', JSON.stringify(updated));
-          return updated;
-        }
-        return parsed;
       } catch {}
     }
-    const defaultUser: User = {
-      id: 'usr-001',
-      username: 'suciawati',
-      name: 'suciawati Ramadhani',
-      role: 'ADMIN',
-      branch_id: 'BR-01'
-    };
-    localStorage.setItem('ketoko_current_user', JSON.stringify(defaultUser));
-    return defaultUser;
+    // 2. Bersihkan jejak auto-login lawas dari localStorage agar wajib login
+    try {
+      localStorage.removeItem('ketoko_current_user');
+    } catch {}
+    return null;
   });
 
   // Master Data Products & Enterprise entities
@@ -601,12 +568,15 @@ export const App: React.FC = () => {
 
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
-    localStorage.setItem('ketoko_current_user', JSON.stringify(user));
+    sessionStorage.setItem('ketoko_current_user', JSON.stringify(user));
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('ketoko_current_user');
+    try {
+      sessionStorage.removeItem('ketoko_current_user');
+      localStorage.removeItem('ketoko_current_user');
+    } catch {}
     api.setToken(null);
   };
 
