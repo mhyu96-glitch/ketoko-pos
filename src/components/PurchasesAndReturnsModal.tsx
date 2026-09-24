@@ -223,12 +223,14 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     // 1. Simpan Pembelian ke Dexie Lokal
     await db.purchases.put(newPurchase);
 
-    // 2. Tambah Stok Fisik untuk Setiap Barang
+    // 2. Tambah Stok Fisik untuk Setiap Barang & Sinkronkan
     for (const it of poItems) {
       const p = await db.products.get(it.product.id);
       if (p) {
-        await db.products.update(p.id, {
-          stock: p.stock + it.qty
+        await syncService.syncProductChange({
+          ...p,
+          stock: p.stock + it.qty,
+          buy_price: it.buy_price || p.buy_price
         });
       }
     }
@@ -312,8 +314,9 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     // 1. Save Return Record
     await db.purchaseReturns.put(newRet);
 
-    // 2. Reduce Stock
-    await db.products.update(prod.id, {
+    // 2. Reduce Stock & Sync
+    await syncService.syncProductChange({
+      ...prod,
       stock: Math.max(0, prod.stock - retQty)
     });
 
@@ -356,8 +359,9 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     // 1. Save Return Record
     await db.salesReturns.put(newRet);
 
-    // 2. Restore Stock back to shelf
-    await db.products.update(prod.id, {
+    // 2. Restore Stock back to shelf & Sync
+    await syncService.syncProductChange({
+      ...prod,
       stock: prod.stock + retSalesQty
     });
 

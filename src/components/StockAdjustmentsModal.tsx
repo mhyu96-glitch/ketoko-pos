@@ -14,6 +14,7 @@ import {
 import { db } from '../db';
 import type { StockMovement, Product } from '../types';
 import { CustomSelect } from './CustomSelect';
+import { syncService } from '../services/syncService';
 
 interface StockAdjustmentsModalProps {
   isOpen: boolean;
@@ -148,8 +149,9 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
     // 1. Save movement
     await db.stockMovements.put(newMov);
 
-    // 2. Increase stock
-    await db.products.update(prod.id, {
+    // 2. Increase stock & sync everywhere
+    await syncService.syncProductChange({
+      ...prod,
       stock: newStock
     });
 
@@ -186,8 +188,9 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
     // 1. Save movement
     await db.stockMovements.put(newMov);
 
-    // 2. Decrease stock
-    await db.products.update(prod.id, {
+    // 2. Decrease stock & sync everywhere
+    await syncService.syncProductChange({
+      ...prod,
       stock: newStock
     });
 
@@ -220,8 +223,9 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
           created_at: new Date().toISOString()
         });
 
-        // Update product stock to real physical count
-        await db.products.update(prod.id, {
+        // Update product stock to real physical count & sync everywhere
+        await syncService.syncProductChange({
+          ...prod,
           stock: physicalCount
         });
       }

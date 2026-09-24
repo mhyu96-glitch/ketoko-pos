@@ -27,6 +27,7 @@ import type { Product } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { convertImageFileToWebP, type ImageConversionResult } from '../utils/imageConverter';
 import { CustomSelect } from './CustomSelect';
+import { syncService } from '../services/syncService';
 
 interface ProductPriceListViewProps {
   products: Product[];
@@ -155,7 +156,8 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
     setIsSaving(true);
     try {
-      await db.products.update(editingProduct.id, {
+      const updatedProduct: Product = {
+        ...editingProduct,
         name: editName.trim(),
         category: editCategory,
         unit: editUnit,
@@ -167,7 +169,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         rack_location: editRackLocation.trim(),
         image_url: editImageUrl.trim() || editingProduct.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
         updated_at: new Date().toISOString()
-      });
+      };
+
+      await syncService.syncProductChange(updatedProduct);
 
       setSaveSuccessMsg(`Data produk "${editName}" berhasil diperbarui.`);
       await onProductsUpdated();

@@ -5,6 +5,7 @@ import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
 import { api } from './api/client';
 import { syncService } from './services/syncService';
+import { getSupabaseClient } from './api/supabaseClient';
 import { DEFAULT_STORE_PROFILE } from './api/mockData';
 import type { Product, Transaction, User, DebtItem, ReceivableItem } from './types';
 
@@ -245,7 +246,6 @@ export const App: React.FC = () => {
     try {
       const serverProds = await lanService.fetchCentralProducts();
       if (serverProds && serverProds.length > 0) {
-        await db.products.clear();
         const chunkSize = 2500;
         for (let i = 0; i < serverProds.length; i += chunkSize) {
           await db.products.bulkPut(serverProds.slice(i, i + chunkSize));
@@ -264,7 +264,6 @@ export const App: React.FC = () => {
         try {
           const serverProds = await lanService.fetchCentralProducts();
           if (serverProds && serverProds.length > 0) {
-            await db.products.clear();
             const chunkSize = 2500;
             for (let i = 0; i < serverProds.length; i += chunkSize) {
               await db.products.bulkPut(serverProds.slice(i, i + chunkSize));
@@ -427,7 +426,7 @@ export const App: React.FC = () => {
       } catch {}
     }, 2500);
 
-    // Listen to Real-time SSE Stock & Transaction Updates from Central LAN Server when in Client Mode
+    // 1. Listen to Real-time SSE Stock & Transaction Updates from Central LAN Server when in Client Mode
     let unsubSse: (() => void) | null = null;
     if (lanService.isClientMode()) {
       unsubSse = lanService.initEventSource(
@@ -448,7 +447,7 @@ export const App: React.FC = () => {
             const idx = prev.findIndex(p => p.id === prod.id);
             if (idx >= 0) {
               const copy = [...prev];
-              copy[idx] = prod;
+              copy[idx] = { ...copy[idx], ...prod };
               return copy;
             }
             return [prod, ...prev];
@@ -462,9 +461,73 @@ export const App: React.FC = () => {
       );
     }
 
+    // 2. Multi-tab / Same-browser Real-time BroadcastChannel sync
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('ketoko_product_sync');
+        bc.onmessage = (event) => {
+          const prod = event.data?.product || event.data;
+          if (prod && prod.id) {
+            db.products.put(prod).catch(() => {});
+            setProducts((prev) => {
+              const idx = prev.findIndex(p => p.id === prod.id);
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], ...prod };
+                return copy;
+              }
+              return [prod, ...prev];
+            });
+          }
+        };
+      }
+    } catch {}
+
+    // 3. Supabase Cloud Realtime listener for cross-device live sync
+    let supabaseChannel: any = null;
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabaseChannel = supabase
+          .channel('public:products_live')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'products' },
+            (payload: any) => {
+              const newProd = (payload.new || payload.record) as Product;
+              if (newProd && newProd.id) {
+                db.products.put(newProd).catch(() => {});
+                setProducts((prev) => {
+                  const idx = prev.findIndex(p => p.id === newProd.id);
+                  if (idx >= 0) {
+                    const copy = [...prev];
+                    copy[idx] = { ...copy[idx], ...newProd };
+                    return copy;
+                  }
+                  return [newProd, ...prev];
+                });
+              }
+            }
+          )
+          .subscribe();
+      }
+    } catch (err) {
+      console.warn('[App] Realtime Supabase products subscription error:', err);
+    }
+
     return () => {
       clearTimeout(updateTimer);
       if (unsubSse) unsubSse();
+      if (bc) {
+        try { bc.close(); } catch {}
+      }
+      if (supabaseChannel) {
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) supabase.removeChannel(supabaseChannel);
+        } catch {}
+      }
       window.removeEventListener('ketoko_open_shift_report', handleOpenShift);
       window.removeEventListener('ketoko_open_cash_drawer', handleOpenDrawer);
     };

@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { X, PlusCircle, CheckCircle, ArrowDownRight, Search, Package } from 'lucide-react';
-import { db } from '../db';
 import type { Product } from '../types';
 import { formatRupiah } from '../services/escposService';
+import { syncService } from '../services/syncService';
 
 interface RestockModalProps {
   isOpen: boolean;
@@ -60,10 +60,12 @@ export const RestockModal: React.FC<RestockModalProps> = ({
     setIsSubmitting(true);
     try {
       const newStock = currentProduct.stock + incomingQty;
-      await db.products.update(currentProduct.id, {
+      const updatedProduct: Product = {
+        ...currentProduct,
         stock: newStock,
         updated_at: new Date().toISOString()
-      });
+      };
+      await syncService.syncProductChange(updatedProduct);
 
       setSuccessMessage(`Stok ${currentProduct.name} berhasil ditambah +${incomingQty} ${currentProduct.unit}!`);
       if (onRestockComplete) await onRestockComplete();

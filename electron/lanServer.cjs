@@ -391,12 +391,26 @@ function handleHttpRequest(req, res) {
   // 4. Tambah / Update Produk Terpusat
   if (pathname === '/api/lan/products' && req.method === 'POST') {
     return readJsonBody((product) => {
-      if (!product || !product.name) {
-        return sendJson(400, { error: 'Nama produk wajib diisi' });
+      if (!product || (!product.id && !product.name)) {
+        return sendJson(400, { error: 'Data produk tidak lengkap' });
       }
 
       const id = product.id || `BRG-${Date.now()}`;
-      const updated_at = new Date().toISOString();
+      const existing = sqliteDb.prepare('SELECT * FROM products WHERE id = ?').get(id);
+
+      const name = product.name || (existing ? existing.name : 'Produk');
+      const barcode = product.barcode !== undefined ? product.barcode : (existing ? existing.barcode : '');
+      const category = product.category || (existing ? existing.category : 'Umum');
+      const buy_price = product.buy_price !== undefined ? Number(product.buy_price) : (existing ? existing.buy_price : 0);
+      const retail_price = product.retail_price !== undefined ? Number(product.retail_price) : (existing ? existing.retail_price : 0);
+      const wholesale_price = product.wholesale_price !== undefined ? Number(product.wholesale_price) : (existing ? existing.wholesale_price : retail_price);
+      const min_wholesale_qty = product.min_wholesale_qty !== undefined ? Number(product.min_wholesale_qty) : (existing ? existing.min_wholesale_qty : 1);
+      const stock = product.stock !== undefined ? Number(product.stock) : (existing ? existing.stock : 0);
+      const unit = product.unit || (existing ? existing.unit : 'Pcs');
+      const rack_location = product.rack_location !== undefined ? product.rack_location : (existing ? existing.rack_location : '');
+      const min_stock_alert = product.min_stock_alert !== undefined ? Number(product.min_stock_alert) : (existing ? existing.min_stock_alert : 5);
+      const image_url = product.image_url !== undefined ? product.image_url : (existing ? existing.image_url : '');
+      const updated_at = product.updated_at || new Date().toISOString();
 
       const stmt = sqliteDb.prepare(`
         INSERT OR REPLACE INTO products (
@@ -407,24 +421,24 @@ function handleHttpRequest(req, res) {
 
       stmt.run(
         id,
-        product.barcode || '',
-        product.name,
-        product.category || 'Umum',
-        Number(product.buy_price) || 0,
-        Number(product.retail_price) || 0,
-        Number(product.wholesale_price) || Number(product.retail_price) || 0,
-        Number(product.min_wholesale_qty) || 1,
-        Number(product.stock) || 0,
-        product.unit || 'Pcs',
-        product.rack_location || '',
-        Number(product.min_stock_alert) || 5,
-        product.image_url || '',
+        barcode,
+        name,
+        category,
+        buy_price,
+        retail_price,
+        wholesale_price,
+        min_wholesale_qty,
+        stock,
+        unit,
+        rack_location,
+        min_stock_alert,
+        image_url,
         updated_at
       );
 
       const saved = sqliteDb.prepare('SELECT * FROM products WHERE id = ?').get(id);
 
-      // Broadcast update ke semua kasir klien
+      // Broadcast update ke semua kasir klien via SSE
       broadcastSseEvent('product_updated', saved);
 
       return sendJson(200, { status: 'success', data: saved });

@@ -15,6 +15,7 @@ import { db } from '../db';
 import type { Product } from '../types';
 import { convertImageFileToWebP, type ImageConversionResult } from '../utils/imageConverter';
 import { CustomSelect } from './CustomSelect';
+import { syncService } from '../services/syncService';
 
 // Helper: format angka ke string dengan titik ribuan (15555555 → "15.555.555")
 const formatRupiah = (val: string): string => {
@@ -195,7 +196,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         updated_at: new Date().toISOString()
       };
 
-      await db.products.put(newProduct);
+      await syncService.syncProductChange(newProduct);
       setSuccessMsg(`Produk "${name}" berhasil ditambahkan ke katalog.`);
       await onProductCreated();
 

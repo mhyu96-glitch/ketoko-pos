@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { getSupabaseClient, getSupabaseConfig } from '../api/supabaseClient';
 import { INITIAL_PRODUCTS } from '../api/mockData';
 import type { Transaction, Product } from '../types';
+import { lanService } from './lanService';
 
 export interface SyncStatusInfo {
   isConfigured: boolean;
@@ -275,6 +276,47 @@ export class SyncService {
     } finally {
       this.isSyncing = false;
       this.notifyStatusChange();
+    }
+  }
+
+  /**
+   * Menyinkronkan perubahan produk & stok secara menyeluruh ke seluruh terminal:
+   * 1. Simpan ke IndexedDB lokal (Dexie)
+   * 2. Broadcast ke tab lain di browser via BroadcastChannel
+   * 3. Kirim ke LAN Server terpusat (agar langsung disiarkan via SSE 'product_updated' ke semua kasir)
+   * 4. Kirim ke Supabase Cloud (agar kasir online menerima pembaruan secara real-time)
+   */
+  async syncProductChange(product: Product): Promise<void> {
+    const updatedProd: Product = {
+      ...product,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Simpan langsung ke IndexedDB lokal (Dexie)
+    await db.products.put(updatedProd);
+
+    // 2. Broadcast ke tab/jendela lain di mesin yang sama
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({ type: 'product_updated', product: updatedProd });
+        bc.close();
+      }
+    } catch {}
+
+    // 3. Kirim ke LAN Server terpusat (jika aktif)
+    lanService.submitProduct(updatedProd).catch(() => {});
+
+    // 4. Kirim ke Supabase Cloud (jika online & terkonfigurasi)
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          await supabase.from('products').upsert(updatedProd, { onConflict: 'id' });
+        }
+      } catch (e) {
+        console.warn('[Sync] Gagal push produk ke Supabase:', e);
+      }
     }
   }
 

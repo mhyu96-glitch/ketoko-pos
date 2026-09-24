@@ -432,6 +432,54 @@ class LanService {
       return { success: false, error: err.message };
     }
   }
+
+  /**
+   * Kirim perubahan produk / stok ke Server LAN terpusat
+   * Otomatis memicu broadcast SSE 'product_updated' ke semua kasir yang terhubung
+   */
+  public async submitProduct(
+    prod: Partial<Product> & { id: string },
+    serverUrl?: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const urlsToTry: string[] = [];
+    if (serverUrl) {
+      urlsToTry.push(serverUrl);
+    }
+    if (this.isClientMode() && this.config.serverUrl) {
+      urlsToTry.push(this.config.serverUrl);
+    }
+    urlsToTry.push('http://127.0.0.1:4040', 'http://localhost:4040');
+    if (typeof window !== 'undefined' && window.location.origin) {
+      urlsToTry.push(window.location.origin);
+    }
+
+    const uniqueUrls = Array.from(new Set(urlsToTry.map(u => u.replace(/\/+$/, ''))));
+
+    for (const base of uniqueUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+        const res = await fetch(`${base}/api/lan/products`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Terminal-Id': this.config.terminalId
+          },
+          body: JSON.stringify(prod),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const json = await res.json();
+          return { success: true, data: json.data };
+        }
+      } catch {}
+    }
+
+    return { success: false, error: 'Tidak dapat terhubung ke LAN Server' };
+  }
 }
 
 export const lanService = new LanService();
