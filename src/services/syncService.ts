@@ -756,7 +756,7 @@ export class SyncService {
   /**
    * Tarik transaksi kasir terbaru dari Cloud Supabase agar Admin bisa melihat penjualan kasir
    */
-  async pullTransactionsFromSupabase(limit = 200): Promise<{ count: number; error?: string }> {
+  async pullTransactionsFromSupabase(limit = 200): Promise<{ count: number; error?: string; transactions?: Transaction[] }> {
     const supabase = getSupabaseClient();
     if (!supabase) return { count: 0, error: 'Supabase tidak aktif' };
 
@@ -798,34 +798,40 @@ export class SyncService {
         }
       }
 
-      const formatted: Transaction[] = cloudTrx.map(t => ({
-        id: t.id,
-        receipt_number: t.receipt_number,
-        branch_id: t.branch_id || 'BR-01',
-        cashier_id: t.cashier_id || 'KASIR-01',
-        cashier_name: t.cashier_name || 'Kasir',
-        member_id: t.customer_id || undefined,
-        customer_name: t.customer_name || (t.customer_id ? `Member #${t.customer_id}` : undefined),
-        notes: t.notes || undefined,
-        due_date: t.notes && t.notes.includes('Jatuh Tempo:') ? t.notes.split('Jatuh Tempo:')[1].trim() : undefined,
-        items: itemsMap.get(t.id) || [],
-        subtotal: Number(t.subtotal) || 0,
-        discount_amount: Number(t.discount_amount) || 0,
-        tax_amount: Number(t.tax_amount) || 0,
-        grand_total: Number(t.grand_total) || 0,
-        cash_given: Number(t.cash_given) || Number(t.grand_total) || 0,
-        change_returned: Number(t.change_due) || 0,
-        payment_method: (t.payment_method || 'CASH') as any,
-        created_at: t.created_at,
-        synced: true,
-        synced_at: t.synced_at
-      }));
+      const formatted: Transaction[] = [];
+      for (const t of cloudTrx) {
+        const existing = await db.transactions.get(t.id);
+        const cloudItemDetails = itemsMap.get(t.id);
+        const resolvedItems = (cloudItemDetails && cloudItemDetails.length > 0)
+          ? cloudItemDetails
+          : (existing?.items && existing.items.length > 0 ? existing.items : []);
+
+        formatted.push({
+          id: String(t.id),
+          receipt_number: t.receipt_number || `TRX-${t.id}`,
+          branch_id: t.branch_id || 'BR-01',
+          cashier_id: t.cashier_id || 'KASIR-01',
+          cashier_name: t.cashier_name || 'Kasir',
+          member_id: t.customer_id || undefined,
+          customer_name: t.customer_name || (t.customer_id ? `Member #${t.customer_id}` : undefined),
+          notes: t.notes || undefined,
+          due_date: t.notes && t.notes.includes('Jatuh Tempo:') ? t.notes.split('Jatuh Tempo:')[1].trim() : undefined,
+          items: resolvedItems,
+          subtotal: Number(t.subtotal) || Number(t.grand_total) || 0,
+          discount_amount: Number(t.discount_amount) || 0,
+          tax_amount: Number(t.tax_amount) || 0,
+          grand_total: Number(t.grand_total) || 0,
+          cash_given: Number(t.cash_given) || Number(t.grand_total) || 0,
+          change_returned: Number(t.change_due) || 0,
+          payment_method: (t.payment_method || 'CASH') as any,
+          created_at: t.created_at || new Date().toISOString(),
+          synced: true,
+          synced_at: t.synced_at || new Date().toISOString()
+        });
+      }
 
       await db.transactions.bulkPut(formatted);
-      if (typeof window !== 'undefined' && formatted.length > 0) {
-        window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed', { detail: { count: formatted.length } }));
-      }
-      return { count: formatted.length };
+      return { count: formatted.length, transactions: formatted };
     } catch (err: any) {
       console.warn('[SyncService] Gagal tarik transaksi dari Supabase:', err.message);
       return { count: 0, error: err.message };

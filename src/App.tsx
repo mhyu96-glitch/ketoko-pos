@@ -84,6 +84,7 @@ export const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
   const [isCatalogSeeding] = useState<boolean>(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [overdueCount, setOverdueCount] = useState<number>(0);
@@ -373,19 +374,20 @@ export const App: React.FC = () => {
   }, []);
 
   // Load latest cashier transactions from LAN Server, Supabase, or local Dexie
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (): Promise<Transaction[]> => {
     try {
       if (lanService.isClientMode()) {
         try {
           const centralTrx = await lanService.fetchCentralTransactions(100);
           if (centralTrx && centralTrx.length > 0) {
-            setTransactions(centralTrx);
-            return;
+            await db.transactions.bulkPut(centralTrx);
           }
         } catch (err) {
           console.warn('[App] Gagal fetch transaksi dari LAN Server:', err);
         }
-      } else if (navigator.onLine) {
+      }
+
+      if (navigator.onLine) {
         try {
           // 1. Dorong seluruh transaksi lokal yang belum tercatat di Cloud ke Supabase
           await syncService.pushLocalTransactionsToSupabase();
@@ -395,10 +397,13 @@ export const App: React.FC = () => {
           console.warn('[App] Gagal sync transaksi dengan Supabase:', err);
         }
       }
+
       const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
       setTransactions(allTrx);
+      return allTrx;
     } catch (err) {
       console.warn('[App] Gagal memuat data transaksi:', err);
+      return [];
     }
   }, []);
 
@@ -736,12 +741,18 @@ export const App: React.FC = () => {
     setIsSyncing(true);
     try {
       await syncService.syncAllData();
-      await loadTransactions();
+      const updatedTrx = await loadTransactions();
       await loadLocalProducts();
       const count = await syncService.getPendingCount();
       setPendingSyncCount(count);
-    } catch (e) {
+
+      const trxCount = updatedTrx ? updatedTrx.length : 0;
+      setSyncToastMessage(`✅ Sinkron Cloud Berhasil! (${trxCount} Transaksi aktif)`);
+      setTimeout(() => setSyncToastMessage(null), 3500);
+    } catch (e: any) {
       console.warn('Manual sync deferred:', e);
+      setSyncToastMessage(`⚠️ Sinkronisasi Cloud: ${e?.message || 'Gagal terhubung'}`);
+      setTimeout(() => setSyncToastMessage(null), 3500);
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);
@@ -754,7 +765,7 @@ export const App: React.FC = () => {
 
     const interval = setInterval(() => {
       handleManualSync();
-    }, 12000);
+    }, 15000);
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
@@ -762,8 +773,11 @@ export const App: React.FC = () => {
       }
     };
 
-    const handleTrxRefreshed = () => {
-      loadTransactions();
+    const handleTrxRefreshed = async () => {
+      try {
+        const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
+        setTransactions(allTrx);
+      } catch {}
     };
 
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
@@ -776,7 +790,7 @@ export const App: React.FC = () => {
       window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
     };
-  }, [isOnline, handleManualSync, loadTransactions]);
+  }, [isOnline, handleManualSync]);
 
   // In-memory Barcode & SKU Map for Sub-millisecond (0.01ms) O(1) Lookups
   const { barcodeIndex, idIndex } = useMemo(() => {
@@ -1189,6 +1203,15 @@ export const App: React.FC = () => {
           userRole={currentUser?.role}
         />
       </div>
+
+      {/* Sync Feedback Toast Notification Banner */}
+      {syncToastMessage && (
+        <div className="fixed top-16 right-4 sm:right-6 z-50 animate-bounce">
+          <div className="bg-[#2a1a12] text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-2xl shadow-2xl border border-[#ddc3aa] flex items-center space-x-2">
+            <span>{syncToastMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* 3. Main Dynamic Content View (Full Width) */}
       {currentView === 'dashboard' ? (

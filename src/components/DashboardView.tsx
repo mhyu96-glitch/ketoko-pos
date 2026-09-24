@@ -61,7 +61,7 @@ interface DashboardViewProps {
   onOpenNewProduct?: () => void;
   onOpenMemberModal?: () => void;
   onOpenPrinterSettings?: () => void;
-  onRefreshTransactions?: () => Promise<void> | void;
+  onRefreshTransactions?: () => Promise<any> | any;
   isOnline?: boolean;
   pendingSyncCount?: number;
 }
@@ -91,11 +91,11 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   React.useEffect(() => {
-    if (!initialProducts) {
+    if (!initialProducts || initialProducts.length === 0) {
       db.products.toArray().then(setLocalProducts);
     }
-    if (!initialTransactions) {
-      db.transactions.toArray().then(setLocalTransactions);
+    if (!initialTransactions || initialTransactions.length === 0) {
+      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(setLocalTransactions);
     }
   }, [initialProducts, initialTransactions]);
 
@@ -105,7 +105,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       if (onRefreshTransactions) {
         await onRefreshTransactions();
       }
-      const freshTrx = await db.transactions.toArray();
+      const freshTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
       setLocalTransactions(freshTrx);
     } catch (e) {
       console.warn('Gagal refresh data transaksi:', e);
@@ -114,8 +114,8 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     }
   };
 
-  const products = initialProducts || localProducts;
-  const transactions = initialTransactions || localTransactions;
+  const products = (initialProducts && initialProducts.length > 0) ? initialProducts : localProducts;
+  const transactions = (initialTransactions && initialTransactions.length > 0) ? initialTransactions : localTransactions;
   const effectiveRole = userRole || currentUser?.role || 'CASHIER';
   const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'MANAGER';
 
@@ -157,59 +157,62 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const tLen = transactions.length;
     for (let i = 0; i < tLen; i++) {
       const t = transactions[i];
-      revenue += t.grand_total;
+      if (!t) continue;
+      const gTotal = Number(t.grand_total) || 0;
+      revenue += gTotal;
       if (t.payment_method === 'CASH') {
-        cash += t.grand_total;
+        cash += gTotal;
       } else {
-        nonCash += t.grand_total;
+        nonCash += gTotal;
       }
-      const itLen = t.items.length;
+      const itemsArr = Array.isArray(t.items) ? t.items : [];
+      const itLen = itemsArr.length;
       for (let j = 0; j < itLen; j++) {
-        itemsSold += t.items[j].qty;
+        itemsSold += Number(itemsArr[j]?.qty) || 0;
       }
 
       const isCurrentDay = isTrxToday(t.created_at);
       if (isCurrentDay) {
         tTrxCountToday++;
-        tRevenueToday += t.grand_total;
+        tRevenueToday += gTotal;
 
-        if (Array.isArray(t.items)) {
-          for (let j = 0; j < itLen; j++) {
-            const item = t.items[j];
-            tItemsSoldToday += item.qty;
-            const pId = item.product_id;
-            const pName = item.product_name || 'Produk';
-            const subtotal = item.subtotal_item || ((item.price_applied || 0) * item.qty);
-            const cashier = t.cashier_name || 'Kasir';
+        for (let j = 0; j < itLen; j++) {
+          const item = itemsArr[j];
+          if (!item) continue;
+          const iQty = Number(item.qty) || 0;
+          tItemsSoldToday += iQty;
+          const pId = item.product_id;
+          const pName = item.product_name || 'Produk';
+          const subtotal = Number(item.subtotal_item) || ((Number(item.price_applied) || 0) * iQty);
+          const cashier = t.cashier_name || 'Kasir';
 
-            const prod = products.find(p => p.id === pId);
-            const barcode = prod?.barcode || '';
-            const unit = prod?.unit || 'Pcs';
+          const prod = products.find(p => p.id === pId);
+          const barcode = prod?.barcode || '';
+          const unit = prod?.unit || 'Pcs';
 
-            const existing = soldMap.get(pId);
-            if (existing) {
-              existing.totalQty += item.qty;
-              existing.totalRevenue += subtotal;
-              existing.trxCount += 1;
-              if (!existing.cashiers.includes(cashier)) {
-                existing.cashiers.push(cashier);
-              }
-              if (new Date(t.created_at).getTime() > new Date(existing.lastSoldAt).getTime()) {
-                existing.lastSoldAt = t.created_at;
-              }
-            } else {
-              soldMap.set(pId, {
-                id: pId,
-                name: pName,
-                barcode: barcode,
-                unit: unit,
-                totalQty: item.qty,
-                totalRevenue: subtotal,
-                lastSoldAt: t.created_at,
-                cashiers: [cashier],
-                trxCount: 1
-              });
+          const existing = soldMap.get(pId);
+          if (existing) {
+            existing.totalQty += iQty;
+            existing.totalRevenue += subtotal;
+            existing.trxCount += 1;
+            if (!existing.cashiers.includes(cashier)) {
+              existing.cashiers.push(cashier);
             }
+            if (new Date(t.created_at).getTime() > new Date(existing.lastSoldAt).getTime()) {
+              existing.lastSoldAt = t.created_at;
+            }
+          } else {
+            soldMap.set(pId, {
+              id: pId,
+              name: pName,
+              barcode: barcode,
+              unit: unit,
+              totalQty: iQty,
+              totalRevenue: subtotal,
+              lastSoldAt: t.created_at,
+              cashiers: [cashier],
+              trxCount: 1
+            });
           }
         }
       }
@@ -235,7 +238,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const cPct = revenue > 0 ? Math.round((cash / revenue) * 100) : 100;
     const ncPct = revenue > 0 ? 100 - cPct : 0;
     const avgBasket = tLen > 0 ? Math.round(revenue / tLen) : 0;
-    const recent = [...transactions].reverse().slice(0, 4);
+    const recent = [...transactions].slice(0, 5);
     const sortedTodaySold = Array.from(soldMap.values()).sort((a, b) => b.totalQty - a.totalQty);
 
     return {
@@ -937,7 +940,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
                         </span>
                       </div>
                       <div className="text-[10px] text-[#8a6b53] mt-0.5">
-                        {t.items.length} item • {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {(Array.isArray(t.items) ? t.items.length : 0)} item • {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
                     <div className="text-right">

@@ -310,12 +310,13 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
                 onClick={onManualSync}
                 disabled={!isOnline || isSyncing}
                 title={isOnline ? 'Klik untuk sinkronisasi penuh dengan Cloud (Transaksi, Stok, Hutang Piutang)' : 'Offline (Tidak ada koneksi internet)'}
-                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#faebd7] hover:bg-[#ebdccf] text-[#7c4e2f] border border-[#ddc3aa] font-bold text-xs shadow-2xs active:scale-95 disabled:opacity-50 transition-all"
+                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#faebd7] hover:bg-[#ebdccf] text-[#7c4e2f] border border-[#ddc3aa] font-bold text-xs shadow-2xs active:scale-95 disabled:opacity-50 transition-all shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Sinkron Cloud</span>
+                <span className="inline sm:hidden">{isSyncing ? 'Sync...' : 'Sync'}</span>
+                <span className="hidden sm:inline">{isSyncing ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
                 {pendingSyncCount > 0 && (
-                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-extrabold animate-pulse">
+                  <span className="ml-0.5 sm:ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-extrabold animate-pulse">
                     {pendingSyncCount}
                   </span>
                 )}

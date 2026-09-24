@@ -10,6 +10,8 @@ if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || wi
     navigator.serviceWorker.register('/sw.js')
       .then((reg) => {
         console.log('[PWA] Service Worker registered with scope:', reg.scope);
+        // Segera periksa update Service Worker agar browser HP/Laptop langsung menggunakan kode terbaru
+        try { reg.update(); } catch {}
       })
       .catch((err) => {
         console.warn('[PWA] Service Worker registration failed:', err);

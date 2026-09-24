@@ -1,5 +1,5 @@
 // Ketoko POS - Offline-First Service Worker
-const CACHE_NAME = 'ketoko-pos-pwa-v1';
+const CACHE_NAME = 'ketoko-pos-pwa-v2';
 
 const STATIC_PRECACHE = [
   '/',
@@ -44,12 +44,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation requests (HTML pages) -> Network first, fallback to cached index.html
+  // Navigation requests (HTML pages) -> Network first, cache update, fallback to cached index.html
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() => {
-        return caches.match('/index.html') || caches.match('/');
-      })
+      fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match('/index.html') || caches.match('/');
+        })
     );
     return;
   }
