@@ -42,14 +42,50 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
   const [actualCashInput, setActualCashInput] = useState<string>('');
 
   React.useEffect(() => {
-    if (isOpen && !initialTransactions) {
+    if (isOpen) {
       db.transactions.toArray().then(setLocalTrx);
     }
-  }, [isOpen, initialTransactions]);
+  }, [isOpen]);
+
+  // Real-time synchronization listeners for shift calculations
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleTrxCreated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setLocalTrx((prev) => {
+          if (prev.some((t) => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
+
+    const handleTrxDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setLocalTrx((prev) => prev.filter((t) => t.id !== id));
+      }
+    };
+
+    const handleTrxRefreshed = () => {
+      db.transactions.toArray().then(setLocalTrx).catch(() => {});
+    };
+
+    window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+    window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+
+    return () => {
+      window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+      window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const transactions = initialTransactions || localTrx;
+  const transactions = initialTransactions !== undefined ? initialTransactions : localTrx;
   const totalTrx = transactions.length;
   const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
   const totalDiscounts = transactions.reduce((sum, t) => sum + t.discount_amount, 0);

@@ -26,14 +26,49 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
   const [localTrx, setLocalTrx] = useState<Transaction[]>([]);
 
   React.useEffect(() => {
-    if (isOpen && !initialTransactions) {
+    if (isOpen) {
       db.transactions.toArray().then(setLocalTrx);
     }
-  }, [isOpen, initialTransactions]);
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleTrxCreated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setLocalTrx((prev) => {
+          if (prev.some((t) => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
+
+    const handleTrxDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setLocalTrx((prev) => prev.filter((t) => t.id !== id));
+      }
+    };
+
+    const handleTrxRefreshed = () => {
+      db.transactions.toArray().then(setLocalTrx).catch(() => {});
+    };
+
+    window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+    window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+
+    return () => {
+      window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+      window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const transactions = initialTransactions || localTrx;
+  const transactions = initialTransactions !== undefined ? initialTransactions : localTrx;
 
   // Aggregate sales by date
   const now = new Date();

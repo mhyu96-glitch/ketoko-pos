@@ -19,13 +19,15 @@ import {
   Boxes,
   Coins,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile } from '../types';
 import { exportReportToPDF } from '../services/pdfReportService';
 import { FileSpreadsheet } from 'lucide-react';
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
+import { syncService } from '../services/syncService';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
@@ -72,20 +74,102 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   });
 
   const isAdmin = userRole === 'SUPERADMIN' || userRole === 'ADMIN' || userRole === 'MANAGER';
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
-      loadReportData();
+      loadReportData(true);
     }
   }, [isOpen, initialTab]);
 
-  const loadReportData = async () => {
-    const allTrx = await db.transactions.toArray();
-    const allProducts = await db.products.toArray();
-    setTransactions(allTrx);
-    setProducts(allProducts);
+  const loadReportData = async (syncCloud = false) => {
+    try {
+      // 1. Ambil data lokal seketika (instant 0ms)
+      const allTrx = await db.transactions.toArray();
+      const allProducts = await db.products.toArray();
+      setTransactions(allTrx);
+      setProducts(allProducts);
+
+      // 2. Tarik update transaksi terbaru dari Supabase Cloud di background
+      if (syncCloud && navigator.onLine) {
+        setIsRefreshing(true);
+        try {
+          await syncService.pullTransactionsFromSupabase(500);
+          const freshTrx = await db.transactions.toArray();
+          setTransactions(freshTrx);
+        } catch (err) {
+          console.warn('[FullReports] Cloud pull deferred:', err);
+        } finally {
+          setIsRefreshing(false);
+        }
+      }
+    } catch (err) {
+      console.error('[FullReports] Gagal load report data:', err);
+    }
   };
+
+  // Real-time synchronization listeners: Perbarui angka laporan secara otomatis jika ada transaksi masuk/dihapus
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleTrxCreated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setTransactions((prev) => {
+          if (prev.some((t) => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
+
+    const handleTrxDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setTransactions((prev) => prev.filter((t) => t.id !== id));
+      }
+    };
+
+    const handleTrxRefreshed = async () => {
+      const allTrx = await db.transactions.toArray();
+      setTransactions(allTrx);
+    };
+
+    const handleProductUpdated = (e: any) => {
+      const prod = e.detail?.product || e.detail;
+      if (prod && prod.id) {
+        setProducts((prev) => {
+          const idx = prev.findIndex((p) => p.id === prod.id);
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], ...prod };
+            return copy;
+          }
+          return [prod, ...prev];
+        });
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        loadReportData(true);
+      }
+    };
+
+    window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+    window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    window.addEventListener('ketoko_product_updated', handleProductUpdated);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+      window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+      window.removeEventListener('ketoko_product_updated', handleProductUpdated);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isOpen]);
 
   // Product Map for fast O(1) lookups
   const productMap = useMemo(() => {
@@ -565,6 +649,10 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#543017] text-amber-100 uppercase border border-[#9b663b]/50 tracking-wider shadow-2xs">
                   {isAdmin ? 'Akses Penuh (Admin)' : 'Laporan Kasir'}
                 </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 flex items-center shrink-0 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1" />
+                  Realtime Live
+                </span>
               </div>
               <p className="text-xs text-[#fcefe3]/90 font-medium mt-0.5">
                 Rekapitulasi laba rugi komprehensif, penjualan, margin HPP, persediaan, dan beban operasional
@@ -573,6 +661,17 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Manual Refresh & Sync Cloud Button */}
+            <button
+              onClick={() => loadReportData(true)}
+              disabled={isRefreshing}
+              className="px-3 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-amber-100 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs active:scale-95 border border-[#9b663b]/50 whitespace-nowrap disabled:opacity-50"
+              title="Perbarui data laporan dari Cloud & Database secara realtime"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-200 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isRefreshing ? 'Sinkron...' : 'Refresh'}</span>
+            </button>
+
             {/* Export PDF A4 Button */}
             <button
               onClick={handleExportPDF}

@@ -94,10 +94,42 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     if (!initialProducts || initialProducts.length === 0) {
       db.products.toArray().then(setLocalProducts);
     }
-    if (!initialTransactions || initialTransactions.length === 0) {
+    if (initialTransactions === undefined) {
       db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(setLocalTransactions);
     }
   }, [initialProducts, initialTransactions]);
+
+  // Real-time synchronization listeners for instant Dashboard updates (0ms delay)
+  React.useEffect(() => {
+    const handleTrxDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        setLocalTransactions((prev) => prev.filter((t) => t.id !== id));
+      }
+    };
+    const handleTrxCreated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setLocalTransactions((prev) => {
+          if (prev.some((t) => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
+    const handleTrxRefreshed = () => {
+      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(setLocalTransactions).catch(() => {});
+    };
+
+    window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+    window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+
+    return () => {
+      window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+      window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    };
+  }, []);
 
   const handleRefreshTransactions = async () => {
     setIsRefreshing(true);
@@ -115,7 +147,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   };
 
   const products = (initialProducts && initialProducts.length > 0) ? initialProducts : localProducts;
-  const transactions = (initialTransactions && initialTransactions.length > 0) ? initialTransactions : localTransactions;
+  const transactions = initialTransactions !== undefined ? initialTransactions : localTransactions;
   const effectiveRole = userRole || currentUser?.role || 'CASHIER';
   const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'MANAGER';
 

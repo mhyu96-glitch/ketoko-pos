@@ -258,6 +258,31 @@ export class SyncService {
   }
 
   /**
+   * Mengambil daftar ID transaksi yang telah dihapus agar tidak pernah ter-reupload kembali (Tombstone)
+   */
+  getDeletedTransactionIds(): Set<string> {
+    try {
+      const saved = localStorage.getItem('ketoko_deleted_trx_ids');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr)) {
+          return new Set(arr);
+        }
+      }
+    } catch {}
+    return new Set();
+  }
+
+  markTransactionDeletedLocally(trxId: string) {
+    try {
+      const set = this.getDeletedTransactionIds();
+      set.add(trxId);
+      const arr = Array.from(set).slice(-500);
+      localStorage.setItem('ketoko_deleted_trx_ids', JSON.stringify(arr));
+    } catch {}
+  }
+
+  /**
    * Dorong seluruh transaksi lokal yang belum ada di Supabase Cloud (sinkronisasi 2 arah otomatis)
    */
   async pushLocalTransactionsToSupabase(): Promise<{ pushedCount: number }> {
@@ -265,15 +290,47 @@ export class SyncService {
     if (!supabase || !navigator.onLine) return { pushedCount: 0 };
 
     try {
+      // 1. Ambil daftar transaksi yang sudah dihapus dari tombstone lokal & Cloud
+      const deletedIds = this.getDeletedTransactionIds();
+
+      // Tarik tombstone dari Supabase sync_logs agar HP/Laptop sinkron mengetahui nota yang dihapus
+      try {
+        const { data: remoteDeleted } = await supabase
+          .from('sync_logs')
+          .select('error_message')
+          .eq('operation_type', 'DELETE_TRANSACTION')
+          .order('synced_at', { ascending: false })
+          .limit(100);
+
+        if (remoteDeleted && remoteDeleted.length > 0) {
+          for (const item of remoteDeleted) {
+            if (item.error_message) {
+              deletedIds.add(item.error_message);
+              this.markTransactionDeletedLocally(item.error_message);
+            }
+          }
+        }
+      } catch {}
+
+      // Bersihkan transaksi lokal yang sudah tercatat dihapus (cegah zombie re-upload)
+      for (const delId of deletedIds) {
+        await db.transactions.delete(delId).catch(() => {});
+        await db.syncQueue.delete(delId).catch(() => {});
+      }
+
       const allLocal = await db.transactions.toArray();
       if (!allLocal || allLocal.length === 0) return { pushedCount: 0 };
+
+      // Hanya proses transaksi aktif yang TIDAK ada di daftar terhapus
+      const validLocal = allLocal.filter((t) => !deletedIds.has(String(t.id)));
+      if (validLocal.length === 0) return { pushedCount: 0 };
 
       // Cek ID transaksi yang sudah ada di Supabase Cloud
       const { data: cloudIdsData } = await supabase.from('transactions').select('id');
       const cloudIdSet = new Set((cloudIdsData || []).map((t: any) => String(t.id)));
 
       // Ambil transaksi yang belum ada di Cloud atau ditandai belum synced
-      const toPush = allLocal.filter((t) => !cloudIdSet.has(String(t.id)) || !t.synced);
+      const toPush = validLocal.filter((t) => !cloudIdSet.has(String(t.id)) || !t.synced);
       if (toPush.length === 0) return { pushedCount: 0 };
 
       let pushed = 0;
@@ -540,10 +597,24 @@ export class SyncService {
    * Otomatis mengembalikan stok fisik produk yang terjual ke rak toko
    */
   async deleteTransaction(trxId: string): Promise<boolean> {
+    // 1. Catat ke daftar tombstone lokal SEGERA agar tidak pernah di-re-upload lagi
+    this.markTransactionDeletedLocally(trxId);
+
+    // 2. Ambil data transaksi sebelum dihapus untuk restore stok
     const trx = await db.transactions.get(trxId);
     const updatedStocks: Array<{ id: string; stock: number }> = [];
 
-    // 1. Kembalikan stok fisik barang yang terjual di nota ini
+    // 3. HAPUS DARI INDEXEDDB LOKAL & ANTREAN SYNC SEKETIKA (0ms delay)
+    await db.transactions.delete(trxId);
+    await db.syncQueue.delete(trxId);
+    await db.receivables.where('transaction_id').equals(trxId).delete().catch(() => {});
+
+    // 4. DISPATCH DOM EVENT LOKAL SEKETIKA agar Dashboard & Laporan langsung berkurang tanpa delay
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+    }
+
+    // 5. Kembalikan stok fisik barang yang terjual di nota ini (update lokal cepat & broadcast cloud)
     if (trx && Array.isArray(trx.items)) {
       for (const item of trx.items) {
         const prodId = item.product_id;
@@ -552,21 +623,18 @@ export class SyncService {
           const prod = await db.products.get(prodId);
           if (prod) {
             const restoredStock = (prod.stock || 0) + addQty;
-            await this.syncProductChange({
+            db.products.update(prodId, { stock: restoredStock }).catch(() => {});
+            this.syncProductChange({
               ...prod,
               stock: restoredStock
-            });
+            }).catch(() => {});
             updatedStocks.push({ id: prodId, stock: restoredStock });
           }
         }
       }
     }
 
-    // 2. Hapus dari IndexedDB lokal & antrean sync
-    await db.transactions.delete(trxId);
-    await db.syncQueue.delete(trxId);
-
-    // 3. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    // 6. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('ketoko_product_sync');
@@ -575,36 +643,39 @@ export class SyncService {
       }
     } catch {}
 
-    // 4. Kirim hapus ke LAN Server (jika aktif)
+    // 7. Kirim hapus ke LAN Server (jika aktif)
     lanService.deleteTransaction(trxId, trx?.items).catch(() => {});
 
-    // 5. Hapus dari Cloud Supabase & Broadcast ke seluruh komputer lain (berbeda jaringan)
+    // 8. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs (secara paralel dan non-blocking)
     if (navigator.onLine) {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
-          await supabase.from('transaction_items').delete().eq('transaction_id', trxId);
-          await supabase.from('receivables').delete().eq('transaction_id', trxId);
-          await supabase.from('transactions').delete().eq('id', trxId);
+          Promise.allSettled([
+            supabase.from('transaction_items').delete().eq('transaction_id', trxId),
+            supabase.from('receivables').delete().eq('transaction_id', trxId),
+            supabase.from('transactions').delete().eq('id', trxId),
+            supabase.from('sync_logs').insert({
+              branch_id: trx?.branch_id || 'BR-01',
+              operation_type: 'DELETE_TRANSACTION',
+              error_message: trxId,
+              status: 'DELETED',
+              synced_at: new Date().toISOString()
+            })
+          ]).catch(() => {});
         }
       } catch (err) {
         console.warn('[Sync] Gagal hapus transaksi dari Supabase:', err);
       }
     }
-    await db.receivables.where('transaction_id').equals(trxId).delete().catch(() => {});
 
-    // Siarkan realtime broadcast ke semua kasir di cloud
+    // 9. Siarkan realtime broadcast ke semua terminal kasir di cloud (berbeda jaringan)
     this.broadcastCloudEvent('transaction_deleted', {
       transaction_id: trxId,
       updated_stocks: updatedStocks
     });
     if (updatedStocks.length > 0) {
       this.broadcastCloudEvent('stock_updated', updatedStocks);
-    }
-
-    // Dispatch DOM event untuk komponen lokal
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
     }
 
     this.notifyStatusChange();
@@ -770,7 +841,33 @@ export class SyncService {
       if (trxErr) throw trxErr;
       if (!cloudTrx || cloudTrx.length === 0) return { count: 0 };
 
-      const trxIds = cloudTrx.map(t => t.id);
+      // 1. Ambil daftar transaksi yang sudah dihapus (Tombstone)
+      const deletedIds = this.getDeletedTransactionIds();
+      try {
+        const { data: remoteDeleted } = await supabase
+          .from('sync_logs')
+          .select('error_message')
+          .eq('operation_type', 'DELETE_TRANSACTION')
+          .order('synced_at', { ascending: false })
+          .limit(100);
+
+        if (remoteDeleted && remoteDeleted.length > 0) {
+          for (const item of remoteDeleted) {
+            if (item.error_message) {
+              deletedIds.add(item.error_message);
+              this.markTransactionDeletedLocally(item.error_message);
+              await db.transactions.delete(item.error_message).catch(() => {});
+              await db.syncQueue.delete(item.error_message).catch(() => {});
+            }
+          }
+        }
+      } catch {}
+
+      // 2. Filter hanya transaksi yang tidak dihapus
+      const activeCloudTrx = cloudTrx.filter(t => !deletedIds.has(String(t.id)));
+      if (activeCloudTrx.length === 0) return { count: 0, transactions: [] };
+
+      const trxIds = activeCloudTrx.map(t => t.id);
 
       // Ambil detail items transaksi
       const { data: cloudItems, error: itemsErr } = await supabase
@@ -799,7 +896,7 @@ export class SyncService {
       }
 
       const formatted: Transaction[] = [];
-      for (const t of cloudTrx) {
+      for (const t of activeCloudTrx) {
         const existing = await db.transactions.get(t.id);
         const cloudItemDetails = itemsMap.get(t.id);
         const resolvedItems = (cloudItemDetails && cloudItemDetails.length > 0)
@@ -831,6 +928,9 @@ export class SyncService {
       }
 
       await db.transactions.bulkPut(formatted);
+      if (typeof window !== 'undefined' && formatted.length > 0) {
+        window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed', { detail: { count: formatted.length } }));
+      }
       return { count: formatted.length, transactions: formatted };
     } catch (err: any) {
       console.warn('[SyncService] Gagal tarik transaksi dari Supabase:', err.message);
@@ -1041,23 +1141,13 @@ export class SyncService {
       this.isSyncing = true;
       this.notifyStatusChange();
 
-      // 1. Dorong transaksi lokal yang belum ada di Cloud ke Supabase
-      await this.pushLocalTransactionsToSupabase();
-
-      // 2. Upload antrean pending transaksi
-      await this.reconcileQueue();
-
-      // 3. Tarik transaksi terbaru kasir
-      await this.pullTransactionsFromSupabase();
-
-      // Tarik katalog produk terbaru
-      await this.pullFromSupabase();
-
-      // Tarik data pembelian
-      await this.pullPurchasesFromSupabase();
-
-      // Sinkron hutang piutang
-      await this.syncDebtsAndReceivables();
+      // Jalankan seluruh modul sinkronisasi tanpa saling memblokir jika salah satu gagal
+      await this.pushLocalTransactionsToSupabase().catch((err) => console.warn('[Sync] pushLocal failed:', err));
+      await this.reconcileQueue().catch((err) => console.warn('[Sync] reconcileQueue failed:', err));
+      await this.pullTransactionsFromSupabase().catch((err) => console.warn('[Sync] pullTransactions failed:', err));
+      await this.pullFromSupabase().catch((err) => console.warn('[Sync] pullProducts failed:', err));
+      await this.pullPurchasesFromSupabase().catch((err) => console.warn('[Sync] pullPurchases failed:', err));
+      await this.syncDebtsAndReceivables().catch((err) => console.warn('[Sync] syncDebts failed:', err));
 
       this.lastSyncTime = new Date().toISOString();
       localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);

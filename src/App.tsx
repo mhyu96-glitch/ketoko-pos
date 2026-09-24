@@ -388,14 +388,10 @@ export const App: React.FC = () => {
       }
 
       if (navigator.onLine) {
-        try {
-          // 1. Dorong seluruh transaksi lokal yang belum tercatat di Cloud ke Supabase
-          await syncService.pushLocalTransactionsToSupabase();
-          // 2. Tarik transaksi kasir terbaru dari Supabase
-          await syncService.pullTransactionsFromSupabase(100);
-        } catch (err) {
-          console.warn('[App] Gagal sync transaksi dengan Supabase:', err);
-        }
+        await Promise.allSettled([
+          syncService.pushLocalTransactionsToSupabase(),
+          syncService.pullTransactionsFromSupabase(100)
+        ]);
       }
 
       const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
@@ -501,6 +497,7 @@ export const App: React.FC = () => {
         // onTransactionDeleted (Live sync across LAN cashiers)
         (trxId) => {
           if (!trxId) return;
+          syncService.markTransactionDeletedLocally(trxId);
           db.transactions.delete(trxId).catch(() => {});
           db.syncQueue.delete(trxId).catch(() => {});
           setTransactions((prev) => prev.filter((t) => t.id !== trxId));
@@ -518,6 +515,7 @@ export const App: React.FC = () => {
           if (event.data?.type === 'transaction_deleted') {
             const trxId = event.data.transaction_id;
             if (trxId) {
+              syncService.markTransactionDeletedLocally(trxId);
               db.transactions.delete(trxId).catch(() => {});
               db.syncQueue.delete(trxId).catch(() => {});
               setTransactions((prev) => prev.filter((t) => t.id !== trxId));
@@ -637,6 +635,7 @@ export const App: React.FC = () => {
           .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
             const trxId = payload?.transaction_id || payload?.id;
             if (trxId) {
+              syncService.markTransactionDeletedLocally(trxId);
               await db.transactions.delete(trxId).catch(() => {});
               await db.syncQueue.delete(trxId).catch(() => {});
               setTransactions((prev) => prev.filter((t) => t.id !== trxId));
@@ -773,6 +772,24 @@ export const App: React.FC = () => {
       }
     };
 
+    const handleTrxDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        syncService.markTransactionDeletedLocally(id);
+        setTransactions((prev) => prev.filter((t) => t.id !== id));
+      }
+    };
+
+    const handleTrxCreated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setTransactions((prev) => {
+          if (prev.some((t) => t.id === trx.id)) return prev;
+          return [trx, ...prev];
+        });
+      }
+    };
+
     const handleTrxRefreshed = async () => {
       try {
         const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
@@ -783,12 +800,16 @@ export const App: React.FC = () => {
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
     window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+    window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+    window.addEventListener('ketoko_transaction_created', handleTrxCreated);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
+      window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
+      window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
     };
   }, [isOnline, handleManualSync]);
 

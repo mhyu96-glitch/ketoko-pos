@@ -101,15 +101,21 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   };
 
   const handleDeleteTransaction = async (trxId: string) => {
+    // 1. Optimistic UI update: langsung hilangkan nota dari layar kasir seketika (0ms latency)
+    setTransactions(prev => prev.filter(t => t.id !== trxId));
+    setDeleteConfirmId(null);
+    setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus & stok barang otomatis dikembalikan.' });
+    onTransactionDeleted?.(trxId);
+    setTimeout(() => setDeleteStatus(null), 3000);
+
     try {
-      // Hapus transaksi secara realtime (Lokal, LAN, Cloud Supabase) & otomatis kembalikan stok
+      // 2. Eksekusi penghapusan di IndexedDB, Cloud Supabase, LAN & restore stok di background
       await syncService.deleteTransaction(trxId);
-      setTransactions(prev => prev.filter(t => t.id !== trxId));
-      setDeleteConfirmId(null);
-      setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus & stok barang otomatis dikembalikan.' });
-      onTransactionDeleted?.(trxId);
-      setTimeout(() => setDeleteStatus(null), 3000);
     } catch (err: any) {
+      console.error('Gagal memproses hapus transaksi:', err);
+      // Rollback jika terjadi kesalahan tak terduga
+      const allTrx = await db.transactions.reverse().sortBy('created_at').catch(() => []);
+      setTransactions(allTrx);
       setDeleteStatus({ success: false, message: 'Gagal menghapus: ' + err.message });
     }
   };
