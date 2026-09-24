@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/super-admin.html", "destination": "/super-admin.html" },
+    { "source": "/super-admin", "destination": "/super-admin.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+

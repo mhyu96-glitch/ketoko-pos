@@ -1,0 +1,60 @@
+# =====================================================================
+# KETOKO POS — GIT IGNORE CONFIGURATION
+# =====================================================================
+
+# 1. Environment & Secret Credentials (SANGAT PENTING: JANGAN DI-COMMIT)
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.cert
+
+# 2. Database Lokal & SQLite Files
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
+
+# 3. Binaries & Cloudflare Tunnel Binaries
+bin/
+cloudflared
+cloudflared*
+*.exe
+*.AppImage
+*.deb
+*.rpm
+
+# 4. Build Outputs & Installers
+dist/
+dist-ssr/
+release/
+release-admin/
+*.tsbuildinfo
+
+# 5. Dependencies
+node_modules/
+
+# 6. Logs & Debug
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 7. OS & Editor Specific Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.local

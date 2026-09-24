@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ketoko POS - Generator & Preview Nota Thermal ESC/POS</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .font-mono-receipt {
+      font-family: 'JetBrains Mono', 'Courier Prime', monospace;
+    }
+    /* Thermal paper texture */
+    .thermal-paper {
+      background-color: #ffffff;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    }
+    /* Jagged serrated paper edge bottom */
+    .serrated-bottom {
+      background-image: radial-gradient(circle, transparent 4px, #ffffff 4px);
+      background-size: 10px 10px;
+    }
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #receipt-print-area, #receipt-print-area * {
+        visibility: visible;
+      }
+      #receipt-print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        border: none;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-[#f5ede4] text-[#332219] min-h-screen flex flex-col antialiased selection:bg-[#7c4e2f] selection:text-white">
+
+  <!-- Header Banner -->
+  <header class="bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white shadow-md no-print sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-2xl bg-[#543017] text-amber-200 flex items-center justify-center font-bold text-xl border border-[#9b663b]/50 shadow-inner">
+          🖨️
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-black tracking-tight flex items-center gap-2">
+            <span>Ketoko POS</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-[#543017] text-amber-100 uppercase border border-[#9b663b]/50 font-bold">
+              Thermal Receipt Studio
+            </span>
+          </h1>
+          <p class="text-[11px] text-[#fcefe3]/90 font-medium">Kustomisasi Tata Letak Nota, Logo Toko Rata Tengah & Live Preview</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <button onclick="printToThermalHardware()" class="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-[#332219] text-xs font-bold rounded-xl shadow-xs transition-all flex items-center space-x-1.5 active:scale-95">
+          <span>🖨️ Cetak Struk Sekarang</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto w-full p-4 sm:p-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    
+    <!-- LEFT PANEL: Settings & Controls (7 Cols) -->
+    <div class="lg:col-span-7 space-y-4 no-print">
+
+      <!-- 1. Receipt Style Preset (4 Distinct Styles) -->
+      <div class="bg-white rounded-3xl p-5 border border-[#e4d5c7] shadow-xs space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-extrabold text-sm text-[#332219] flex items-center gap-2">
+            <span>✨</span> Pilihan Gaya & Desain Nota (*4 Gaya Berbeda Signifikan*)
+          </h2>
+          <span id="active-style-badge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-md bg-[#faebd7] text-[#7c4e2f] border border-[#ddc3aa] uppercase">
+            MODERN BERSIH
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <!-- Modern -->
+          <button type="button" onclick="setStyle('modern')" id="btn-style-modern" class="style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fcf5ed] border-[#7c4e2f] ring-2 ring-[#7c4e2f]/25 shadow-xs">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-xl bg-[#7c4e2f] text-white flex items-center justify-center text-xs">🌟</div>
+                <div>
+                  <div class="text-xs font-black text-[#332219]">Modern Bersih</div>
+                  <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#faebd7] text-[#7c4e2f]">Cafe & Boutique</span>
+                </div>
+              </div>
+              <span class="check-icon text-[#7c4e2f] font-bold text-xs">✓</span>
+            </div>
+            <p class="text-[10px] text-[#8a6b53] mt-1.5 leading-snug">Blok total tebal, tag kategori, & QR verifikasi elegan</p>
+          </button>
+
+          <!-- Classic -->
+          <button type="button" onclick="setStyle('classic')" id="btn-style-classic" class="style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fdfaf7] border-[#e4d5c7] hover:bg-[#faebd7]/50">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-xl bg-[#a08573] text-white flex items-center justify-center text-xs">🧾</div>
+                <div>
+                  <div class="text-xs font-black text-[#332219]">Klasik Toko</div>
+                  <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-stone-200 text-stone-600">Supermarket POS</span>
+                </div>
+              </div>
+              <span class="check-icon hidden text-[#7c4e2f] font-bold text-xs">✓</span>
+            </div>
+            <p class="text-[10px] text-[#8a6b53] mt-1.5 leading-snug">Gaya dot-matrix uppercase, garis = & - tradisional, barcode garis</p>
+          </button>
+
+          <!-- Detailed -->
+          <button type="button" onclick="setStyle('detailed')" id="btn-style-detailed" class="style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fdfaf7] border-[#e4d5c7] hover:bg-[#faebd7]/50">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-xl bg-[#a08573] text-white flex items-center justify-center text-xs">📊</div>
+                <div>
+                  <div class="text-xs font-black text-[#332219]">Detail Rinci</div>
+                  <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-stone-200 text-stone-600">Grosir & Faktur</span>
+                </div>
+              </div>
+              <span class="check-icon hidden text-[#7c4e2f] font-bold text-xs">✓</span>
+            </div>
+            <p class="text-[10px] text-[#8a6b53] mt-1.5 leading-snug">Tabel faktur bergaris, info SKU, DPP pajak & tanda tangan kasir</p>
+          </button>
+
+          <!-- Compact -->
+          <button type="button" onclick="setStyle('compact')" id="btn-style-compact" class="style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fdfaf7] border-[#e4d5c7] hover:bg-[#faebd7]/50">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-xl bg-[#a08573] text-white flex items-center justify-center text-xs">⚡</div>
+                <div>
+                  <div class="text-xs font-black text-[#332219]">Kompak Hemat</div>
+                  <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-stone-200 text-stone-600">Eco Fast-Food</span>
+                </div>
+              </div>
+              <span class="check-icon hidden text-[#7c4e2f] font-bold text-xs">✓</span>
+            </div>
+            <p class="text-[10px] text-[#8a6b53] mt-1.5 leading-snug">Spasi ultra-rapat 1-baris, hemat konsumsi kertas thermal</p>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Logo Toko Rata Tengah (Centered Logo) -->
+      <div class="bg-white rounded-3xl p-5 border border-[#e4d5c7] shadow-xs space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-extrabold text-sm text-[#332219] flex items-center gap-2">
+            <span>🖼️</span> Logo Toko Rata Tengah (*Centered Store Logo*)
+          </h2>
+          <label class="flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-logo" checked onchange="toggleLogoVisibility()" class="sr-only peer">
+            <div class="w-9 h-5 bg-stone-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#7c4e2f]"></div>
+            <span class="ml-2 text-xs font-bold text-[#7c4e2f]">Aktif</span>
+          </label>
+        </div>
+
+        <div id="logo-uploader-box" class="p-3 bg-[#fdfaf7] rounded-2xl border border-[#eed7c4] flex items-center justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div id="logo-thumb-container" class="w-12 h-12 rounded-xl bg-white border border-[#ddc3aa] p-1 flex items-center justify-center overflow-hidden shadow-2xs">
+              <img id="logo-thumb-img" src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80" alt="Logo" class="w-full h-full object-contain">
+            </div>
+            <div>
+              <div class="font-bold text-xs text-[#332219]">File Logo Toko</div>
+              <div class="text-[10px] text-[#8a6b53]">Ditempatkan rata tengah di atas struk</div>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <label class="px-3 py-1.5 bg-[#7c4e2f] hover:bg-[#633e26] text-white text-xs font-bold rounded-xl cursor-pointer shadow-2xs transition-all active:scale-95">
+              <span>Upload Logo</span>
+              <input type="file" accept="image/*" onchange="handleLogoUpload(event)" class="hidden">
+            </label>
+            <button type="button" onclick="removeLogo()" class="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors" title="Hapus Logo">
+              🗑️
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Paper Width & Hardware Toggles -->
+      <div class="bg-white rounded-3xl p-5 border border-[#e4d5c7] shadow-xs space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="text-[#332219] font-bold text-xs mb-1.5 block">Lebar Kertas Thermal</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="setPaperWidth('58mm')" id="btn-paper-58" class="py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs">
+                58 mm (32 col)
+              </button>
+              <button type="button" onclick="setPaperWidth('80mm')" id="btn-paper-80" class="py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#fdfaf7] text-[#543c2e] border-[#dfcebe] hover:bg-[#faebd7]">
+                80 mm (48 col)
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[#332219] font-bold text-xs mb-1.5 block">Fitur Auto-Cut Kertas</label>
+            <button type="button" onclick="toggleAutoCut()" id="btn-autocut" class="w-full py-2 px-3 rounded-xl border text-xs text-center font-bold flex items-center justify-center space-x-1.5 transition-all bg-[#edf5ee] text-[#166534] border-[#cce2cf]">
+              <span>✂️ Auto-Cut Aktif (ON)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Checkbox Options -->
+        <div class="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center space-x-2 p-2 rounded-xl bg-[#fdfaf7] border border-[#e4d5c7] cursor-pointer hover:bg-[#faebd7]">
+            <input type="checkbox" id="chk-queue" checked onchange="renderReceipt()" class="rounded text-[#7c4e2f]">
+            <span class="font-semibold text-[#332219]">Nomor Antrean Besar</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2 rounded-xl bg-[#fdfaf7] border border-[#e4d5c7] cursor-pointer hover:bg-[#faebd7]">
+            <input type="checkbox" id="chk-cashier" checked onchange="renderReceipt()" class="rounded text-[#7c4e2f]">
+            <span class="font-semibold text-[#332219]">Nama Kasir & Jam Transaksi</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2 rounded-xl bg-[#fdfaf7] border border-[#e4d5c7] cursor-pointer hover:bg-[#faebd7]">
+            <input type="checkbox" id="chk-saving" checked onchange="renderReceipt()" class="rounded text-[#7c4e2f]">
+            <span class="font-semibold text-[#332219]">Lencana Hemat Belanja</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2 rounded-xl bg-[#fdfaf7] border border-[#e4d5c7] cursor-pointer hover:bg-[#faebd7]">
+            <input type="checkbox" id="chk-barcode" checked onchange="renderReceipt()" class="rounded text-[#7c4e2f]">
+            <span class="font-semibold text-[#332219]">Barcode / QRIS Footer</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 4. Header & Footer Text Customizer -->
+      <div class="bg-white rounded-3xl p-5 border border-[#e4d5c7] shadow-xs space-y-3">
+        <div>
+          <label class="text-[#332219] font-bold text-xs mb-1 block">Teks Header Nota (Nama Toko & Alamat)</label>
+          <textarea id="input-header-text" rows="2" oninput="renderReceipt()" class="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:ring-2 focus:ring-[#7c4e2f]/20">KETOKO MODERN POS&#10;Jl. Pahlawan No. 45, Samarinda&#10;Telp: 0812-3456-7890</textarea>
+        </div>
+
+        <div>
+          <label class="text-[#332219] font-bold text-xs mb-1 block">Teks Footer Nota (Ucapan & Kebijakan)</label>
+          <textarea id="input-footer-text" rows="2" oninput="renderReceipt()" class="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:ring-2 focus:ring-[#7c4e2f]/20">Terima kasih atas kunjungan Anda!&#10;Barang yang dibeli dapat ditukar dlm 24 jam.</textarea>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL: Live Interactive Thermal Receipt Preview (5 Cols) -->
+    <div class="lg:col-span-5 flex flex-col space-y-3 sticky top-20">
+      
+      <div class="flex items-center justify-between no-print">
+        <h2 class="text-xs font-black text-[#332219] flex items-center gap-1.5">
+          <span>👁️</span> Pratinjau Langsung Struk (*Live Preview*)
+        </h2>
+        <span id="preview-paper-badge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#faebd7] text-[#7c4e2f] border border-[#ddc3aa]">
+          58mm
+        </span>
+      </div>
+
+      <!-- Thermal Paper Background Container -->
+      <div class="bg-[#ede4da] p-4 sm:p-6 rounded-3xl border border-[#ddc3aa] flex justify-center items-start overflow-y-auto max-h-[85vh] shadow-inner">
+        
+        <!-- Live Thermal Receipt Paper Container -->
+        <div id="receipt-print-area" class="thermal-paper rounded-t-xl text-stone-900 leading-tight transition-all duration-300 w-full max-w-[280px] p-4">
+          <!-- Dynamic Content Rendered by JavaScript -->
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // State
+    let currentStyle = 'modern';
+    let paperWidth = '58mm';
+    let autoCut = true;
+    let showLogo = true;
+    let logoUrl = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80';
+
+    const sampleItems = [
+      { sku: 'BRG-001', name: 'Minyak Goreng Tropical 2L', category: 'Sembako', qty: 2, price: 34000, subtotal: 68000, disc: 2000 },
+      { sku: 'BRG-002', name: 'Beras Ramos Super 5kg', category: 'Sembako', qty: 1, price: 65000, subtotal: 65000, disc: 0 },
+      { sku: 'BRG-003', name: 'Kopi Kapal Api Spesial 165g', category: 'Minuman', qty: 3, price: 12500, subtotal: 37500, disc: 1500 },
+      { sku: 'BRG-004', name: 'Indomie Goreng Original', category: 'Mie', qty: 5, price: 3100, subtotal: 15500, disc: 0 }
+    ];
+
+    const sampleSubtotal = 186000;
+    const sampleDiscount = 3500;
+    const sampleGrandTotal = sampleSubtotal - sampleDiscount;
+    const sampleCash = 200000;
+    const sampleChange = sampleCash - sampleGrandTotal;
+
+    function formatRupiah(num) {
+      return 'Rp ' + Number(num).toLocaleString('id-ID');
+    }
+
+    function setStyle(styleName) {
+      currentStyle = styleName;
+      document.getElementById('active-style-badge').innerText = styleName.toUpperCase();
+
+      // Update card styles
+      ['modern', 'classic', 'detailed', 'compact'].forEach(s => {
+        const btn = document.getElementById('btn-style-' + s);
+        const check = btn.querySelector('.check-icon');
+        if (s === styleName) {
+          btn.className = 'style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fcf5ed] border-[#7c4e2f] ring-2 ring-[#7c4e2f]/25 shadow-xs';
+          check.classList.remove('hidden');
+        } else {
+          btn.className = 'style-card p-3 rounded-2xl border text-left transition-all relative overflow-hidden bg-[#fdfaf7] border-[#e4d5c7] hover:bg-[#faebd7]/50';
+          check.classList.add('hidden');
+        }
+      });
+
+      renderReceipt();
+    }
+
+    function setPaperWidth(width) {
+      paperWidth = width;
+      document.getElementById('preview-paper-badge').innerText = width;
+      
+      const b58 = document.getElementById('btn-paper-58');
+      const b80 = document.getElementById('btn-paper-80');
+      if (width === '58mm') {
+        b58.className = 'py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs';
+        b80.className = 'py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#fdfaf7] text-[#543c2e] border-[#dfcebe] hover:bg-[#faebd7]';
+      } else {
+        b80.className = 'py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs';
+        b58.className = 'py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all bg-[#fdfaf7] text-[#543c2e] border-[#dfcebe] hover:bg-[#faebd7]';
+      }
+      renderReceipt();
+    }
+
+    function toggleAutoCut() {
+      autoCut = !autoCut;
+      const btn = document.getElementById('btn-autocut');
+      if (autoCut) {
+        btn.className = 'w-full py-2 px-3 rounded-xl border text-xs text-center font-bold flex items-center justify-center space-x-1.5 transition-all bg-[#edf5ee] text-[#166534] border-[#cce2cf]';
+        btn.innerHTML = '<span>✂️ Auto-Cut Aktif (ON)</span>';
+      } else {
+        btn.className = 'w-full py-2 px-3 rounded-xl border text-xs text-center font-bold flex items-center justify-center space-x-1.5 transition-all bg-[#fdfaf7] text-[#8a6b53] border-[#dfcebe]';
+        btn.innerHTML = '<span>✂️ Manual Tear (OFF)</span>';
+      }
+      renderReceipt();
+    }
+
+    function toggleLogoVisibility() {
+      showLogo = document.getElementById('toggle-logo').checked;
+      renderReceipt();
+    }
+
+    function handleLogoUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        logoUrl = evt.target.result;
+        document.getElementById('logo-thumb-img').src = logoUrl;
+        showLogo = true;
+        document.getElementById('toggle-logo').checked = true;
+        renderReceipt();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeLogo() {
+      logoUrl = '';
+      showLogo = false;
+      document.getElementById('toggle-logo').checked = false;
+      document.getElementById('logo-thumb-img').src = '';
+      renderReceipt();
+    }
+
+    
+    // WebUSB & WebSerial Print Driver for Linux/Chrome
+    async function printToThermalHardware() {
+      try {
+        const encoder = new TextEncoder();
+        let esc = [0x1B, 0x40]; // INIT
+
+        // Center Align
+        esc.push(0x1B, 0x61, 0x01);
+        
+        const header = document.getElementById('input-header-text').value;
+        esc.push(...encoder.encode(header + '\n'));
+        esc.push(...encoder.encode('================================\n'));
+        
+        // Left Align
+        esc.push(0x1B, 0x61, 0x00);
+        esc.push(...encoder.encode('Waktu: ' + new Date().toLocaleString('id-ID') + '\n'));
+        esc.push(...encoder.encode('--------------------------------\n'));
+        
+        sampleItems.forEach((it, idx) => {
+          esc.push(...encoder.encode((idx + 1) + '. ' + it.name + '\n'));
+          const line = '   ' + it.qty + ' x ' + it.price + ' = Rp ' + it.subtotal + '\n';
+          esc.push(...encoder.encode(line));
+        });
+
+        esc.push(...encoder.encode('--------------------------------\n'));
+        esc.push(...encoder.encode('TOTAL: Rp ' + sampleGrandTotal + '\n'));
+        esc.push(...encoder.encode('BAYAR: Rp ' + sampleCash + '\n'));
+        esc.push(...encoder.encode('KEMBALI: Rp ' + sampleChange + '\n'));
+        esc.push(...encoder.encode('================================\n'));
+
+        // Center footer
+        esc.push(0x1B, 0x61, 0x01);
+        const footer = document.getElementById('input-footer-text').value;
+        esc.push(...encoder.encode(footer + '\n\n\n'));
+        
+        // Auto-cut
+        if (autoCut) {
+          esc.push(0x1D, 0x56, 0x42, 0x00);
+        }
+
+        const uint8 = new Uint8Array(esc);
+
+        // Try WebUSB
+        if ('usb' in navigator) {
+          const device = await navigator.usb.requestDevice({ filters: [] });
+          await device.open();
+          if (device.configuration === null) await device.selectConfiguration(1);
+          
+          let ifaceNum = 0, epNum = 1, found = false;
+          for (const iface of device.configuration.interfaces) {
+            for (const alt of iface.alternates) {
+              for (const ep of alt.endpoints) {
+                if (ep.direction === 'out' && ep.type === 'bulk') {
+                  ifaceNum = iface.interfaceNumber;
+                  epNum = ep.endpointNumber;
+                  found = true;
+                  break;
+                }
+              }
+              if (found) break;
+            }
+            if (found) break;
+          }
+          await device.claimInterface(ifaceNum);
+          await device.transferOut(epNum, uint8);
+          await device.close();
+          alert('Berhasil mencetak langsung ke USB Thermal Printer!');
+          return;
+        }
+
+        // Fallback to WebSerial
+        if ('serial' in navigator) {
+          const port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 9600 });
+          const writer = port.writable.getWriter();
+          await writer.write(uint8);
+          writer.releaseLock();
+          await port.close();
+          alert('Berhasil mencetak via Web Serial!');
+          return;
+        }
+
+        window.print();
+      } catch (e) {
+        alert('Gagal mengirim ke USB Printer: ' + e.message + '\nMembuka dialog print browser...');
+        window.print();
+      }
+    }
+
+    function renderReceipt() {
+      const headerText = document.getElementById('input-header-text').value;
+      const footerText = document.getElementById('input-footer-text').value;
+      const showQueue = document.getElementById('chk-queue').checked;
+      const showCashier = document.getElementById('chk-cashier').checked;
+      const showSaving = document.getElementById('chk-saving').checked;
+      const showBarcode = document.getElementById('chk-barcode').checked;
+
+      const container = document.getElementById('receipt-print-area');
+      const maxW = paperWidth === '58mm' ? 'max-w-[280px]' : 'max-w-[340px]';
+      const textBase = paperWidth === '58mm' ? 'text-[11px]' : 'text-xs';
+      
+      let html = '';
+
+      // ==========================================
+      // 1. MODERN BERSIH
+      // ==========================================
+      if (currentStyle === 'modern') {
+        container.className = `thermal-paper rounded-t-2xl p-4 sm:p-5 border border-stone-200 text-stone-900 leading-tight font-sans w-full ${maxW} ${textBase}`;
+        
+        let logoHtml = (showLogo && logoUrl) ? `
+          <div class="flex justify-center mb-2.5">
+            <img src="${logoUrl}" alt="Logo Toko" class="max-h-14 max-w-[130px] object-contain rounded-xl shadow-xs" />
+          </div>
+        ` : '';
+
+        let queueHtml = showQueue ? `
+          <div class="my-2.5 py-1.5 bg-[#f5ece3] rounded-xl text-center font-black text-xs text-[#7c4e2f] border border-[#e5d0be]">
+            ORDER QUEUE: #042
+          </div>
+        ` : '';
+
+        let itemsHtml = sampleItems.map(it => `
+          <div class="space-y-0.5">
+            <div class="font-bold text-stone-950 flex justify-between">
+              <span class="truncate pr-1">${it.name}</span>
+              <span class="font-mono">${formatRupiah(it.subtotal)}</span>
+            </div>
+            <div class="flex justify-between text-[10px] text-stone-500 font-mono">
+              <span>${it.qty}x @ ${formatRupiah(it.price)}</span>
+              <span class="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 text-[8px] font-sans">${it.category}</span>
+            </div>
+          </div>
+        `).join('');
+
+        let savingPill = showSaving ? `
+          <div class="my-2 p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-center text-[10px] font-bold text-amber-900">
+            ✨ Anda Berhasil Hemat ${formatRupiah(sampleDiscount)}!
+          </div>
+        ` : '';
+
+        let barcodeHtml = showBarcode ? `
+          <div class="mt-3 pt-2 flex flex-col items-center justify-center space-y-1">
+            <div class="w-10 h-10 border-2 border-stone-900 rounded p-1 flex items-center justify-center font-black text-xs">QR</div>
+            <span class="text-[8px] font-mono text-stone-400">Scan untuk E-Receipt & QRIS</span>
+          </div>
+        ` : '';
+
+        html = `
+          ${logoHtml}
+          <div class="text-center space-y-1">
+            <span class="inline-block px-2 py-0.5 rounded-full bg-stone-900 text-white text-[9px] font-bold tracking-widest uppercase mb-1">
+              OFFICIAL RECEIPT
+            </span>
+            <div class="font-extrabold text-sm text-stone-950 whitespace-pre-line tracking-tight leading-snug">
+              ${headerText}
+            </div>
+          </div>
+          ${queueHtml}
+          <div class="my-2 border-b border-stone-800"></div>
+          <div class="grid grid-cols-2 text-[10px] text-stone-600 gap-y-0.5">
+            <div><span class="text-stone-400">TRX:</span> #INV-26082901</div>
+            <div class="text-right">09:30 WIB</div>
+            <div><span class="text-stone-400">Date:</span> 29/08/2026</div>
+            ${showCashier ? '<div class="text-right font-medium text-stone-800">Kasir: Siti</div>' : ''}
+          </div>
+          <div class="my-2 border-b border-stone-300"></div>
+          <div class="space-y-2">${itemsHtml}</div>
+          <div class="my-2.5 border-b border-stone-300"></div>
+          <div class="space-y-1 text-[11px] font-mono">
+            <div class="flex justify-between text-stone-600"><span>Subtotal</span><span>${formatRupiah(sampleSubtotal)}</span></div>
+            ${showSaving ? `<div class="flex justify-between text-rose-600 font-semibold"><span>Diskon Promo</span><span>-${formatRupiah(sampleDiscount)}</span></div>` : ''}
+          </div>
+          <div class="my-2 p-2.5 rounded-xl bg-stone-950 text-white flex items-center justify-between font-mono shadow-md">
+            <span class="text-xs font-bold font-sans tracking-wide">TOTAL BAYAR</span>
+            <span class="text-sm font-black text-amber-300">${formatRupiah(sampleGrandTotal)}</span>
+          </div>
+          <div class="space-y-0.5 text-[10px] font-mono text-stone-700">
+            <div class="flex justify-between"><span>Tunai (Cash)</span><span>${formatRupiah(sampleCash)}</span></div>
+            <div class="flex justify-between font-bold text-stone-900"><span>Kembalian</span><span>${formatRupiah(sampleChange)}</span></div>
+          </div>
+          ${savingPill}
+          <div class="my-3 border-b border-stone-200"></div>
+          <div class="text-center text-[10px] text-stone-500 whitespace-pre-line leading-relaxed font-sans">${footerText}</div>
+          ${barcodeHtml}
+          <div class="mt-4 pt-2 border-b-4 border-dotted border-stone-300 text-center text-[8px] text-stone-400 select-none font-mono">
+            ✂ ${autoCut ? 'AUTO-CUT PAPER' : 'POTONG DISINI'} ✂
+          </div>
+        `;
+      }
+
+      // ==========================================
+      // 2. KLASIK TOKO (DOT-MATRIX)
+      // ==========================================
+      else if (currentStyle === 'classic') {
+        container.className = `thermal-paper rounded-t-sm p-4 sm:p-5 border border-stone-300 text-stone-950 font-mono-receipt text-[10px] uppercase tracking-wider w-full ${maxW}`;
+        
+        let logoHtml = (showLogo && logoUrl) ? `
+          <div class="flex justify-center mb-2 filter grayscale contrast-200">
+            <img src="${logoUrl}" alt="Logo" class="max-h-11 max-w-[110px] object-contain" />
+          </div>
+        ` : '';
+
+        let itemsHtml = sampleItems.map((it, idx) => `
+          <div class="space-y-0.5">
+            <div class="font-bold truncate">${idx + 1}. ${it.name}</div>
+            <div class="flex justify-between pl-3 text-stone-700">
+              <span>${it.qty} X ${formatRupiah(it.price)}</span>
+              <span>${formatRupiah(it.subtotal)}</span>
+            </div>
+          </div>
+        `).join('');
+
+        html = `
+          ${logoHtml}
+          <div class="text-center select-none font-bold">================================</div>
+          <div class="text-center font-black whitespace-pre-line py-0.5 text-[11px] leading-tight">${headerText}</div>
+          <div class="text-center select-none font-bold">================================</div>
+          ${showQueue ? '<div class="text-center font-bold py-1 my-1 border-y border-dashed border-stone-400">*** NO. ANTRIAN: 042 ***</div>' : ''}
+          <div class="py-1 space-y-0.5 text-[9px]">
+            <div class="flex justify-between"><span>NO: 20260829-089</span><span>POS-01 (TUNAI)</span></div>
+            <div class="flex justify-between"><span>TGL: 29.08.2026</span><span>JAM: 09:30:15</span></div>
+            ${showCashier ? '<div>KASIR: 01-SITI RAHMAH</div>' : ''}
+          </div>
+          <div class="text-center select-none font-bold">--------------------------------</div>
+          <div class="flex justify-between font-bold text-[9px]"><span>ITEM BELANJA</span><span>TOTAL</span></div>
+          <div class="text-center select-none font-bold">--------------------------------</div>
+          <div class="space-y-1.5">${itemsHtml}</div>
+          <div class="text-center select-none font-bold my-1">--------------------------------</div>
+          <div class="space-y-0.5 text-[10px]">
+            <div class="flex justify-between"><span>SUBTOTAL (${sampleItems.length} ITEM):</span><span>${formatRupiah(sampleSubtotal)}</span></div>
+            ${showSaving ? `<div class="flex justify-between"><span>POTONGAN DISKON:</span><span>-${formatRupiah(sampleDiscount)}</span></div>` : ''}
+            <div class="flex justify-between font-black text-xs pt-1 border-t border-dashed border-stone-900">
+              <span>TOTAL AKHIR :</span><span>${formatRupiah(sampleGrandTotal)}</span>
+            </div>
+            <div class="flex justify-between pt-1"><span>TUNAI (CASH) :</span><span>${formatRupiah(sampleCash)}</span></div>
+            <div class="flex justify-between font-bold"><span>KEMBALIAN    :</span><span>${formatRupiah(sampleChange)}</span></div>
+          </div>
+          ${showSaving ? `<div class="my-1.5 text-center font-bold text-[9px] py-0.5 border border-stone-800">*** ANDA HEMAT: ${formatRupiah(sampleDiscount)} ***</div>` : ''}
+          <div class="text-center select-none font-bold my-1">================================</div>
+          <div class="text-center text-[9px] whitespace-pre-line leading-tight">${footerText}</div>
+          ${showBarcode ? `
+            <div class="mt-3 pt-1 flex flex-col items-center justify-center space-y-1 select-none">
+              <svg class="h-7 w-40 text-stone-900" viewBox="0 0 160 28" fill="currentColor">
+                <rect x="0" y="0" width="3" height="28" />
+                <rect x="5" y="0" width="1" height="28" />
+                <rect x="8" y="0" width="4" height="28" />
+                <rect x="14" y="0" width="2" height="28" />
+                <rect x="18" y="0" width="1" height="28" />
+                <rect x="21" y="0" width="3" height="28" />
+                <rect x="26" y="0" width="2" height="28" />
+                <rect x="30" y="0" width="4" height="28" />
+                <rect x="36" y="0" width="1" height="28" />
+                <rect x="39" y="0" width="3" height="28" />
+                <rect x="44" y="0" width="2" height="28" />
+                <rect x="48" y="0" width="1" height="28" />
+                <rect x="51" y="0" width="4" height="28" />
+                <rect x="57" y="0" width="2" height="28" />
+                <rect x="61" y="0" width="3" height="28" />
+                <rect x="66" y="0" width="1" height="28" />
+                <rect x="69" y="0" width="4" height="28" />
+                <rect x="75" y="0" width="2" height="28" />
+                <rect x="79" y="0" width="1" height="28" />
+                <rect x="82" y="0" width="3" height="28" />
+                <rect x="87" y="0" width="4" height="28" />
+                <rect x="93" y="0" width="1" height="28" />
+                <rect x="96" y="0" width="2" height="28" />
+                <rect x="100" y="0" width="3" height="28" />
+                <rect x="105" y="0" width="1" height="28" />
+                <rect x="108" y="0" width="4" height="28" />
+                <rect x="114" y="0" width="2" height="28" />
+                <rect x="118" y="0" width="3" height="28" />
+                <rect x="123" y="0" width="1" height="28" />
+                <rect x="126" y="0" width="4" height="28" />
+                <rect x="132" y="0" width="2" height="28" />
+                <rect x="136" y="0" width="1" height="28" />
+                <rect x="139" y="0" width="3" height="28" />
+                <rect x="144" y="0" width="4" height="28" />
+                <rect x="150" y="0" width="2" height="28" />
+                <rect x="154" y="0" width="1" height="28" />
+                <rect x="157" y="0" width="3" height="28" />
+              </svg>
+              <span class="text-[8px] font-mono tracking-widest text-stone-700 font-bold">*TRX-20260829-089*</span>
+            </div>
+          ` : ''}
+          <div class="mt-4 pt-2 border-b-2 border-dashed border-stone-400 text-center text-[8px] select-none">
+            --- ${autoCut ? 'CUT PAPER' : 'TEAR HERE'} ---
+          </div>
+        `;
+      }
+
+      // ==========================================
+      // 3. DETAIL RINCI (FAKTUR & GROSIR)
+      // ==========================================
+      else if (currentStyle === 'detailed') {
+        container.className = `thermal-paper rounded-t-xl p-3.5 sm:p-4 border border-stone-300 text-stone-900 text-[10px] leading-tight font-sans w-full ${maxW}`;
+        
+        let logoHtml = (showLogo && logoUrl) ? `
+          <div class="flex justify-center mb-1.5">
+            <img src="${logoUrl}" alt="Logo" class="max-h-12 max-w-[120px] object-contain rounded-md" />
+          </div>
+        ` : '';
+
+        let tableRows = sampleItems.map(it => `
+          <div class="p-1.5 text-[9px]">
+            <div class="font-bold text-stone-950">${it.name}</div>
+            <div class="flex justify-between text-stone-500 font-mono text-[8px] mt-0.5">
+              <span>${it.sku} • @ ${formatRupiah(it.price)}</span>
+              ${it.disc > 0 ? `<span class="text-rose-600 font-semibold">Disc -${formatRupiah(it.disc)}</span>` : ''}
+              <span class="font-bold text-stone-900">${formatRupiah(it.subtotal)}</span>
+            </div>
+          </div>
+        `).join('');
+
+        html = `
+          ${logoHtml}
+          <div class="text-center space-y-0.5 border-b-2 border-stone-800 pb-2">
+            <div class="font-black text-xs uppercase tracking-wide text-stone-950 whitespace-pre-line">${headerText}</div>
+            <div class="text-[9px] text-stone-500 font-mono">NPWP: 01.889.324.5-728.000</div>
+            <span class="inline-block mt-1 px-2 py-0.5 bg-stone-100 text-stone-800 font-bold text-[8px] rounded border border-stone-300 uppercase">
+              FAKTUR PENJUALAN GROSIR & RETAIL
+            </span>
+          </div>
+          <div class="my-2 p-2 bg-stone-50 rounded-lg border border-stone-200 text-[9px] space-y-0.5 font-mono">
+            <div class="flex justify-between"><span class="text-stone-500">No. Faktur:</span><span class="font-bold text-stone-900">FAK/2026/08/00492</span></div>
+            <div class="flex justify-between"><span class="text-stone-500">Waktu Trx:</span><span>29-08-2026 09:30:20</span></div>
+            ${showCashier ? '<div class="flex justify-between"><span class="text-stone-500">Kasir / Shift:</span><span>Siti Rahmah (Shift 1)</span></div>' : ''}
+            <div class="flex justify-between text-[#7c4e2f] font-bold"><span>Pelanggan:</span><span>PLG-001 (Member Gold)</span></div>
+          </div>
+          <div class="border border-stone-300 rounded-lg overflow-hidden my-2">
+            <div class="bg-stone-200 text-stone-800 font-bold text-[8px] px-2 py-1 grid grid-cols-12 uppercase">
+              <span class="col-span-6">Item / SKU</span><span class="col-span-2 text-center">Qty</span><span class="col-span-4 text-right">Subtotal</span>
+            </div>
+            <div class="divide-y divide-stone-200 bg-white">${tableRows}</div>
+          </div>
+          <div class="p-2 bg-stone-50 rounded-lg border border-stone-200 space-y-1 font-mono text-[9px]">
+            <div class="flex justify-between"><span>Subtotal DPP:</span><span>${formatRupiah(sampleSubtotal)}</span></div>
+            <div class="flex justify-between text-stone-500"><span>PPN / Pajak PB1 (Termasuk):</span><span>Rp 0</span></div>
+            ${showSaving ? `<div class="flex justify-between text-rose-600 font-bold"><span>Total Potongan Promo:</span><span>-${formatRupiah(sampleDiscount)}</span></div>` : ''}
+            <div class="flex justify-between font-black text-xs text-stone-950 pt-1 border-t border-stone-300">
+              <span>TOTAL FAKTUR:</span><span>${formatRupiah(sampleGrandTotal)}</span>
+            </div>
+            <div class="flex justify-between pt-0.5 text-stone-700"><span>Bayar (Tunai):</span><span>${formatRupiah(sampleCash)}</span></div>
+            <div class="flex justify-between font-bold text-stone-950"><span>Kembalian:</span><span>${formatRupiah(sampleChange)}</span></div>
+          </div>
+          <div class="my-2 p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-[8px] text-emerald-900 flex justify-between font-medium">
+            <span>Poin Transaksi: <b>+182 Poin</b></span><span>Total Poin: <b>1.450 Poin</b></span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center text-[8px] text-stone-500 pt-2 border-t border-stone-200 my-2">
+            <div><div>Kasir Toko,</div><div class="mt-5 border-b border-stone-300 mx-3"></div><div class="mt-0.5">( Siti Rahmah )</div></div>
+            <div><div>Penerima / Pembeli,</div><div class="mt-5 border-b border-stone-300 mx-3"></div><div class="mt-0.5">( .................... )</div></div>
+          </div>
+          <div class="text-center text-[8px] text-stone-500 whitespace-pre-line mt-2">${footerText}</div>
+          ${showBarcode ? `
+            <div class="mt-2.5 flex flex-col items-center justify-center space-y-1">
+              <div class="w-8 h-8 border border-stone-800 rounded flex items-center justify-center font-bold text-[9px]">QR</div>
+              <span class="text-[7px] font-mono text-stone-400">FAK-20260829-00492</span>
+            </div>
+          ` : ''}
+          <div class="mt-3 pt-2 border-b-2 border-dotted border-stone-300 text-center text-[8px] text-stone-400 select-none font-mono">
+            ✂ ${autoCut ? 'AUTO-CUT PAPER' : 'POTONG DISINI'} ✂
+          </div>
+        `;
+      }
+
+      // ==========================================
+      // 4. KOMPAK HEMAT
+      // ==========================================
+      else if (currentStyle === 'compact') {
+        container.className = `thermal-paper rounded-t-sm p-3 border border-stone-300 text-stone-950 font-mono-receipt text-[9px] leading-tight w-full ${maxW}`;
+        
+        let logoHtml = (showLogo && logoUrl) ? `
+          <div class="flex justify-center mb-1">
+            <img src="${logoUrl}" alt="Logo" class="max-h-8 max-w-[80px] object-contain" />
+          </div>
+        ` : '';
+
+        let itemsHtml = sampleItems.map(it => `
+          <div class="flex justify-between items-center text-[8.5px]">
+            <span class="truncate pr-1 font-semibold">${it.qty}x ${it.name.split(' ')[0]} ${it.name.split(' ')[1] || ''}</span>
+            <span class="shrink-0">${formatRupiah(it.subtotal)}</span>
+          </div>
+        `).join('');
+
+        html = `
+          ${logoHtml}
+          <div class="text-center font-bold text-[10px]">★ KETOKO POS SAMARINDA ★</div>
+          <div class="text-center text-[8px] text-stone-600">29/08/26 09:30 • ${showCashier ? 'Kasir: Siti' : ''} • #TRX89</div>
+          ${showQueue ? '<div class="text-center font-black text-[11px] py-0.5 bg-stone-100 rounded my-1 border border-stone-300">ANTRIAN #89</div>' : ''}
+          <div class="border-b border-dashed border-stone-400 my-1"></div>
+          <div class="space-y-1">${itemsHtml}</div>
+          <div class="border-b border-dashed border-stone-400 my-1"></div>
+          <div class="space-y-0.5 text-[9px]">
+            <div class="flex justify-between font-black text-[10px]"><span>TOTAL:</span><span>${formatRupiah(sampleGrandTotal)}</span></div>
+            <div class="flex justify-between text-[8px] text-stone-600"><span>BAYAR: ${formatRupiah(sampleCash)}</span><span>KEMBALI: ${formatRupiah(sampleChange)}</span></div>
+          </div>
+          ${showSaving ? `<div class="my-1 text-center font-bold text-[8px] text-emerald-800 bg-emerald-50 py-0.5 rounded">HEMAT: ${formatRupiah(sampleDiscount)}</div>` : ''}
+          <div class="border-b border-dashed border-stone-400 my-1"></div>
+          <div class="text-center text-[7.5px] text-stone-500">*Terima Kasih • Struk Hemat Kertas*</div>
+          ${showBarcode ? '<div class="mt-1 flex justify-center text-[10px]">🔲 QRIS</div>' : ''}
+          <div class="mt-2 pt-1 border-b border-dotted border-stone-300 text-center text-[7px] text-stone-400 select-none">
+            - - - ${autoCut ? 'CUT' : 'TEAR'} - - -
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    // Initial Render
+    document.addEventListener('DOMContentLoaded', () => {
+      renderReceipt();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "appId": "com.borneoetam.ketokopos.superadmin",
+  "productName": "Ketoko POS Super Admin",
+  "directories": {
+    "output": "release-admin"
+  },
+  "files": [
+    "super-admin.html",
+    "public/**/*",
+    "electron/admin-main.cjs",
+    "electron/preload.cjs"
+  ],
+  "extraMetadata": {
+    "main": "electron/admin-main.cjs"
+  },
+  "win": {
+    "target": [
+      "portable",
+      "zip"
+    ],
+    "icon": "public/favicon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Ketoko POS Super Admin"
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ],
+    "category": "Office"
+  }
+}

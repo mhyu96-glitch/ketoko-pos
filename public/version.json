@@ -1,0 +1,15 @@
+{
+  "latestVersion": "1.0.0",
+  "releaseDate": "2026-09-03",
+  "changelog": [
+    "🚀 Rilis Resmi Ketoko POS Versi 1.0.0",
+    "⚡ Fast Cashier Mode dengan Shortcut Keyboard F1-F12",
+    "📊 Import & Export Massal Excel / CSV",
+    "💾 1-Klik Backup & Restore Database Toko",
+    "🖨️ Cetak Struk Bluetooth & USB ESC/POS Thermal 58mm/80mm",
+    "📱 Dual-App Suite (Aplikasi Kasir & Super Admin Portal)"
+  ],
+  "downloadUrl": "https://updates.borneoetam.com/KetokoPOS_Setup.exe",
+  "isMandatory": false
+}
+

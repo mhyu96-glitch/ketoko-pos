@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-primary: #96633b;
+  --theme-primary-hover: #83532e;
+  --theme-primary-light: #faebd7;
+  --theme-header-from: #96633b;
+  --theme-header-to: #a6744c;
+  --theme-header-badge: #83532e;
+  --theme-header-text: #ffffff;
+  --theme-header-subtext: #fcefe3;
+  --theme-canvas-bg: #fcf9f5;
+  --theme-card-bg: #ffffff;
+  --theme-card-bg-hover: #fbf7f2;
+  --theme-surface-alt: #f5ebe0;
+  --theme-border: #e5d0be;
+  --theme-border-subtle: #eed7c4;
+  --theme-text-main: #3d2617;
+  --theme-text-muted: #8a6b53;
+  --theme-table-header-bg: #f5ebe0;
+  --theme-table-header-text: #5c3c26;
+  --theme-active-tab-bg: #96633b;
+  --theme-active-tab-text: #ffffff;
+}
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--theme-canvas-bg);
+    color: var(--theme-text-main);
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+}
+
+/* =========================================================================
+   DYNAMIC THEME ENGINE CSS BINDINGS
+   Seamlessly maps all Tailwind color classes to active theme CSS variables
+   ========================================================================= */
+
+/* 1. Header Gradients & Banners */
+[data-theme] .from-\[\#96633b\],
+[data-theme] .from-\[\#7c4e2f\],
+[data-theme] .from-\[\#6f4021\],
+[data-theme] .from-\[\#85532f\],
+[data-theme] .from-\[\#543017\],
+[data-theme] .from-\[\#5e3519\],
+[data-theme] .from-\[\#4a3020\] {
+  --tw-gradient-from: var(--theme-header-from) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-from), var(--tw-gradient-to)) !important;
+}
+
+[data-theme] .to-\[\#a6744c\],
+[data-theme] .to-\[\#af7c54\],
+[data-theme] .to-\[\#9b663b\],
+[data-theme] .to-\[\#85532f\],
+[data-theme] .to-\[\#683f23\] {
+  --tw-gradient-to: var(--theme-header-to) var(--tw-gradient-to-position) !important;
+}
+
+[data-theme] .via-\[\#a6744c\],
+[data-theme] .via-\[\#85532f\],
+[data-theme] .via-\[\#9b663b\],
+[data-theme] .via-\[\#7c4e2f\] {
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--theme-header-from), var(--theme-header-to), var(--theme-header-to) !important;
+}
+
+/* 2. Header Badges & Accents */
+[data-theme] .bg-\[\#83532e\],
+[data-theme] .bg-\[\#543017\],
+[data-theme] .bg-\[\#5e3519\],
+[data-theme] .bg-\[\#5e3820\],
+[data-theme] .bg-\[\#6f4021\] {
+  background-color: var(--theme-header-badge) !important;
+}
+
+[data-theme] .hover\:bg-\[\#83532e\]:hover,
+[data-theme] .hover\:bg-\[\#543017\]:hover,
+[data-theme] .hover\:bg-\[\#5e3519\]:hover,
+[data-theme] .hover\:bg-\[\#5e3820\]:hover {
+  background-color: var(--theme-header-badge) !important;
+}
+
+[data-theme] .border-\[\#a6744c\],
+[data-theme] .border-\[\#85542f\],
+[data-theme] .border-\[\#734729\],
+[data-theme] .border-\[\#5e3519\],
+[data-theme] .border-\[\#543017\],
+[data-theme] .border-\[\#9b663b\],
+[data-theme] .border-\[\#9b663b\]\/50,
+[data-theme] .border-\[\#382316\] {
+  border-color: var(--theme-header-badge) !important;
+}
+
+/* 3. Primary Buttons & Active Elements */
+[data-theme] .bg-\[\#96633b\],
+[data-theme] .bg-\[\#7c4e2f\],
+[data-theme] .bg-\[\#4a3020\],
+[data-theme] .bg-\[\#af7c54\] {
+  background-color: var(--theme-primary) !important;
+}
+
+[data-theme] .hover\:bg-\[\#83532e\]:hover,
+[data-theme] .hover\:bg-\[\#633e26\]:hover,
+[data-theme] .hover\:bg-\[\#683f23\]:hover,
+[data-theme] .hover\:bg-\[\#382316\]:hover {
+  background-color: var(--theme-primary-hover) !important;
+}
+
+/* 4. Canvas & Surfaces */
+[data-theme] .bg-\[\#fcf9f5\],
+[data-theme] .bg-\[\#f6f0ea\],
+[data-theme] .bg-\[\#fbf7f2\],
+[data-theme] .bg-\[\#fcf8f4\],
+[data-theme] .bg-\[\#fdfaf7\] {
+  background-color: var(--theme-canvas-bg) !important;
+}
+
+[data-theme] .bg-\[\#f5ebe0\],
+[data-theme] .bg-\[\#f5ece3\],
+[data-theme] .bg-\[\#faebd7\],
+[data-theme] .bg-\[\#fcf5ed\] {
+  background-color: var(--theme-surface-alt) !important;
+}
+
+[data-theme] .hover\:bg-\[\#f5ebe0\]:hover,
+[data-theme] .hover\:bg-\[\#f5ece3\]:hover,
+[data-theme] .hover\:bg-\[\#ebd7c5\]:hover,
+[data-theme] .hover\:bg-\[\#ebdccf\]:hover,
+[data-theme] .hover\:bg-\[\#faebd7\]:hover,
+[data-theme] .hover\:bg-\[\#f6dfc4\]:hover,
+[data-theme] .hover\:bg-\[\#fbf7f2\]:hover {
+  background-color: var(--theme-primary-light) !important;
+}
+
+/* 5. Borders */
+[data-theme] .border-\[\#e5d0be\],
+[data-theme] .border-\[\#ddc3aa\],
+[data-theme] .border-\[\#e4d5c7\],
+[data-theme] .border-\[\#dfcebe\],
+[data-theme] .border-\[\#eed7c4\],
+[data-theme] .border-\[\#ecdac5\],
+[data-theme] .border-\[\#e8d5c0\],
+[data-theme] .border-\[\#caa992\],
+[data-theme] .border-\[\#eee2d5\] {
+  border-color: var(--theme-border) !important;
+}
+
+[data-theme] .border-\[\#f2e5d8\],
+[data-theme] .border-\[\#f0e4d7\] {
+  border-color: var(--theme-border-subtle) !important;
+}
+
+/* 6. Typography */
+[data-theme] .text-\[\#96633b\],
+[data-theme] .text-\[\#7c4e2f\],
+[data-theme] .text-\[\#8c5e3c\] {
+  color: var(--theme-primary) !important;
+}
+
+[data-theme] .text-\[\#3d2617\],
+[data-theme] .text-\[\#332219\] {
+  color: var(--theme-text-main) !important;
+}
+
+[data-theme] .text-\[\#8a6b53\],
+[data-theme] .text-\[\#856b59\],
+[data-theme] .text-\[\#5c3c26\],
+[data-theme] .text-\[\#543c2e\],
+[data-theme] .text-\[\#6d4327\],
+[data-theme] .text-\[\#6b4226\],
+[data-theme] .text-\[\#a08573\],
+[data-theme] .text-\[\#8c7766\] {
+  color: var(--theme-text-muted) !important;
+}
+
+[data-theme] .text-\[\#fcefe3\],
+[data-theme] .text-\[\#fdf7f2\],
+[data-theme] .text-\[\#d8c2b0\],
+[data-theme] .text-amber-200,
+[data-theme] .text-amber-100 {
+  color: var(--theme-header-subtext) !important;
+}
+
+/* 7. Rings & Focus */
+[data-theme] .ring-\[\#96633b\]\/20,
+[data-theme] .ring-\[\#96633b\]\/30,
+[data-theme] .ring-\[\#7c4e2f\]\/20,
+[data-theme] .ring-\[\#7c4e2f\]\/25,
+[data-theme] .ring-\[\#8c5e3c\]\/30 {
+  --tw-ring-color: var(--theme-primary) !important;
+}
+
+/* 8. Dark Mode Overrides (when data-theme-category="dark") */
+[data-theme-category="dark"] .bg-white {
+  background-color: var(--theme-card-bg) !important;
+  color: var(--theme-text-main) !important;
+}
+
+[data-theme-category="dark"] input,
+[data-theme-category="dark"] select,
+[data-theme-category="dark"] textarea {
+  background-color: var(--theme-surface-alt) !important;
+  color: var(--theme-text-main) !important;
+  border-color: var(--theme-border) !important;
+}
+
+[data-theme-category="dark"] .shadow-xs,
+[data-theme-category="dark"] .shadow-sm,
+[data-theme-category="dark"] .shadow-md,
+[data-theme-category="dark"] .shadow-lg,
+[data-theme-category="dark"] .shadow-xl,
+[data-theme-category="dark"] .shadow-2xl {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--theme-canvas-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--theme-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-primary);
+}
+
+/* Smooth modal animations */
+@keyframes smoothBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes smoothModal {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-smooth-backdrop {
+  animation: smoothBackdrop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-smooth-modal {
+  animation: smoothModal 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Backdrop Blur & Elevation */
+.backdrop-blur-xs {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.backdrop-blur-2xs {
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+}
