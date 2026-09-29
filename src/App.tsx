@@ -512,6 +512,17 @@ export const App: React.FC = () => {
       if (typeof BroadcastChannel !== 'undefined') {
         bc = new BroadcastChannel('ketoko_product_sync');
         bc.onmessage = (event) => {
+          if (event.data?.type === 'product_deleted') {
+            const prodId = event.data.product_id;
+            if (prodId) {
+              syncService.markProductDeletedLocally(prodId);
+              db.products.delete(prodId).catch(() => {});
+              setProducts((prev) => prev.filter((p) => String(p.id) !== String(prodId)));
+              window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: prodId } }));
+            }
+            return;
+          }
+
           if (event.data?.type === 'transaction_deleted') {
             const trxId = event.data.transaction_id;
             if (trxId) {
@@ -574,6 +585,7 @@ export const App: React.FC = () => {
           .on('broadcast', { event: 'product_updated' }, ({ payload }) => {
             const prod = payload as Product;
             if (prod && prod.id) {
+              if (syncService.getDeletedProductIds().has(String(prod.id))) return;
               db.products.put(prod).catch(() => {});
               setProducts((prev) => {
                 const idx = prev.findIndex(p => String(p.id) === String(prod.id));
@@ -584,6 +596,15 @@ export const App: React.FC = () => {
                 }
                 return [prod, ...prev];
               });
+            }
+          })
+          .on('broadcast', { event: 'product_deleted' }, async ({ payload }) => {
+            const prodId = payload?.id || payload?.product_id;
+            if (prodId) {
+              syncService.markProductDeletedLocally(prodId);
+              await db.products.delete(prodId).catch(() => {});
+              setProducts((prev) => prev.filter((p) => String(p.id) !== String(prodId)));
+              window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: prodId } }));
             }
           })
           .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
@@ -688,8 +709,19 @@ export const App: React.FC = () => {
             'postgres_changes',
             { event: '*', schema: 'public', table: 'products' },
             (payload: any) => {
+              if (payload.eventType === 'DELETE') {
+                const oldProd = payload.old;
+                if (oldProd && oldProd.id) {
+                  syncService.markProductDeletedLocally(oldProd.id);
+                  db.products.delete(oldProd.id).catch(() => {});
+                  setProducts((prev) => prev.filter(p => String(p.id) !== String(oldProd.id)));
+                  window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: oldProd.id } }));
+                }
+                return;
+              }
               const newProd = (payload.new || payload.record) as Product;
               if (newProd && newProd.id) {
+                if (syncService.getDeletedProductIds().has(String(newProd.id))) return;
                 db.products.put(newProd).catch(() => {});
                 setProducts((prev) => {
                   const idx = prev.findIndex(p => p.id === newProd.id);
@@ -797,11 +829,20 @@ export const App: React.FC = () => {
       } catch {}
     };
 
+    const handleProductDeleted = (e: any) => {
+      const id = e.detail?.id;
+      if (id) {
+        syncService.markProductDeletedLocally(id);
+        setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)));
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
     window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
     window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
     window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_product_deleted', handleProductDeleted);
 
     return () => {
       clearInterval(interval);
@@ -810,6 +851,7 @@ export const App: React.FC = () => {
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
       window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
       window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_product_deleted', handleProductDeleted);
     };
   }, [isOnline, handleManualSync]);
 

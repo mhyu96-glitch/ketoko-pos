@@ -6,7 +6,8 @@ import {
   RotateCcw, 
   Receipt, 
   Plus,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 import { db } from '../db';
 import type { Purchase, PurchaseReturn, SalesReturn, Supplier, Product } from '../types';
@@ -744,6 +745,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                             <th className="py-2 text-right">Qty</th>
                             <th className="py-2 text-right">Harga Beli</th>
                             <th className="py-2 text-right">Subtotal</th>
+                            <th className="py-2 text-center w-8">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#f0e4d7] font-medium">
@@ -753,6 +755,16 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                               <td className="py-2 text-right font-mono">{it.qty}</td>
                               <td className="py-2 text-right font-mono">{formatRupiah(it.buy_price)}</td>
                               <td className="py-2 text-right font-mono font-bold text-[#7c4e2f]">{formatRupiah(it.subtotal)}</td>
+                              <td className="py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))}
+                                  title="Hapus item ini dari faktur"
+                                  className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors inline-flex items-center justify-center"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -762,6 +774,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                             <td className="py-2 text-right font-mono text-[#7c4e2f] text-sm">
                               {formatRupiah(poItems.reduce((acc, it) => acc + it.subtotal, 0))}
                             </td>
+                            <td></td>
                           </tr>
                         </tfoot>
                       </table>

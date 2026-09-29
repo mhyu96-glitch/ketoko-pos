@@ -166,11 +166,14 @@ const CartRow = React.memo<CartRowProps>(({ item, index, onUpdateQty, onRemoveIt
       <td className="py-2.5 px-2 text-center">
         <button
           type="button"
-          onClick={() => onRemoveItem(item.product_id)}
-          title="Hapus baris"
-          className="p-1 rounded text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveItem(item.product_id);
+          }}
+          title="Hapus baris item"
+          className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors inline-flex items-center justify-center min-w-[28px] min-h-[28px]"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="w-4 h-4" />
         </button>
       </td>
     </tr>
@@ -220,6 +223,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     return saved ? JSON.parse(saved) : [];
   });
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
+  const [isClearingCartConfirm, setIsClearingCartConfirm] = useState(false);
 
   // Quick Chips for fast search / add
   const quickSearchKeywords = ['Indomie', 'Minyak', 'Gulaku', 'Aqua', 'Sampoerna', 'Deterjen', 'Beras', 'Gula'];
@@ -497,16 +501,37 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                       <span className="hidden sm:inline">Tunda (F8)</span>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        if (window.confirm('Kosongkan semua barang dalam nota?')) onClearCart();
-                      }}
-                      title="Hapus semua item (Esc)"
-                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center space-x-1 transition-colors shadow-2xs"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Kosongkan</span>
-                    </button>
+                    {isClearingCartConfirm ? (
+                      <div className="flex items-center space-x-1 animate-fadeIn">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClearCart();
+                            setIsClearingCartConfirm(false);
+                          }}
+                          className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all"
+                        >
+                          Ya, Kosongkan!
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsClearingCartConfirm(false)}
+                          className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg text-xs font-semibold transition-all"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsClearingCartConfirm(true)}
+                        title="Hapus semua item (Esc)"
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center space-x-1 transition-colors shadow-2xs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Kosongkan</span>
+                      </button>
+                    )}
                   </>
                 )}
               </div>

@@ -60,6 +60,8 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -188,9 +190,18 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
   };
 
   const handleDeleteProduct = async (prod: Product) => {
-    if (window.confirm(`Hapus produk "${prod.name}" (${prod.id}) dari Master Data?`)) {
-      await db.products.delete(prod.id);
+    try {
+      setIsDeleting(prod.id);
+      await syncService.deleteProduct(prod.id);
+      setDeleteConfirmId(null);
+      if (editingProduct?.id === prod.id) {
+        setEditingProduct(null);
+      }
       await onProductsUpdated();
+    } catch (err: any) {
+      console.error('Gagal menghapus produk:', err);
+    } finally {
+      setIsDeleting(null);
     }
   };
 
@@ -626,23 +637,45 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
                       {/* Actions */}
                       <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center space-x-1.5">
-                          <button
-                            onClick={() => handleStartEdit(prod)}
-                            title="Edit Foto & Data Barang"
-                            className="p-1.5 rounded-xl bg-[#faebd7] hover:bg-[#f6dfc4] text-[#96633b] border border-[#eed7c4] transition-colors shadow-2xs"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                        {deleteConfirmId === prod.id ? (
+                          <div className="flex items-center justify-center space-x-1 animate-fadeIn">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(prod)}
+                              disabled={isDeleting === prod.id}
+                              className="px-2 py-1 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-xs transition-all"
+                            >
+                              {isDeleting === prod.id ? '...' : 'Ya, Hapus'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="px-2 py-1 text-[11px] font-medium bg-[#ebdccf] hover:bg-[#dfcebe] text-[#5c3c26] rounded-lg transition-all"
+                            >
+                              Batal
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(prod)}
+                              title="Edit Foto & Data Barang"
+                              className="p-1.5 rounded-xl bg-[#faebd7] hover:bg-[#f6dfc4] text-[#96633b] border border-[#eed7c4] transition-colors shadow-2xs"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
 
-                          <button
-                            onClick={() => handleDeleteProduct(prod)}
-                            title="Hapus Produk"
-                            className="p-1.5 rounded-xl bg-[#fbeeed] hover:bg-[#f8dbdb] text-rose-700 border border-[#f4cfcf] transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(prod.id)}
+                              title="Hapus Produk"
+                              className="p-1.5 rounded-xl bg-[#fbeeed] hover:bg-[#f8dbdb] text-rose-700 border border-[#f4cfcf] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                     </tr>
@@ -948,21 +981,47 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
               )}
 
               {/* Action Buttons */}
-              <div className="pt-2 flex space-x-2">
+              <div className="pt-2 flex items-center justify-between space-x-2">
                 <button
                   type="button"
-                  onClick={() => setEditingProduct(null)}
-                  className="flex-1 py-2.5 bg-[#f5ebe0] hover:bg-[#ebd7c5] text-[#5c3c26] font-bold rounded-xl border border-[#ddc3aa]"
+                  onClick={() => {
+                    if (editingProduct) {
+                      if (deleteConfirmId === editingProduct.id) {
+                        handleDeleteProduct(editingProduct);
+                      } else {
+                        setDeleteConfirmId(editingProduct.id);
+                      }
+                    }
+                  }}
+                  disabled={isDeleting === editingProduct?.id}
+                  className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl border border-rose-200 flex items-center space-x-1.5 transition-colors shrink-0"
+                  title="Hapus produk ini dari database"
                 >
-                  Batal
+                  <Trash2 className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm">
+                    {isDeleting === editingProduct?.id ? 'Menghapus...' : deleteConfirmId === editingProduct?.id ? 'Yakin Hapus?' : 'Hapus Produk'}
+                  </span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="flex-1 py-2.5 bg-[#96633b] hover:bg-[#83532e] text-white font-bold rounded-xl shadow-xs transition-all"
-                >
-                  {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
-                </button>
+
+                <div className="flex space-x-2 flex-1 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProduct(null);
+                      setDeleteConfirmId(null);
+                    }}
+                    className="px-4 py-2.5 bg-[#f5ebe0] hover:bg-[#ebd7c5] text-[#5c3c26] font-bold rounded-xl border border-[#ddc3aa]"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-5 py-2.5 bg-[#96633b] hover:bg-[#83532e] text-white font-bold rounded-xl shadow-xs transition-all"
+                  >
+                    {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                  </button>
+                </div>
               </div>
 
             </form>

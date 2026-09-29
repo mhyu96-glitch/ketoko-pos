@@ -53,6 +53,10 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const [supAddress, setSupAddress] = useState('');
   const [supTermDays, setSupTermDays] = useState<number>(14);
 
+  // Delete inline confirmation states
+  const [deleteConfirmCustId, setDeleteConfirmCustId] = useState<string | null>(null);
+  const [deleteConfirmSupId, setDeleteConfirmSupId] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
@@ -137,9 +141,12 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   // Delete Customer
   const handleDeleteCustomer = async (id: string) => {
-    if (confirm('Hapus data pelanggan ini dari database?')) {
+    try {
       await db.customers.delete(id);
+      setDeleteConfirmCustId(null);
       loadData();
+    } catch (err) {
+      console.error('Gagal menghapus pelanggan:', err);
     }
   };
 
@@ -187,9 +194,12 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   // Delete Supplier
   const handleDeleteSupplier = async (id: string) => {
-    if (confirm('Hapus data supplier ini dari database?')) {
+    try {
       await db.suppliers.delete(id);
+      setDeleteConfirmSupId(null);
       loadData();
+    } catch (err) {
+      console.error('Gagal menghapus supplier:', err);
     }
   };
 
@@ -426,22 +436,41 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                               {formatRupiah(c.credit_limit || 0)}
                             </td>
                             <td className="py-3 px-4 text-center whitespace-nowrap">
-                              <div className="flex items-center justify-center space-x-1.5">
-                                <button
-                                  onClick={() => handleEditCustomer(c)}
-                                  className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
-                                  title="Edit Pelanggan"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCustomer(c.id)}
-                                  className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                  title="Hapus Pelanggan"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              {deleteConfirmCustId === c.id ? (
+                                <div className="flex items-center justify-center space-x-1 animate-fadeIn">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCustomer(c.id)}
+                                    className="px-2 py-0.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-xs"
+                                  >
+                                    Ya, Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteConfirmCustId(null)}
+                                    className="px-2 py-0.5 text-[11px] font-medium bg-[#ebdccf] hover:bg-[#dfcebe] text-[#5c3c26] rounded-lg"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center space-x-1.5">
+                                  <button
+                                    onClick={() => handleEditCustomer(c)}
+                                    className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
+                                    title="Edit Pelanggan"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteConfirmCustId(c.id)}
+                                    className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                    title="Hapus Pelanggan"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -595,22 +624,41 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4 text-center whitespace-nowrap">
-                              <div className="flex items-center justify-center space-x-1.5">
-                                <button
-                                  onClick={() => handleEditSupplier(s)}
-                                  className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
-                                  title="Edit Supplier"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSupplier(s.id)}
-                                  className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                  title="Hapus Supplier"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              {deleteConfirmSupId === s.id ? (
+                                <div className="flex items-center justify-center space-x-1 animate-fadeIn">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSupplier(s.id)}
+                                    className="px-2 py-0.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-xs"
+                                  >
+                                    Ya, Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteConfirmSupId(null)}
+                                    className="px-2 py-0.5 text-[11px] font-medium bg-[#ebdccf] hover:bg-[#dfcebe] text-[#5c3c26] rounded-lg"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center space-x-1.5">
+                                  <button
+                                    onClick={() => handleEditSupplier(s)}
+                                    className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
+                                    title="Edit Supplier"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteConfirmSupId(s.id)}
+                                    className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                    title="Hapus Supplier"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}

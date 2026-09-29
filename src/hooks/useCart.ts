@@ -27,8 +27,9 @@ export function useCart() {
 
   // Add item or increment qty with wholesale evaluation
   const addItem = useCallback((product: Product, quantityToAdd = 1) => {
+    const cleanId = String(product.id).trim();
     setItems((prevItems) => {
-      const existingIndex = prevItems.findIndex((item) => item.product_id === product.id);
+      const existingIndex = prevItems.findIndex((item) => String(item.product_id).trim() === cleanId);
       const maxAllowed = product.stock > 0 ? product.stock : 999999;
 
       if (existingIndex > -1) {
@@ -72,12 +73,13 @@ export function useCart() {
   }, []);
 
   const updateQuantity = useCallback((productId: string, newQty: number) => {
+    const cleanId = String(productId).trim();
     setItems((prevItems) => {
       if (newQty <= 0) {
-        return prevItems.filter((item) => item.product_id !== productId);
+        return prevItems.filter((item) => String(item.product_id).trim() !== cleanId);
       }
       return prevItems.map((item) => {
-        if (item.product_id === productId) {
+        if (String(item.product_id).trim() === cleanId) {
           const maxAllowed = item.stock > 0 ? item.stock : 999999;
           const clampedQty = Math.min(maxAllowed, newQty);
           const isWholesale = clampedQty >= item.min_wholesale_qty;
@@ -96,7 +98,8 @@ export function useCart() {
   }, []);
 
   const removeItem = useCallback((productId: string) => {
-    setItems((prevItems) => prevItems.filter((item) => item.product_id !== productId));
+    const cleanId = String(productId).trim();
+    setItems((prevItems) => prevItems.filter((item) => String(item.product_id).trim() !== cleanId));
   }, []);
 
   const clearCart = useCallback(() => {

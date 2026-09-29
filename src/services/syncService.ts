@@ -283,6 +283,91 @@ export class SyncService {
   }
 
   /**
+   * Mengambil daftar ID produk yang telah dihapus agar tidak pernah ditarik ulang oleh sync (Tombstone)
+   */
+  getDeletedProductIds(): Set<string> {
+    try {
+      const saved = localStorage.getItem('ketoko_deleted_product_ids');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr)) {
+          return new Set(arr.map(String));
+        }
+      }
+    } catch {}
+    return new Set();
+  }
+
+  markProductDeletedLocally(productId: string) {
+    try {
+      const cleanId = String(productId).trim();
+      if (!cleanId) return;
+      const set = this.getDeletedProductIds();
+      set.add(cleanId);
+      const arr = Array.from(set).slice(-1000);
+      localStorage.setItem('ketoko_deleted_product_ids', JSON.stringify(arr));
+    } catch {}
+  }
+
+  /**
+   * Menghapus produk/item secara real-time ke seluruh terminal (Lokal, Tab lain, LAN, dan Cloud Supabase)
+   */
+  async deleteProduct(productId: string): Promise<boolean> {
+    const cleanId = String(productId).trim();
+    if (!cleanId) return false;
+
+    // 1. Catat ke daftar tombstone lokal SEGERA agar tidak pernah ditarik ulang oleh auto-sync
+    this.markProductDeletedLocally(cleanId);
+
+    // 2. HAPUS DARI INDEXEDDB LOKAL SEKETIKA (0ms delay)
+    await db.products.delete(cleanId).catch(() => {});
+
+    // 3. DISPATCH DOM EVENT LOKAL SEKETIKA agar Dashboard, POS & List langsung berkurang tanpa delay
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: cleanId } }));
+    }
+
+    // 4. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({ type: 'product_deleted', product_id: cleanId });
+        bc.close();
+      }
+    } catch {}
+
+    // 5. Kirim perintah hapus ke LAN Server (jika aktif)
+    lanService.deleteProduct(cleanId).catch(() => {});
+
+    // 6. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs (secara paralel dan non-blocking)
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          Promise.allSettled([
+            supabase.from('products').delete().eq('id', cleanId),
+            supabase.from('sync_logs').insert({
+              branch_id: 'BR-01',
+              operation_type: 'DELETE_PRODUCT',
+              error_message: cleanId,
+              status: 'DELETED',
+              synced_at: new Date().toISOString()
+            })
+          ]).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal hapus produk dari Supabase:', err);
+      }
+    }
+
+    // 7. Siarkan realtime broadcast ke semua terminal kasir di cloud (berbeda jaringan)
+    this.broadcastCloudEvent('product_deleted', { id: cleanId, product_id: cleanId });
+
+    this.notifyStatusChange();
+    return true;
+  }
+
+  /**
    * Dorong seluruh transaksi lokal yang belum ada di Supabase Cloud (sinkronisasi 2 arah otomatis)
    */
   async pushLocalTransactionsToSupabase(): Promise<{ pushedCount: number }> {
@@ -758,6 +843,34 @@ export class SyncService {
       this.isSyncing = true;
       this.notifyStatusChange();
 
+      // 1. Tarik log produk terhapus dari Supabase sync_logs (Tombstone)
+      const deletedProductIds = this.getDeletedProductIds();
+      try {
+        const { data: remoteDeleted } = await supabase
+          .from('sync_logs')
+          .select('error_message')
+          .eq('operation_type', 'DELETE_PRODUCT')
+          .order('synced_at', { ascending: false })
+          .limit(300);
+
+        if (remoteDeleted && remoteDeleted.length > 0) {
+          for (const item of remoteDeleted) {
+            if (item.error_message) {
+              const pId = String(item.error_message).trim();
+              deletedProductIds.add(pId);
+              this.markProductDeletedLocally(pId);
+              await db.products.delete(pId).catch(() => {});
+            }
+          }
+        }
+      } catch {}
+
+      // Bersihkan produk lokal yang tercatat sudah terhapus
+      for (const delId of deletedProductIds) {
+        await db.products.delete(delId).catch(() => {});
+      }
+
+      // 2. Tarik produk dari Supabase
       const { data: cloudProducts, error } = await supabase
         .from('products')
         .select('*')
@@ -767,10 +880,18 @@ export class SyncService {
       if (error) throw error;
 
       if (cloudProducts && cloudProducts.length > 0) {
-        await db.products.bulkPut(cloudProducts as Product[]);
+        // Filter agar produk yang sudah dihapus TIDAK PERNAH dimasukkan kembali
+        const activeProducts = (cloudProducts as Product[]).filter(
+          (p) => !deletedProductIds.has(String(p.id).trim())
+        );
+
+        if (activeProducts.length > 0) {
+          await db.products.bulkPut(activeProducts);
+        }
+
         this.lastSyncTime = new Date().toISOString();
         localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);
-        return { count: cloudProducts.length, products: cloudProducts as Product[] };
+        return { count: activeProducts.length, products: activeProducts };
       }
 
       return { count: 0, products: [] };
