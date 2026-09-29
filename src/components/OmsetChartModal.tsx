@@ -95,20 +95,8 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
   const totalOmset = chartData.reduce((sum, d) => sum + d.omset, 0);
   const totalTrx = chartData.reduce((sum, d) => sum + d.trxCount, 0);
   const avgTrx = totalTrx > 0 ? Math.round(totalOmset / totalTrx) : 0;
-
-  // Fallback mock peak for visual showcase if data empty
-  if (totalOmset === 0 && chartData.length > 0) {
-    chartData[chartData.length - 1].omset = 185000;
-    chartData[chartData.length - 1].trxCount = 4;
-    chartData[chartData.length - 2].omset = 120000;
-    chartData[chartData.length - 2].trxCount = 3;
-    chartData[chartData.length - 3].omset = 75000;
-    chartData[chartData.length - 3].trxCount = 2;
-    chartData[chartData.length - 4].omset = 26375;
-    chartData[chartData.length - 4].trxCount = 1;
-  }
-
-  const maxOmset = Math.max(...chartData.map((c) => c.omset), 100000);
+  const actualMaxOmset = chartData.reduce((max, c) => Math.max(max, c.omset), 0);
+  const maxOmset = actualMaxOmset > 0 ? actualMaxOmset : 1;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-smooth-backdrop">
@@ -142,17 +130,23 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
             <div className="p-4 rounded-2xl bg-white border border-[#e5d0be] shadow-xs">
               <span className="text-xs font-bold text-[#8a6b53] uppercase tracking-wider">Total Omset Tercatat</span>
               <div className="text-2xl font-black font-mono text-[#96633b] mt-1">
-                {formatRupiah(totalOmset > 0 ? totalOmset : 406375)}
+                {formatRupiah(totalOmset)}
               </div>
-              <span className="text-[11px] text-[#166534] font-bold flex items-center mt-1">
-                <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" /> +18.4% dari periode lalu
+              <span className="text-[11px] font-medium flex items-center mt-1 text-[#8a6b53]">
+                {totalOmset > 0 ? (
+                  <span className="text-[#166534] font-bold flex items-center">
+                    <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" /> Data Transaksi Aktif
+                  </span>
+                ) : (
+                  <span>Belum ada omset penjualan</span>
+                )}
               </span>
             </div>
 
             <div className="p-4 rounded-2xl bg-white border border-[#e5d0be] shadow-xs">
               <span className="text-xs font-bold text-[#8a6b53] uppercase tracking-wider">Total Struk Penjualan</span>
               <div className="text-2xl font-black font-mono text-[#3d2617] mt-1">
-                {totalTrx > 0 ? totalTrx : 10} <span className="text-xs font-normal text-[#8a6b53]">Nota</span>
+                {totalTrx} <span className="text-xs font-normal text-[#8a6b53]">Nota</span>
               </div>
               <span className="text-[11px] text-[#8a6b53] font-medium flex items-center mt-1">
                 <Receipt className="w-3.5 h-3.5 mr-0.5 text-[#96633b]" /> Terlayani di kasir
@@ -162,7 +156,7 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
             <div className="p-4 rounded-2xl bg-white border border-[#e5d0be] shadow-xs">
               <span className="text-xs font-bold text-[#8a6b53] uppercase tracking-wider">Rata-rata per Nota (Basket Size)</span>
               <div className="text-2xl font-black font-mono text-[#96633b] mt-1">
-                {formatRupiah(avgTrx > 0 ? avgTrx : 40637)}
+                {formatRupiah(avgTrx)}
               </div>
               <span className="text-[11px] text-[#8a6b53] font-medium flex items-center mt-1">
                 <ShoppingBag className="w-3.5 h-3.5 mr-0.5 text-[#96633b]" /> Rata-rata belanja pembeli
@@ -206,38 +200,50 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
             </div>
 
             {/* Bars */}
-            <div className="h-64 flex items-end justify-between gap-2 pt-6 pb-2 border-b border-[#f2e5d8]">
-              {chartData.map((d, idx) => {
-                const heightPercent = Math.max(12, Math.round((d.omset / maxOmset) * 100));
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                    {/* Tooltip on hover */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-[#96633b] text-white text-[10px] font-mono py-1 px-2 rounded-lg whitespace-nowrap z-20 pointer-events-none shadow-lg">
-                      {formatRupiah(d.omset)} ({d.trxCount} nota)
-                    </div>
+            {totalOmset === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-[#fcf9f5] rounded-2xl border border-dashed border-[#ddc3aa] my-2 animate-fadeIn">
+                <div className="w-12 h-12 rounded-2xl bg-[#faebd7] text-[#96633b] flex items-center justify-center mb-2 shadow-xs">
+                  <BarChart3 className="w-6 h-6 text-[#96633b]" />
+                </div>
+                <h5 className="font-bold text-sm text-[#3d2617]">Belum Ada Transaksi Penjualan</h5>
+                <p className="text-xs text-[#8a6b53] max-w-sm mt-0.5">
+                  Grafik omset harian akan otomatis terisi secara realtime saat transaksi kasir tercatat.
+                </p>
+              </div>
+            ) : (
+              <div className="h-64 flex items-end justify-between gap-2 pt-6 pb-2 border-b border-[#f2e5d8]">
+                {chartData.map((d, idx) => {
+                  const heightPercent = d.omset > 0 ? Math.max(8, Math.round((d.omset / maxOmset) * 100)) : 0;
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                      {/* Tooltip on hover */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-[#96633b] text-white text-[10px] font-mono py-1 px-2 rounded-lg whitespace-nowrap z-20 pointer-events-none shadow-lg">
+                        {formatRupiah(d.omset)} ({d.trxCount} nota)
+                      </div>
 
-                    <div className="w-full max-w-[42px] bg-[#f5ebe0] rounded-t-xl overflow-hidden flex flex-col justify-end h-full">
-                      <div
-                        style={{ height: `${heightPercent}%` }}
-                        className={`w-full rounded-t-xl transition-all duration-500 ${
-                          idx === chartData.length - 1
-                            ? 'bg-[#96633b]'
-                            : 'bg-[#af7c54] group-hover:bg-[#96633b]'
-                        }`}
-                      />
-                    </div>
+                      <div className="w-full max-w-[42px] bg-[#f5ebe0] rounded-t-xl overflow-hidden flex flex-col justify-end h-full">
+                        <div
+                          style={{ height: `${heightPercent}%` }}
+                          className={`w-full rounded-t-xl transition-all duration-500 ${
+                            idx === chartData.length - 1
+                              ? 'bg-[#96633b]'
+                              : 'bg-[#af7c54] group-hover:bg-[#96633b]'
+                          }`}
+                        />
+                      </div>
 
-                    <span className="text-[10px] font-bold text-[#8a6b53] mt-2 truncate w-full text-center">
-                      {d.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                      <span className="text-[10px] font-bold text-[#8a6b53] mt-2 truncate w-full text-center">
+                        {d.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-xs text-[#8a6b53] pt-1">
               <span>* Data dihitung otomatis berdasarkan akumulasi grand total nota per tanggal kalender</span>
-              <span className="font-mono text-[#96633b] font-bold">Tertinggi: {formatRupiah(maxOmset)}</span>
+              <span className="font-mono text-[#96633b] font-bold">Tertinggi: {formatRupiah(actualMaxOmset)}</span>
             </div>
           </div>
 
