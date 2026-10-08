@@ -58,3 +58,6 @@ Thumbs.db
 *.sln
 *.sw?
 *.local
+
+# 8. Testing Artifacts
+.e2e/
