@@ -20,7 +20,11 @@ import {
   FileSpreadsheet,
   Download,
   AlertCircle,
-  FileUp
+  FileUp,
+  RefreshCw,
+  Cloud,
+  CloudUpload,
+  CloudDownload
 } from 'lucide-react';
 import { db } from '../db';
 import type { Product } from '../types';
@@ -79,6 +83,49 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
   const [editImageMeta, setEditImageMeta] = useState<ImageConversionResult | null>(null);
   const [isConvertingImage, setIsConvertingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+
+  // Cloud Sync State
+  const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [cloudSyncMsg, setCloudSyncMsg] = useState<string | null>(null);
+
+  const handlePushGroundTruth = async () => {
+    setIsSyncingCloud(true);
+    setCloudSyncMsg('Mengupload seluruh produk lokal ke Cloud Supabase...');
+    try {
+      const res = await syncService.pushCatalogToSupabase((p) => {
+        setCloudSyncMsg(`Mengunggah produk: ${p.current}/${p.total} (${p.percent}%)...`);
+      });
+      if (res.success) {
+        setCloudSyncMsg(`✅ Sukses! ${res.totalUploaded.toLocaleString('id-ID')} produk aktif diunggah ke Cloud. ${res.totalDeleted} produk usang dibersihkan.`);
+        await onProductsUpdated();
+      } else {
+        setCloudSyncMsg(`❌ Gagal: ${res.error}`);
+      }
+    } catch (err: any) {
+      setCloudSyncMsg(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  const handlePullCloudCatalog = async () => {
+    setIsSyncingCloud(true);
+    setCloudSyncMsg('Mengunduh katalog terbaru dari Cloud Supabase...');
+    try {
+      const res = await syncService.pullFromSupabase();
+      if (res.error) {
+        setCloudSyncMsg(`❌ Gagal: ${res.error}`);
+      } else {
+        setCloudSyncMsg(`✅ Sukses! ${res.count.toLocaleString('id-ID')} produk berhasil disinkronkan dari Cloud.`);
+        await onProductsUpdated();
+      }
+    } catch (err: any) {
+      setCloudSyncMsg(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
 
   const categories = React.useMemo(() => {
     const catSet = new Set<string>();
@@ -424,6 +471,18 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
           >
             <Download className="w-4 h-4 text-[#166534]" />
             <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setCloudSyncMsg(null);
+              setIsCloudSyncModalOpen(true);
+            }}
+            className="px-3.5 py-2 bg-[#fdf2e9] hover:bg-[#faebd7] text-[#96633b] border border-[#f0d0b7] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-all"
+            title="Sinkronisasi Master Katalog Produk dengan Cloud Supabase"
+          >
+            <RefreshCw className={`w-4 h-4 text-[#96633b] ${isSyncingCloud ? 'animate-spin' : ''}`} />
+            <span>Sinkron Cloud</span>
           </button>
 
           <button
@@ -1173,6 +1232,119 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
               >
                 <Upload className="w-4 h-4" />
                 <span>{isImporting ? 'Mengimpor Data...' : `Impor ${importTotalCount > 0 ? `${importTotalCount.toLocaleString('id-ID')} Produk` : 'Sekarang'}`}</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Modal Sinkronisasi Katalog Cloud */}
+      {isCloudSyncModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col select-text">
+            
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 border border-[#9b663b]/50 shadow-xs">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Sinkronisasi Cloud Master Produk</h3>
+                  <p className="text-xs text-[#fcefe3]">Penyelarasan katalog produk antar komputer dan laptop</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCloudSyncModalOpen(false)}
+                disabled={isSyncingCloud}
+                className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#543017] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 space-y-4 text-xs text-[#5c3c26]">
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[#3d2617] block">Status Produk di Komputer Ini:</span>
+                  <span className="text-[#8a6b53] text-[11px]">Jumlah SKU aktif di penyimpanan lokal</span>
+                </div>
+                <span className="text-lg font-black text-[#96633b]">
+                  {products.length.toLocaleString('id-ID')} Produk
+                </span>
+              </div>
+
+              {cloudSyncMsg && (
+                <div className="p-3.5 rounded-2xl bg-white border border-[#ddc3aa] shadow-xs text-xs font-semibold text-[#3d2617] flex items-center space-x-2">
+                  {isSyncingCloud ? <Loader2 className="w-4 h-4 text-[#96633b] animate-spin shrink-0" /> : null}
+                  <span>{cloudSyncMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-3 pt-1">
+                {/* Opsi 1: Jadikan Sumber Utama Cloud */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e5d0be] hover:border-[#96633b] transition-all space-y-2.5 shadow-2xs">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 shrink-0">
+                      <CloudUpload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-[#3d2617] text-sm">Jadikan Komputer Ini Sumber Utama</h4>
+                      <p className="text-[11px] text-[#8a6b53] leading-relaxed mt-0.5">
+                        Gunakan opsi ini pada komputer yang datanya sudah diedit/dihapus dengan benar (misal data 1.7rb produk). Produk aktif di sini akan dikirim ke Cloud, dan produk usang yang sudah dihapus akan dibersihkan dari Cloud sehingga komputer lain langsung sinkron.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePushGroundTruth}
+                    disabled={isSyncingCloud}
+                    className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-2 shadow-xs transition-all"
+                  >
+                    <CloudUpload className="w-4 h-4" />
+                    <span>Upload & Jadikan Sumber Utama ({products.length.toLocaleString('id-ID')} Produk)</span>
+                  </button>
+                </div>
+
+                {/* Opsi 2: Tarik dari Cloud */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e5d0be] hover:border-[#96633b] transition-all space-y-2.5 shadow-2xs">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 rounded-xl bg-sky-50 text-sky-700 shrink-0">
+                      <CloudDownload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-[#3d2617] text-sm">Tarik Katalog Terbaru dari Cloud (Pull)</h4>
+                      <p className="text-[11px] text-[#8a6b53] leading-relaxed mt-0.5">
+                        Gunakan opsi ini di laptop atau komputer lain untuk memperbarui katalog agar persis sama dengan Cloud. Produk lama yang sudah dihapus oleh admin lain akan otomatis dibuang dari komputer ini.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePullCloudCatalog}
+                    disabled={isSyncingCloud}
+                    className="w-full py-2.5 bg-[#96633b] hover:bg-[#83532e] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-2 shadow-xs transition-all"
+                  >
+                    <CloudDownload className="w-4 h-4" />
+                    <span>Tarik Data Terbaru dari Cloud Sekarang</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-[#e5d0be] bg-[#f5ebe0] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsCloudSyncModalOpen(false)}
+                disabled={isSyncingCloud}
+                className="px-5 py-2 bg-white hover:bg-[#ebd7c5] text-[#5c3c26] rounded-xl text-xs font-bold border border-[#ddc3aa] transition-colors"
+              >
+                Tutup
               </button>
             </div>
 

@@ -5,7 +5,6 @@ import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
 import { api } from './api/client';
 import { syncService } from './services/syncService';
-import { getSupabaseClient } from './api/supabaseClient';
 import { DEFAULT_STORE_PROFILE } from './api/mockData';
 import type { Product, Transaction, User, DebtItem, ReceivableItem } from './types';
 
@@ -303,15 +302,12 @@ export const App: React.FC = () => {
         }
         setProducts(all);
 
-        // 2. Tarik pembaruan produk & stok terbaru dari Cloud Supabase (dari komputer lain di jaringan berbeda)
+        // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase
         if (navigator.onLine) {
-          syncService.pullFromSupabase().then((res) => {
-            if (res && res.products && res.products.length > 0) {
-              const cloudMap = new Map(res.products.map(p => [String(p.id), p]));
-              setProducts((prev) => prev.map(p => {
-                const cp = cloudMap.get(String(p.id));
-                return cp ? { ...p, ...cp } : p;
-              }));
+          syncService.pullFromSupabase().then(async (res) => {
+            if (res && res.products) {
+              const fresh = await db.products.toArray();
+              setProducts(fresh);
             }
           }).catch(() => {});
         }
@@ -576,170 +572,114 @@ export const App: React.FC = () => {
     } catch {}
 
     // 3. Supabase Cloud Realtime listener for cross-device & cross-network live sync
-    let supabaseChannel: any = null;
     try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        supabaseChannel = supabase
-          .channel('ketoko_global_live_sync')
-          .on('broadcast', { event: 'product_updated' }, ({ payload }) => {
-            const prod = payload as Product;
-            if (prod && prod.id) {
-              if (syncService.getDeletedProductIds().has(String(prod.id))) return;
-              db.products.put(prod).catch(() => {});
-              setProducts((prev) => {
-                const idx = prev.findIndex(p => String(p.id) === String(prod.id));
-                if (idx >= 0) {
-                  const copy = [...prev];
-                  copy[idx] = { ...copy[idx], ...prod };
-                  return copy;
+      syncService.initCloudLiveChannel({
+        onProductUpdated: (prod) => {
+          setProducts((prev) => {
+            const idx = prev.findIndex((p) => String(p.id) === String(prod.id));
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], ...prod };
+              return copy;
+            }
+            return [prod, ...prev];
+          });
+        },
+        onProductDeleted: (prodId) => {
+          setProducts((prev) => prev.filter((p) => String(p.id) !== String(prodId)));
+          window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: prodId } }));
+        },
+        onCatalogRefreshed: async () => {
+          const fresh = await db.products.toArray();
+          setProducts(fresh);
+        },
+        onStockUpdated: (stocks) => {
+          const map = new Map(stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
+          setProducts((prev) => prev.map((p) => {
+            const s = map.get(String(p.id));
+            return s !== undefined ? { ...p, stock: s } : p;
+          }));
+        },
+        onTransactionCreated: (data) => {
+          const trx = data?.transaction || data;
+          if (trx && trx.id) {
+            setTransactions((prev) => {
+              if (prev.some((t) => t.id === trx.id)) return prev;
+              return [trx, ...prev];
+            });
+            window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+          } else {
+            loadTransactions();
+          }
+          if (data?.updated_stocks && Array.isArray(data.updated_stocks)) {
+            const stockMap = new Map<string, number>(data.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
+            setProducts((prev) => prev.map((p) => {
+              const s = stockMap.get(String(p.id));
+              return s !== undefined ? { ...p, stock: s } : p;
+            }));
+          }
+        },
+        onTransactionDeleted: (data) => {
+          const trxId = data?.transaction_id || data?.id;
+          if (trxId) {
+            setTransactions((prev) => prev.filter((t) => t.id !== trxId));
+            window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+          }
+          if (data?.updated_stocks && Array.isArray(data.updated_stocks)) {
+            const stockMap = new Map<string, number>(data.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
+            setProducts((prev) => prev.map((p) => {
+              const s = stockMap.get(String(p.id));
+              return s !== undefined ? { ...p, stock: s } : p;
+            }));
+          }
+        },
+        onPurchaseCreated: async (payload) => {
+          if (payload && Array.isArray(payload.items)) {
+            for (const it of payload.items) {
+              const prodId = it.product_id || it.id;
+              const addQty = Number(it.qty) || 0;
+              if (prodId && addQty > 0) {
+                const existing = await db.products.get(String(prodId));
+                if (existing) {
+                  const updated = {
+                    ...existing,
+                    stock: (existing.stock || 0) + addQty,
+                    buy_price: it.buy_price || existing.buy_price
+                  };
+                  await db.products.put(updated);
+                  setProducts((prev) => prev.map((p) => String(p.id) === String(prodId) ? updated : p));
                 }
-                return [prod, ...prev];
-              });
-            }
-          })
-          .on('broadcast', { event: 'product_deleted' }, async ({ payload }) => {
-            const prodId = payload?.id || payload?.product_id;
-            if (prodId) {
-              syncService.markProductDeletedLocally(prodId);
-              await db.products.delete(prodId).catch(() => {});
-              setProducts((prev) => prev.filter((p) => String(p.id) !== String(prodId)));
-              window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: prodId } }));
-            }
-          })
-          .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
-            if (payload && payload.id) {
-              await db.purchases.put(payload).catch(() => {});
-              if (Array.isArray(payload.items)) {
-                for (const it of payload.items) {
-                  const prodId = it.product_id || it.id;
-                  const addQty = Number(it.qty) || 0;
-                  if (prodId && addQty > 0) {
-                    const existing = await db.products.get(String(prodId));
-                    if (existing) {
-                      const updated = {
-                        ...existing,
-                        stock: (existing.stock || 0) + addQty,
-                        buy_price: it.buy_price || existing.buy_price
-                      };
-                      await db.products.put(updated);
-                      setProducts((prev) => prev.map(p => String(p.id) === String(prodId) ? updated : p));
-                    }
-                  }
-                }
               }
             }
-          })
-          .on('broadcast', { event: 'transaction_created' }, async ({ payload }) => {
-            const trx = payload?.transaction || (payload?.items ? payload : null);
-            if (trx && trx.id) {
-              await db.transactions.put(trx).catch(() => {});
-              setTransactions((prev) => {
-                if (prev.some(t => t.id === trx.id)) return prev;
-                return [trx, ...prev];
-              });
-              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
-            } else {
-              loadTransactions();
-            }
-            if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
-              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
-              for (const s of payload.updated_stocks) {
-                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-              }
-              setProducts((prev) => prev.map(p => {
-                const s = stockMap.get(String(p.id));
-                return s !== undefined ? { ...p, stock: s } : p;
-              }));
-            }
-          })
-          .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
-            const trxId = payload?.transaction_id || payload?.id;
-            if (trxId) {
-              syncService.markTransactionDeletedLocally(trxId);
-              await db.transactions.delete(trxId).catch(() => {});
-              await db.syncQueue.delete(trxId).catch(() => {});
-              setTransactions((prev) => prev.filter((t) => t.id !== trxId));
-              window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
-            }
-            if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
-              const stockMap = new Map<string, number>(payload.updated_stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
-              for (const s of payload.updated_stocks) {
-                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-              }
-              setProducts((prev) => prev.map(p => {
-                const s = stockMap.get(String(p.id));
-                return s !== undefined ? { ...p, stock: s } : p;
-              }));
-            }
-          })
-          .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
-            if (Array.isArray(payload)) {
-              const stockMap = new Map<string, number>(payload.map((s: any) => [String(s.id), Number(s.stock) || 0]));
-              for (const s of payload) {
-                db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-              }
-              setProducts((prev) => prev.map(p => {
-                const s = stockMap.get(String(p.id));
-                return s !== undefined ? { ...p, stock: s } : p;
-              }));
-            }
-          })
-          .on('broadcast', { event: 'debt_receivable_updated' }, async () => {
-            await syncService.syncDebtsAndReceivables().catch(() => {});
-            const nowStr = new Date().toISOString().split('T')[0];
-            const debts = await db.debts.toArray();
-            const recs = await db.receivables.toArray();
-            const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
-            const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
-            setOverdueCount(overdueDebts + overdueRecs);
-          })
-          .on('broadcast', { event: 'receivable_created' }, async ({ payload }) => {
-            if (payload && payload.id) {
-              await db.receivables.put(payload).catch(() => {});
-              const nowStr = new Date().toISOString().split('T')[0];
-              const debts = await db.debts.toArray();
-              const recs = await db.receivables.toArray();
-              const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
-              const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
-              setOverdueCount(overdueDebts + overdueRecs);
-            }
-          })
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'products' },
-            (payload: any) => {
-              if (payload.eventType === 'DELETE') {
-                const oldProd = payload.old;
-                if (oldProd && oldProd.id) {
-                  syncService.markProductDeletedLocally(oldProd.id);
-                  db.products.delete(oldProd.id).catch(() => {});
-                  setProducts((prev) => prev.filter(p => String(p.id) !== String(oldProd.id)));
-                  window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: oldProd.id } }));
-                }
-                return;
-              }
-              const newProd = (payload.new || payload.record) as Product;
-              if (newProd && newProd.id) {
-                if (syncService.getDeletedProductIds().has(String(newProd.id))) return;
-                db.products.put(newProd).catch(() => {});
-                setProducts((prev) => {
-                  const idx = prev.findIndex(p => p.id === newProd.id);
-                  if (idx >= 0) {
-                    const copy = [...prev];
-                    copy[idx] = { ...copy[idx], ...newProd };
-                    return copy;
-                  }
-                  return [newProd, ...prev];
-                });
-              }
-            }
-          )
-          .subscribe();
-      }
+          }
+        },
+        onDebtReceivableUpdated: async () => {
+          await syncService.syncDebtsAndReceivables().catch(() => {});
+          const nowStr = new Date().toISOString().split('T')[0];
+          const debts = await db.debts.toArray();
+          const recs = await db.receivables.toArray();
+          const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
+          const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
+          setOverdueCount(overdueDebts + overdueRecs);
+        },
+        onReceivableCreated: async () => {
+          const nowStr = new Date().toISOString().split('T')[0];
+          const debts = await db.debts.toArray();
+          const recs = await db.receivables.toArray();
+          const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
+          const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
+          setOverdueCount(overdueDebts + overdueRecs);
+        }
+      });
     } catch (err) {
       console.warn('[App] Realtime Supabase subscription error:', err);
     }
+
+    const handleCatalogSynced = async () => {
+      const fresh = await db.products.toArray();
+      setProducts(fresh);
+    };
+    window.addEventListener('ketoko_catalog_synced', handleCatalogSynced);
 
     return () => {
       clearTimeout(updateTimer);
@@ -747,12 +687,7 @@ export const App: React.FC = () => {
       if (bc) {
         try { bc.close(); } catch {}
       }
-      if (supabaseChannel) {
-        try {
-          const supabase = getSupabaseClient();
-          if (supabase) supabase.removeChannel(supabaseChannel);
-        } catch {}
-      }
+      window.removeEventListener('ketoko_catalog_synced', handleCatalogSynced);
       window.removeEventListener('ketoko_open_shift_report', handleOpenShift);
       window.removeEventListener('ketoko_open_cash_drawer', handleOpenDrawer);
     };

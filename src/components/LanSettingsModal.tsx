@@ -240,7 +240,7 @@ export const LanSettingsModal: React.FC<LanSettingsModalProps> = ({
         setSupabaseSyncMessage(`Mengupload ke Supabase Cloud: ${p.current} / ${p.total} produk (${p.percent}%)...`);
       });
       if (res.success) {
-        setSupabaseSyncMessage(`✅ Berhasil mengupload ${res.totalUploaded.toLocaleString('id-ID')} produk ke Supabase Cloud!`);
+        setSupabaseSyncMessage(`✅ Berhasil mengupload ${res.totalUploaded.toLocaleString('id-ID')} produk aktif ke Supabase Cloud! (${res.totalDeleted} produk usang dibersihkan).`);
       } else {
         setSupabaseSyncMessage(`❌ Gagal: ${res.error || 'Terjadi kesalahan'}`);
       }

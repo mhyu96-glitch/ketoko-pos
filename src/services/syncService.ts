@@ -13,37 +13,155 @@ export interface SyncStatusInfo {
   lastError: string | null;
 }
 
+export interface CloudRealtimeCallbacks {
+  onProductUpdated?: (product: Product) => void;
+  onProductDeleted?: (productId: string) => void;
+  onCatalogRefreshed?: (info: any) => void;
+  onStockUpdated?: (updatedStocks: Array<{ id: string; stock: number }>) => void;
+  onTransactionCreated?: (data: any) => void;
+  onTransactionDeleted?: (data: any) => void;
+  onPurchaseCreated?: (purchase: any) => void;
+  onDebtReceivableUpdated?: () => void;
+  onReceivableCreated?: (receivable: any) => void;
+}
+
 export class SyncService {
   private isSyncing = false;
   private lastSyncTime: string | null = localStorage.getItem('ketoko_last_sync_time');
   private lastError: string | null = null;
   private cloudLiveChannel: any = null;
+  private channelReadyPromise: Promise<void> | null = null;
+  private realtimeCallbacks: CloudRealtimeCallbacks = {};
 
-  public getCloudLiveChannel() {
-    if (this.cloudLiveChannel) return this.cloudLiveChannel;
+  public initCloudLiveChannel(callbacks?: CloudRealtimeCallbacks) {
+    if (callbacks) {
+      this.realtimeCallbacks = { ...this.realtimeCallbacks, ...callbacks };
+    }
+
     const supabase = getSupabaseClient();
     if (!supabase) return null;
-    this.cloudLiveChannel = supabase.channel('ketoko_global_live_sync');
-    this.cloudLiveChannel.subscribe((status: string) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[SyncService] Supabase Realtime Channel terhubung');
+
+    if (this.cloudLiveChannel) {
+      return this.cloudLiveChannel;
+    }
+
+    let resolveReady: () => void;
+    this.channelReadyPromise = new Promise((resolve) => {
+      resolveReady = resolve;
+    });
+
+    const ch = supabase.channel('ketoko_global_live_sync', {
+      config: { broadcast: { self: false } }
+    });
+
+    ch.on('broadcast', { event: 'product_updated' }, ({ payload }) => {
+      const prod = payload as Product;
+      if (prod && prod.id) {
+        if (this.getDeletedProductIds().has(String(prod.id))) return;
+        db.products.put(prod).catch(() => {});
+        this.realtimeCallbacks.onProductUpdated?.(prod);
+      }
+    })
+    .on('broadcast', { event: 'product_deleted' }, async ({ payload }) => {
+      const prodId = String(payload?.id || payload?.product_id || '').trim();
+      if (prodId) {
+        this.markProductDeletedLocally(prodId);
+        await db.products.delete(prodId).catch(() => {});
+        this.realtimeCallbacks.onProductDeleted?.(prodId);
+      }
+    })
+    .on('broadcast', { event: 'catalog_refreshed' }, async ({ payload }) => {
+      console.log('[SyncService] Katalog diperbarui di Cloud oleh komputer lain:', payload);
+      await this.pullFromSupabase().catch(() => {});
+      this.realtimeCallbacks.onCatalogRefreshed?.(payload);
+    })
+    .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
+      if (payload && payload.id) {
+        await db.purchases.put(payload).catch(() => {});
+        this.realtimeCallbacks.onPurchaseCreated?.(payload);
+      }
+    })
+    .on('broadcast', { event: 'transaction_created' }, async ({ payload }) => {
+      const trx = payload?.transaction || (payload?.items ? payload : null);
+      if (trx && trx.id) {
+        await db.transactions.put(trx).catch(() => {});
+      }
+      if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+        for (const s of payload.updated_stocks) {
+          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+        }
+      }
+      this.realtimeCallbacks.onTransactionCreated?.(payload);
+    })
+    .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
+      const trxId = payload?.transaction_id || payload?.id;
+      if (trxId) {
+        this.markTransactionDeletedLocally(trxId);
+        await db.transactions.delete(trxId).catch(() => {});
+        await db.syncQueue.delete(trxId).catch(() => {});
+      }
+      if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+        for (const s of payload.updated_stocks) {
+          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+        }
+      }
+      this.realtimeCallbacks.onTransactionDeleted?.(payload);
+    })
+    .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
+      if (Array.isArray(payload)) {
+        for (const s of payload) {
+          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+        }
+        this.realtimeCallbacks.onStockUpdated?.(payload);
+      }
+    })
+    .on('broadcast', { event: 'debt_receivable_updated' }, async () => {
+      await this.syncDebtsAndReceivables().catch(() => {});
+      this.realtimeCallbacks.onDebtReceivableUpdated?.();
+    })
+    .on('broadcast', { event: 'receivable_created' }, async ({ payload }) => {
+      if (payload && payload.id) {
+        await db.receivables.put(payload).catch(() => {});
+        this.realtimeCallbacks.onReceivableCreated?.(payload);
       }
     });
-    return this.cloudLiveChannel;
+
+    ch.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[SyncService] Supabase Realtime Channel terhubung (SUBSCRIBED)');
+        resolveReady();
+      }
+    });
+
+    this.cloudLiveChannel = ch;
+    return ch;
   }
 
-  public broadcastCloudEvent(event: string, payload: any) {
+  public getCloudLiveChannel() {
+    return this.initCloudLiveChannel();
+  }
+
+  public async broadcastCloudEvent(event: string, payload: any): Promise<boolean> {
     try {
-      const ch = this.getCloudLiveChannel();
-      if (ch) {
-        ch.send({
-          type: 'broadcast',
-          event,
-          payload
-        });
+      const ch = this.initCloudLiveChannel();
+      if (!ch) return false;
+
+      if (this.channelReadyPromise) {
+        await Promise.race([
+          this.channelReadyPromise,
+          new Promise((r) => setTimeout(r, 1500))
+        ]);
       }
+
+      const res = await ch.send({
+        type: 'broadcast',
+        event,
+        payload
+      });
+      return res === 'ok';
     } catch (err) {
       console.warn('[Sync] Broadcast cloud event error:', err);
+      return false;
     }
   }
 
@@ -339,12 +457,12 @@ export class SyncService {
     // 5. Kirim perintah hapus ke LAN Server (jika aktif)
     lanService.deleteProduct(cleanId).catch(() => {});
 
-    // 6. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs (secara paralel dan non-blocking)
+    // 6. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs
     if (navigator.onLine) {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
-          Promise.allSettled([
+          await Promise.allSettled([
             supabase.from('products').delete().eq('id', cleanId),
             supabase.from('sync_logs').insert({
               branch_id: 'BR-01',
@@ -353,15 +471,15 @@ export class SyncService {
               status: 'DELETED',
               synced_at: new Date().toISOString()
             })
-          ]).catch(() => {});
+          ]);
         }
       } catch (err) {
         console.warn('[Sync] Gagal hapus produk dari Supabase:', err);
       }
     }
 
-    // 7. Siarkan realtime broadcast ke semua terminal kasir di cloud (berbeda jaringan)
-    this.broadcastCloudEvent('product_deleted', { id: cleanId, product_id: cleanId });
+    // 7. Siarkan realtime broadcast ke semua terminal kasir & admin di cloud (berbeda komputer)
+    await this.broadcastCloudEvent('product_deleted', { id: cleanId, product_id: cleanId });
 
     this.notifyStatusChange();
     return true;
@@ -843,17 +961,21 @@ export class SyncService {
       this.isSyncing = true;
       this.notifyStatusChange();
 
-      // 1. Tarik log produk terhapus dari Supabase sync_logs (Tombstone)
+      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone) dengan pagination penuh
       const deletedProductIds = this.getDeletedProductIds();
       try {
-        const { data: remoteDeleted } = await supabase
-          .from('sync_logs')
-          .select('error_message')
-          .eq('operation_type', 'DELETE_PRODUCT')
-          .order('synced_at', { ascending: false })
-          .limit(300);
+        let fromLog = 0;
+        const stepLog = 1000;
+        while (true) {
+          const { data: remoteDeleted, error: logErr } = await supabase
+            .from('sync_logs')
+            .select('error_message')
+            .eq('operation_type', 'DELETE_PRODUCT')
+            .order('synced_at', { ascending: false })
+            .range(fromLog, fromLog + stepLog - 1);
 
-        if (remoteDeleted && remoteDeleted.length > 0) {
+          if (logErr || !remoteDeleted || remoteDeleted.length === 0) break;
+
           for (const item of remoteDeleted) {
             if (item.error_message) {
               const pId = String(item.error_message).trim();
@@ -862,35 +984,67 @@ export class SyncService {
               await db.products.delete(pId).catch(() => {});
             }
           }
+
+          fromLog += stepLog;
+          if (remoteDeleted.length < stepLog) break;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[Sync] Gagal tarik tombstone sync_logs:', err);
+      }
 
       // Bersihkan produk lokal yang tercatat sudah terhapus
       for (const delId of deletedProductIds) {
         await db.products.delete(delId).catch(() => {});
       }
 
-      // 2. Tarik produk dari Supabase
-      const { data: cloudProducts, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(1000);
+      // 2. Tarik SELURUH produk aktif dari Supabase dengan pagination lengkap
+      let allCloudProducts: Product[] = [];
+      let fromProd = 0;
+      const stepProd = 1000;
+      while (true) {
+        const { data: cloudBatch, error: prodErr } = await supabase
+          .from('products')
+          .select('*')
+          .order('name', { ascending: true })
+          .range(fromProd, fromProd + stepProd - 1);
 
-      if (error) throw error;
+        if (prodErr) throw prodErr;
+        if (!cloudBatch || cloudBatch.length === 0) break;
 
-      if (cloudProducts && cloudProducts.length > 0) {
+        allCloudProducts = allCloudProducts.concat(cloudBatch as Product[]);
+        fromProd += stepProd;
+        if (cloudBatch.length < stepProd) break;
+      }
+
+      if (allCloudProducts.length > 0) {
         // Filter agar produk yang sudah dihapus TIDAK PERNAH dimasukkan kembali
-        const activeProducts = (cloudProducts as Product[]).filter(
+        const activeProducts = allCloudProducts.filter(
           (p) => !deletedProductIds.has(String(p.id).trim())
         );
 
         if (activeProducts.length > 0) {
-          await db.products.bulkPut(activeProducts);
+          // Bersihkan produk lokal yang tidak ada di Cloud (karena sudah dihapus di cloud)
+          const cloudIdSet = new Set(activeProducts.map((p) => String(p.id).trim()));
+          const currentLocalProds = await db.products.toArray();
+          for (const lp of currentLocalProds) {
+            const cleanLpId = String(lp.id).trim();
+            if (!cloudIdSet.has(cleanLpId)) {
+              await db.products.delete(cleanLpId).catch(() => {});
+            }
+          }
+
+          // Simpan produk aktif terbaru ke IndexedDB dalam batch
+          const chunkSize = 1000;
+          for (let i = 0; i < activeProducts.length; i += chunkSize) {
+            await db.products.bulkPut(activeProducts.slice(i, i + chunkSize));
+          }
         }
 
         this.lastSyncTime = new Date().toISOString();
         localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_catalog_synced', { detail: { count: activeProducts.length } }));
+        }
         return { count: activeProducts.length, products: activeProducts };
       }
 
@@ -906,20 +1060,39 @@ export class SyncService {
 
   async pushCatalogToSupabase(
     onProgress?: (progress: { current: number; total: number; percent: number }) => void
-  ): Promise<{ success: boolean; totalUploaded: number; error?: string }> {
+  ): Promise<{ success: boolean; totalUploaded: number; totalDeleted: number; error?: string }> {
     const supabase = getSupabaseClient();
     if (!supabase) {
-      return { success: false, totalUploaded: 0, error: 'Supabase belum dikonfigurasi.' };
+      return { success: false, totalUploaded: 0, totalDeleted: 0, error: 'Supabase belum dikonfigurasi.' };
     }
 
     try {
+      this.isSyncing = true;
+      this.notifyStatusChange();
+
+      // 1. Ambil seluruh produk aktif di IndexedDB lokal komputer ini
       const allProducts = await db.products.toArray();
       const total = allProducts.length;
-      const chunkSize = 500;
+      const chunkSize = 200;
       let current = 0;
 
+      // 2. Upload / Upsert seluruh produk lokal ke Supabase
       for (let i = 0; i < total; i += chunkSize) {
-        const chunk = allProducts.slice(i, i + chunkSize);
+        const chunk = allProducts.slice(i, i + chunkSize).map((p) => ({
+          id: String(p.id),
+          barcode: p.barcode || '',
+          name: p.name,
+          category: p.category || 'Umum',
+          buy_price: Number(p.buy_price) || 0,
+          retail_price: Number(p.retail_price) || 0,
+          wholesale_price: Number(p.wholesale_price) || 0,
+          stock: Number(p.stock) || 0,
+          unit: p.unit || 'Pcs',
+          rack_location: p.rack_location || 'Rak Utama',
+          image_url: p.image_url || '',
+          updated_at: p.updated_at || new Date().toISOString()
+        }));
+
         const { error } = await supabase.from('products').upsert(chunk, { onConflict: 'id' });
         if (error) throw error;
 
@@ -931,9 +1104,66 @@ export class SyncService {
         });
       }
 
-      return { success: true, totalUploaded: total };
+      // 3. Rekonsiliasi Ground Truth: Cari produk di Supabase yang SUDAH DIHAPUS di komputer ini
+      const localIdSet = new Set(allProducts.map((p) => String(p.id).trim()));
+      const remoteIdsToDelete: string[] = [];
+      let from = 0;
+      const step = 1000;
+      while (true) {
+        const { data: cloudBatch, error: listErr } = await supabase
+          .from('products')
+          .select('id')
+          .range(from, from + step - 1);
+
+        if (listErr || !cloudBatch || cloudBatch.length === 0) break;
+
+        for (const item of cloudBatch) {
+          const cId = String(item.id).trim();
+          if (!localIdSet.has(cId)) {
+            remoteIdsToDelete.push(cId);
+          }
+        }
+
+        from += step;
+        if (cloudBatch.length < step) break;
+      }
+
+      // 4. Hapus produk usang tersebut dari Supabase & catat tombstone di sync_logs
+      let deletedCount = 0;
+      if (remoteIdsToDelete.length > 0) {
+        const delBatchSize = 100;
+        for (let i = 0; i < remoteIdsToDelete.length; i += delBatchSize) {
+          const batch = remoteIdsToDelete.slice(i, i + delBatchSize);
+          await supabase.from('products').delete().in('id', batch);
+
+          const logsToInsert = batch.map((bId) => ({
+            branch_id: 'BR-01',
+            operation_type: 'DELETE_PRODUCT',
+            error_message: bId,
+            status: 'DELETED',
+            synced_at: new Date().toISOString()
+          }));
+          await supabase.from('sync_logs').insert(logsToInsert);
+          deletedCount += batch.length;
+        }
+      }
+
+      // 5. Broadcast ke seluruh komputer lain bahwa katalog telah di-refresh penuh
+      await this.broadcastCloudEvent('catalog_refreshed', {
+        timestamp: new Date().toISOString(),
+        totalProducts: total,
+        deletedProducts: deletedCount
+      });
+
+      this.lastSyncTime = new Date().toISOString();
+      localStorage.setItem('ketoko_last_sync_time', this.lastSyncTime);
+
+      return { success: true, totalUploaded: total, totalDeleted: deletedCount };
     } catch (err: any) {
-      return { success: false, totalUploaded: 0, error: err.message };
+      return { success: false, totalUploaded: 0, totalDeleted: 0, error: err.message };
+    } finally {
+      this.isSyncing = false;
+      this.notifyStatusChange();
     }
   }
 
