@@ -69,7 +69,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   const [wholesalePrice, setWholesalePrice] = useState<string>('');
   const [minWholesaleQty, setMinWholesaleQty] = useState<number | ''>('');
   const [stock, setStock] = useState<number | ''>('');
-  const [rackLocation, setRackLocation] = useState('');
+  const [rackLocation, setRackLocation] = useState('Gudang Utama');
   const [minStockAlert, setMinStockAlert] = useState<number | ''>(5);
 
   // Image Upload state with WebP conversion
@@ -105,7 +105,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
     setWholesalePrice('');
     setMinWholesaleQty('');
     setStock('');
-    setRackLocation('');
+    setRackLocation('Gudang Utama');
     setMinStockAlert(5);
   };
 
@@ -185,7 +185,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         name: name.trim(),
         category: finalCategory,
         unit: finalUnit,
-        rack_location: rackLocation.trim() || 'Umum',
+        rack_location: rackLocation.trim() || 'Gudang Utama',
         buy_price: parsedBuyPrice,
         retail_price: parsedRetailPrice,
         wholesale_price: parsedWholesalePrice,

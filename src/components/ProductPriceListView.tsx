@@ -386,7 +386,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         const min_wholesale_qty = minWholesaleQtyIdx !== -1 ? Number(row[minWholesaleQtyIdx].replace(/[^\d.-]/g, "")) || 1 : 1;
         const stock = stockIdx !== -1 ? Number(row[stockIdx].replace(/[^\d.-]/g, "")) || 0 : 0;
         const unit = unitIdx !== -1 ? row[unitIdx] || "Pcs" : "Pcs";
-        const rack_location = rackIdx !== -1 ? row[rackIdx] || "RAK-01" : "RAK-01";
+        const rack_location = rackIdx !== -1 ? row[rackIdx] || "Gudang Utama" : "Gudang Utama";
         const min_stock_alert = minStockAlertIdx !== -1 ? Number(row[minStockAlertIdx].replace(/[^\d.-]/g, "")) || 5 : 5;
 
         parsed.push({
