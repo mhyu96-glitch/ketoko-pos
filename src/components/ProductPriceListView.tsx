@@ -57,9 +57,15 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
     return () => clearTimeout(t);
   }, [search]);
 
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('ALL');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedCategory]);
+    setSelectedIds(new Set());
+  }, [debouncedSearch, selectedCategory, stockFilter]);
 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
@@ -138,11 +144,14 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
   const filteredProducts = React.useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
-    if (!q && selectedCategory === 'ALL') return products;
 
     return products.filter((p) => {
       const matchCat = selectedCategory === 'ALL' || p.category === selectedCategory;
       if (!matchCat) return false;
+
+      if (stockFilter === 'IN_STOCK' && (p.stock || 0) <= 0) return false;
+      if (stockFilter === 'OUT_OF_STOCK' && (p.stock || 0) > 0) return false;
+
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -152,7 +161,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         (p.category && p.category.toLowerCase().includes(q))
       );
     });
-  }, [products, debouncedSearch, selectedCategory]);
+  }, [products, debouncedSearch, selectedCategory, stockFilter]);
 
   const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
   const pageItems = React.useMemo(() => {
@@ -249,6 +258,22 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
       console.error('Gagal menghapus produk:', err);
     } finally {
       setIsDeleting(null);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      setIsBatchDeleting(true);
+      const toDelete = Array.from(selectedIds);
+      await syncService.deleteProductsBatch(toDelete);
+      setSelectedIds(new Set());
+      setShowBatchDeleteConfirm(false);
+      await onProductsUpdated();
+    } catch (err: any) {
+      alert('Gagal menghapus produk: ' + err.message);
+    } finally {
+      setIsBatchDeleting(false);
     }
   };
 
@@ -527,24 +552,61 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
           )}
         </div>
 
-        {/* Category Pills Filter */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-                  isSelected
-                    ? 'bg-[#96633b] text-white border-[#96633b] shadow-xs'
-                    : 'bg-[#f5ebe0] text-[#5c3c26] hover:bg-[#ebd7c5] border-[#ddc3aa]'
-                }`}
-              >
-                {cat === 'ALL' ? 'Semua Kategori' : cat}
-              </button>
-            );
-          })}
+        {/* Filter Controls (Stock & Category) */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Stock Filter Pills */}
+          <div className="flex items-center space-x-1 bg-[#f5ebe0] p-1 rounded-xl border border-[#ddc3aa]">
+            <button
+              onClick={() => setStockFilter('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stockFilter === 'ALL'
+                  ? 'bg-[#96633b] text-white shadow-xs'
+                  : 'text-[#5c3c26] hover:bg-[#ebd7c5]'
+              }`}
+            >
+              Semua ({products.length})
+            </button>
+            <button
+              onClick={() => setStockFilter('IN_STOCK')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stockFilter === 'IN_STOCK'
+                  ? 'bg-[#166534] text-white shadow-xs'
+                  : 'text-[#166534] hover:bg-[#dcf0df]'
+              }`}
+            >
+              Ada Stok ({products.filter((p) => (p.stock || 0) > 0).length})
+            </button>
+            <button
+              onClick={() => setStockFilter('OUT_OF_STOCK')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                stockFilter === 'OUT_OF_STOCK'
+                  ? 'bg-[#dc2626] text-white shadow-xs'
+                  : 'text-[#dc2626] hover:bg-[#fee2e2]'
+              }`}
+            >
+              Stok 0 ({products.filter((p) => !p.stock || p.stock === 0).length})
+            </button>
+          </div>
+
+          {/* Category Pills Filter */}
+          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            {categories.map((cat) => {
+              const isSelected = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                    isSelected
+                      ? 'bg-[#96633b] text-white border-[#96633b] shadow-xs'
+                      : 'bg-[#f5ebe0] text-[#5c3c26] hover:bg-[#ebd7c5] border-[#ddc3aa]'
+                  }`}
+                >
+                  {cat === 'ALL' ? 'Semua Kategori' : cat}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
       </div>
@@ -594,12 +656,68 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         </div>
       )}
 
+      {/* Batch Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="bg-[#fff7ed] border border-[#fed7aa] p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs animate-fadeIn">
+          <div className="flex items-center space-x-2 font-bold text-[#9a3412]">
+            <span className="bg-[#ffedd5] px-2.5 py-1 rounded-lg border border-[#fed7aa]">
+              ✓ {selectedIds.size.toLocaleString('id-ID')} produk dipilih
+            </span>
+            {filteredProducts.length > selectedIds.size && (
+              <button
+                onClick={() => {
+                  const next = new Set<string>();
+                  filteredProducts.forEach((p) => next.add(p.id));
+                  setSelectedIds(next);
+                }}
+                className="text-[#0369a1] underline hover:text-[#0284c7] font-semibold text-xs ml-2 cursor-pointer"
+              >
+                Pilih seluruh {filteredProducts.length.toLocaleString('id-ID')} produk hasil filter
+              </button>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 bg-white hover:bg-[#ffedd5] text-[#7c2d12] border border-[#fed7aa] rounded-xl font-bold transition-all cursor-pointer"
+            >
+              Batal Pilih
+            </button>
+            <button
+              onClick={() => setShowBatchDeleteConfirm(true)}
+              disabled={isBatchDeleting}
+              className="px-3.5 py-1.5 bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs transition-all cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Hapus Masal ({selectedIds.size.toLocaleString('id-ID')} Produk)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Products Master Table */}
       <div className="bg-white rounded-3xl border border-[#e5d0be] shadow-xs overflow-hidden">
         <div className="overflow-x-auto max-h-[580px]">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 bg-[#f5ebe0] text-[#5c3c26] font-bold text-[11px] uppercase tracking-wider border-b border-[#e5d0be] z-10">
               <tr>
+                <th className="px-3 py-3.5 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-[#ddc3aa] text-[#96633b] focus:ring-[#96633b] cursor-pointer accent-[#96633b]"
+                    checked={pageItems.length > 0 && pageItems.every((p) => selectedIds.has(p.id))}
+                    onChange={(e) => {
+                      const next = new Set(selectedIds);
+                      if (e.target.checked) {
+                        pageItems.forEach((p) => next.add(p.id));
+                      } else {
+                        pageItems.forEach((p) => next.delete(p.id));
+                      }
+                      setSelectedIds(next);
+                    }}
+                    title="Pilih semua di halaman ini"
+                  />
+                </th>
                 <th className="px-4 py-3.5">Produk & Barcode</th>
                 <th className="px-3 py-3.5">Kategori & Rak</th>
                 <th className="px-3 py-3.5 text-right">Harga Beli (Modal)</th>
@@ -613,7 +731,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
             <tbody className="divide-y divide-[#f2e5d8] font-sans">
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-[#8a6b53]">
+                  <td colSpan={9} className="py-12 text-center text-[#8a6b53]">
                     <Package className="w-10 h-10 mx-auto mb-2 opacity-30 text-[#96633b]" />
                     <p className="text-sm font-semibold text-[#3d2617]">Tidak ada data produk yang cocok.</p>
                     <p className="text-xs text-[#8a6b53] mt-0.5">Coba cari dengan kata kunci lain atau tambah item baru.</p>
@@ -628,8 +746,23 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                   const hasWholesale = prod.wholesale_price < prod.retail_price;
 
                   return (
-                    <tr key={prod.id} className="hover:bg-[#fcf9f5] transition-colors">
+                    <tr key={prod.id} className={`hover:bg-[#fcf9f5] transition-colors ${selectedIds.has(prod.id) ? 'bg-[#fff7ed]' : ''}`}>
                       
+                      {/* Row Checkbox */}
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-[#ddc3aa] text-[#96633b] focus:ring-[#96633b] cursor-pointer accent-[#96633b]"
+                          checked={selectedIds.has(prod.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedIds);
+                            if (e.target.checked) next.add(prod.id);
+                            else next.delete(prod.id);
+                            setSelectedIds(next);
+                          }}
+                        />
+                      </td>
+
                       {/* Product Name, SKU & Barcode */}
                       <td className="px-4 py-3">
                         <div>
@@ -1348,6 +1481,54 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Masal */}
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-[#e5d0be] shadow-2xl p-6 text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-red-100 text-red-600 flex items-center justify-center">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-lg font-extrabold text-[#3d2617]">Konfirmasi Hapus Masal</h3>
+              <p className="text-xs text-[#8a6b53] mt-2 leading-relaxed">
+                Anda akan menghapus <b className="text-red-600">{selectedIds.size.toLocaleString('id-ID')} produk</b> terpilih dari katalog toko.
+              </p>
+              <p className="text-[11px] text-[#8a6b53] mt-2 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-left">
+                ⚠️ Produk akan otomatis dihapus permanen dari Cloud Supabase dan seluruh komputer terminal kasir lainnya.
+              </p>
+            </div>
+            <div className="flex items-center justify-center space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                disabled={isBatchDeleting}
+                className="px-5 py-2.5 bg-[#f5ebe0] hover:bg-[#ebd7c5] text-[#5c3c26] font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchDelete}
+                disabled={isBatchDeleting}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center space-x-2 shadow-md transition-all cursor-pointer"
+              >
+                {isBatchDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Ya, Hapus {selectedIds.size.toLocaleString('id-ID')} Produk</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

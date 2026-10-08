@@ -486,6 +486,77 @@ export class SyncService {
   }
 
   /**
+   * Menghapus banyak produk sekaligus (Batch Delete) secara efisien & realtime ke Cloud & Lokal
+   */
+  async deleteProductsBatch(productIds: string[]): Promise<{ success: boolean; deletedCount: number }> {
+    if (!productIds || productIds.length === 0) return { success: true, deletedCount: 0 };
+
+    const cleanIds = Array.from(new Set(productIds.map(id => String(id).trim()).filter(Boolean)));
+    if (cleanIds.length === 0) return { success: true, deletedCount: 0 };
+
+    // 1. Catat ke daftar tombstone lokal
+    cleanIds.forEach(id => this.markProductDeletedLocally(id));
+
+    // 2. Hapus dari IndexedDB lokal
+    await db.products.bulkDelete(cleanIds).catch(() => {});
+
+    // 3. Dispatch DOM event lokal
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { ids: cleanIds } }));
+    }
+
+    // 4. Siarkan via BroadcastChannel lokal
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({ type: 'catalog_refreshed', ids: cleanIds });
+        bc.close();
+      }
+    } catch {}
+
+    // 5. LAN service
+    try {
+      for (const id of cleanIds) {
+        lanService.deleteProduct(id).catch(() => {});
+      }
+    } catch {}
+
+    // 6. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const batchSize = 100;
+          for (let i = 0; i < cleanIds.length; i += batchSize) {
+            const batch = cleanIds.slice(i, i + batchSize);
+            await supabase.from('products').delete().in('id', batch);
+
+            const logsToInsert = batch.map((bId) => ({
+              branch_id: 'BR-01',
+              operation_type: 'DELETE_PRODUCT',
+              error_message: bId,
+              status: 'DELETED',
+              synced_at: new Date().toISOString()
+            }));
+            await supabase.from('sync_logs').insert(logsToInsert);
+          }
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal batch delete produk dari Supabase:', err);
+      }
+    }
+
+    // 7. Siarkan realtime broadcast ke seluruh terminal kasir & admin di Cloud
+    await this.broadcastCloudEvent('catalog_refreshed', {
+      timestamp: new Date().toISOString(),
+      deletedCount: cleanIds.length
+    });
+
+    this.notifyStatusChange();
+    return { success: true, deletedCount: cleanIds.length };
+  }
+
+  /**
    * Dorong seluruh transaksi lokal yang belum ada di Supabase Cloud (sinkronisasi 2 arah otomatis)
    */
   async pushLocalTransactionsToSupabase(): Promise<{ pushedCount: number }> {
