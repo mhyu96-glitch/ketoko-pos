@@ -12,3 +12,4 @@ export default {
     },
   ],
 } satisfies E2EConfig;
+

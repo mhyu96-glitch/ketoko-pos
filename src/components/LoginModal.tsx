@@ -408,12 +408,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* Manual Login Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div>
-            <label className="text-xs font-semibold text-[#5c3c26] mb-1 block">Username</label>
+            <label htmlFor="login-username" className="text-xs font-semibold text-[#5c3c26] mb-1 block">Username</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8a6b53]">
                 <UserIcon className="w-4 h-4" />
               </div>
               <input
+                id="login-username"
                 type="text"
                 value={username}
                 onFocus={() => {
@@ -434,12 +435,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#5c3c26] mb-1 block">Kata Sandi (Password)</label>
+            <label htmlFor="login-password" className="text-xs font-semibold text-[#5c3c26] mb-1 block">Kata Sandi (Password)</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8a6b53]">
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                id="login-password"
                 ref={passwordInputRef}
                 type={showPassword ? "text" : "password"}
                 value={password}
