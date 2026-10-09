@@ -1474,6 +1474,49 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   <p className="text-[11px] text-stone-400 leading-relaxed">
                     Worker ini berjalan otomatis di jaringan Cloudflare tepi (*Edge Workers*) 3 kali sehari untuk menjaga database Supabase tetap hangat tanpa risiko di-pause. Hasil ping langsung dilaporkan ke Telegram Anda.
                   </p>
+
+                  <div className="pt-1 border-t border-[#3d190b]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sql = `CREATE TABLE IF NOT EXISTS public.app_configurations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key_name TEXT NOT NULL UNIQUE,
+    last_sync_timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+ALTER TABLE public.app_configurations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write app_configurations" ON public.app_configurations;
+CREATE POLICY "Allow public read/write app_configurations" ON public.app_configurations FOR ALL USING (true) WITH CHECK (true);
+DROP FUNCTION IF EXISTS public.sync_application_data();
+CREATE OR REPLACE FUNCTION public.sync_application_data()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE affected_rows integer;
+BEGIN
+    INSERT INTO public.app_configurations (key_name, last_sync_timestamp, metadata)
+    VALUES ('system_sync_service', now(), jsonb_build_object('service', 'supabase_sync_worker', 'version', '2.0.0', 'last_status', 'success'))
+    ON CONFLICT (key_name) DO UPDATE
+    SET last_sync_timestamp = excluded.last_sync_timestamp, metadata = coalesce(public.app_configurations.metadata, '{}'::jsonb) || excluded.metadata;
+    GET DIAGNOSTICS affected_rows = row_count;
+    RETURN jsonb_build_object('status', 'synchronized', 'timestamp', now(), 'affected_rows', affected_rows, 'version', '2.0.0');
+END;
+$$;
+REVOKE ALL ON FUNCTION public.sync_application_data() FROM public;
+GRANT EXECUTE ON FUNCTION public.sync_application_data() TO anon, authenticated;
+SELECT public.sync_application_data();`;
+                        navigator.clipboard.writeText(sql);
+                        alert('Skrip SQL RPC Keep-Alive berhasil disalin! Silakan tempel dan Run di SQL Editor project Supabase (quhjgsoqjcumckoshjtv).');
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 font-bold text-[11px] border border-amber-600/40 transition-all flex items-center justify-center space-x-1.5"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Salin Skrip SQL RPC untuk Node 2 (Agar Sehat ✅)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
