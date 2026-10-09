@@ -5,6 +5,11 @@
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
 
+  "vars": {
+    "NODE_NAME_1": "Catatan Kehamilan",
+    "NODE_NAME_2": "Ketoko POS"
+  },
+
   // Cloudflare memakai waktu UTC.
   // 00:00 UTC = 08:00 WITA
   // 08:00 UTC = 16:00 WITA

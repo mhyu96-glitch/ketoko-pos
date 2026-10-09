@@ -1460,8 +1460,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   <div className="space-y-1.5 bg-[#120601] p-3 rounded-xl border border-[#3d190b] font-mono text-[11px]">
                     <div>• Worker URL: <span className="text-sky-300 font-bold truncate block">{telegramConfig.workerUrl}</span></div>
                     <div>• Jadwal Ping Otomatis: <span className="text-emerald-400 font-bold">08:00, 16:00, dan 23:00 WITA</span></div>
-                    <div>• Node 1 (Proyek Utama): <span className="text-stone-300">xukpisovkcflcwuhrzkx (Aktif)</span></div>
-                    <div>• Node 2 (Ketoko POS Cluster 1): <span className="text-stone-300">quhjgsoqjcumckoshjtv (Terdaftar)</span></div>
+                    <div>• Node 1 (Catatan Kehamilan): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-stone-400 text-[10px]">(xukpisovkcflcwuhrzkx)</span></div>
+                    <div>• Node 2 (Ketoko POS): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-stone-400 text-[10px]">(quhjgsoqjcumckoshjtv)</span></div>
                   </div>
 
                   {workerHealthData && (

@@ -41,7 +41,14 @@ export default {
             const authError = await requireBearerToken(request, env.MANUAL_TRIGGER_TOKEN);
             if (authError) return authError;
 
-            ctx.waitUntil(runSync(env, { source: 'manual' }));
+            if (url.searchParams.get('wait') === 'true') {
+                const summary = await runSync(env, { source: 'manual' });
+                return jsonResponse({ status: 'completed', summary });
+            }
+
+            ctx.waitUntil(runSync(env, { source: 'manual' }).catch((err) => {
+                log('error', 'manual_sync_failed', { error: safeErrorMessage(err) });
+            }));
             return jsonResponse({
                 status: 'accepted',
                 message: 'Sinkronisasi mulai berjalan. Lihat Telegram atau /health sebentar lagi.',
@@ -127,8 +134,17 @@ function buildNodeList(env) {
     for (let i = 1; i <= MAX_NODES; i += 1) {
         const url = env[`NODE_URL_${i}`]?.trim();
         const key = env[`NODE_KEY_${i}`]?.trim();
+        const customName = env[`NODE_NAME_${i}`]?.trim();
         if (url && key) {
-            nodes.push({ id: `Node_${i}`, url: url.replace(/\/+$/, ''), key });
+            const node = { id: `Node_${i}`, url: url.replace(/\/+$/, ''), key };
+            if (customName) {
+                node.name = customName;
+            } else if (url.includes('xukpisovkcflcwuhrzkx')) {
+                node.name = 'Catatan Kehamilan';
+            } else if (url.includes('quhjgsoqjcumckoshjtv')) {
+                node.name = 'Ketoko POS';
+            }
+            nodes.push(node);
         }
     }
     return nodes;
@@ -154,10 +170,10 @@ async function syncNode(node) {
 
         const data = await readSmallResponse(response);
         const result = classifySupabaseResponse(response.status, data);
-        return makeNodeResult(node.id, startedAt, result, data);
+        return makeNodeResult(node, startedAt, result, data);
     } catch (error) {
         const isTimeout = error?.name === 'AbortError';
-        return makeNodeResult(node.id, startedAt, {
+        return makeNodeResult(node, startedAt, {
             state: isTimeout ? 'timeout' : 'network_error',
             healthy: false,
             error: isTimeout ? `Request lewat dari ${REQUEST_TIMEOUT_MS / 1000} detik` : safeErrorMessage(error)
@@ -185,10 +201,13 @@ function classifySupabaseResponse(status, data) {
     return { state: 'rpc_error', healthy: false, status, error: message };
 }
 
-function makeNodeResult(nodeId, startedAt, result, data = undefined) {
+function makeNodeResult(node, startedAt, result, data = undefined) {
     const completedAt = new Date();
+    const displayName = typeof node === 'object' ? (node.name || node.id) : node;
+    const rawId = typeof node === 'object' ? node.id : node;
     return {
-        node: nodeId,
+        node: displayName,
+        node_id: rawId,
         state: result.state,
         healthy: result.healthy,
         status: result.status,
@@ -282,7 +301,7 @@ async function persistRun(env, summary) {
     const failureAlerts = [];
     try {
         await Promise.all(summary.details.map(async (detail) => {
-            const key = `sync:node:${detail.node}`;
+            const key = `sync:node:${detail.node_id || detail.node}`;
             const previous = await env.SYNC_MEMORY.get(key, 'json');
             const consecutiveFailures = detail.healthy ? 0 : (previous?.consecutive_failures || 0) + 1;
             const next = {

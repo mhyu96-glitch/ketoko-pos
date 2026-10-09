@@ -14,6 +14,19 @@ test('membaca node lengkap dan melewati node setengah jadi', () => {
     ]);
 });
 
+test('mendukung label nama project custom dan auto-detect', () => {
+    const nodes = __test.buildNodeList({
+        NODE_URL_1: 'https://xukpisovkcflcwuhrzkx.supabase.co',
+        NODE_KEY_1: 'key-1',
+        NODE_URL_2: 'https://quhjgsoqjcumckoshjtv.supabase.co',
+        NODE_KEY_2: 'key-2',
+        NODE_NAME_2: 'Ketoko POS Multi-Store'
+    });
+
+    assert.equal(nodes[0].name, 'Catatan Kehamilan');
+    assert.equal(nodes[1].name, 'Ketoko POS Multi-Store');
+});
+
 test('mengenali project paused dari HTTP 540', () => {
     const result = __test.classifySupabaseResponse(540, { message: 'Project paused' });
     assert.equal(result.state, 'paused');

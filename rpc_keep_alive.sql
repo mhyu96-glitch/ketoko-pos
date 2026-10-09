@@ -66,3 +66,4 @@ GRANT EXECUTE ON FUNCTION public.sync_application_data() TO anon, authenticated;
 
 -- 6. Tes eksekusi. Hasil affected_rows harus bernilai 1
 SELECT public.sync_application_data();
+
