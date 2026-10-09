@@ -1122,8 +1122,16 @@ export const App: React.FC = () => {
     phone: string;
     subdomain: string;
     branchId: string;
+    clusterId?: string;
+    clusterName?: string;
+    supabaseUrl?: string;
+    supabaseAnonKey?: string;
   }) => {
     const storeId = `store-${Date.now()}`;
+    const clusterId = storeData.clusterId || 'cluster-default';
+    const clusterName = storeData.clusterName || 'Cluster 1 (Default Cloud)';
+    const supabaseUrl = storeData.supabaseUrl || '';
+    const supabaseAnonKey = storeData.supabaseAnonKey || '';
 
     // 1. Bersihkan seluruh database secara tuntas (data kosong bersih)
     await Promise.all([
@@ -1181,7 +1189,7 @@ export const App: React.FC = () => {
     }
     await db.users.bulkPut(cleanUsers);
 
-    // 3. Simpan flag toko bersih di localStorage
+    // 3. Simpan flag toko bersih di localStorage & cluster profile
     localStorage.setItem('ketoko_active_store_id', storeId);
     localStorage.setItem('ketoko_is_clean_store', 'true');
     localStorage.setItem('ketoko_has_initialized_v2', 'true');
@@ -1192,13 +1200,19 @@ export const App: React.FC = () => {
       branch_name: `${storeData.name} (${storeData.branchId || 'BR-02'})`,
       logo_base64: '',
       owner_name: storeData.ownerName || '',
-      phone: storeData.phone || ''
+      phone: storeData.phone || '',
+      cluster_id: clusterId,
+      cluster_name: clusterName,
+      supabase_url: supabaseUrl,
+      supabase_anon_key: supabaseAnonKey
     };
     localStorage.setItem('ketoko_store_profile', JSON.stringify(newProfile));
     setStoreProfile({
       name: newProfile.name,
       branch_name: newProfile.branch_name,
-      logo_base64: ''
+      logo_base64: '',
+      owner_name: newProfile.owner_name,
+      phone: newProfile.phone
     });
     setActiveStoreId(storeId);
 
@@ -1224,7 +1238,9 @@ export const App: React.FC = () => {
           cashierUser: 'noor (Kasir Toko)',
           productsCount: '3.380 Produk Sparepart AC',
           status: 'ONLINE',
-          isClean: false
+          isClean: false,
+          clusterId: 'cluster-default',
+          clusterName: 'Cluster 1 (Default Cloud)'
         }
       ];
     }
@@ -1243,10 +1259,18 @@ export const App: React.FC = () => {
       cashierUser: `kasir (Kasir ${storeData.name})`,
       productsCount: '0 Produk (Toko Bersih Baru)',
       status: 'ONLINE',
-      isClean: true
+      isClean: true,
+      clusterId,
+      clusterName,
+      supabaseUrl,
+      supabaseAnonKey
     };
     list.push(newStoreItem);
     localStorage.setItem('ketoko_registered_stores', JSON.stringify(list));
+
+    // Reset realtime channel untuk cluster toko baru
+    syncService.resetCloudLiveChannel();
+    syncService.initCloudLiveChannel();
 
     // 5. Reset semua state produk, keranjang, dan transaksi ke 0
     setProducts([]);
@@ -1280,14 +1304,24 @@ export const App: React.FC = () => {
       branch_name: store.branch || 'Cabang Utama',
       logo_base64: '',
       owner_name: store.ownerName || '',
-      phone: store.phone || ''
+      phone: store.phone || '',
+      cluster_id: store.clusterId || 'cluster-default',
+      cluster_name: store.clusterName || 'Cluster 1 (Default Cloud)',
+      supabase_url: store.supabaseUrl || '',
+      supabase_anon_key: store.supabaseAnonKey || ''
     };
     localStorage.setItem('ketoko_store_profile', JSON.stringify(targetProfile));
     setStoreProfile({
       name: targetProfile.name,
       branch_name: targetProfile.branch_name,
-      logo_base64: ''
+      logo_base64: '',
+      owner_name: targetProfile.owner_name,
+      phone: targetProfile.phone
     });
+
+    // Reset realtime channel ke cluster toko yang ditargetkan
+    syncService.resetCloudLiveChannel();
+    syncService.initCloudLiveChannel();
 
     if (store.id === 'store-01' && !store.isClean) {
       const count = await db.products.count();

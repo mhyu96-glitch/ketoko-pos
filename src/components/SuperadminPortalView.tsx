@@ -12,16 +12,27 @@ import {
   Plus, 
   Copy, 
   Check, 
-  Sparkles,
-  LogOut,
-  Users,
-  CheckCircle2,
-  Settings,
-  Trash2,
-  RefreshCw
+  Sparkles, 
+  LogOut, 
+  Users, 
+  CheckCircle2, 
+  Settings, 
+  Trash2, 
+  RefreshCw,
+  Layers,
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 import type { User } from '../types';
 import { generateSuperAdminKey } from '../services/licenseService';
+import { 
+  getSupabaseClusters, 
+  saveSupabaseCluster, 
+  deleteSupabaseCluster, 
+  testSupabaseConnection, 
+  type SupabaseCluster,
+  DEFAULT_SUPABASE_URL
+} from '../api/supabaseClient';
 
 export interface RegisteredStore {
   id: string;
@@ -38,6 +49,11 @@ export interface RegisteredStore {
   productsCount: string;
   status: 'ONLINE' | 'STANDALONE' | 'OFFLINE';
   isClean?: boolean;
+  subdomain?: string;
+  clusterId?: string;
+  clusterName?: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
 }
 
 interface SuperadminPortalViewProps {
@@ -50,6 +66,10 @@ interface SuperadminPortalViewProps {
     phone: string;
     subdomain: string;
     branchId: string;
+    clusterId?: string;
+    clusterName?: string;
+    supabaseUrl?: string;
+    supabaseAnonKey?: string;
   }) => Promise<void>;
   onClearStoreData?: (storeId: string) => Promise<void>;
   onDeleteStore?: (storeId: string) => void;
@@ -83,17 +103,37 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
   const [targetPlan, setTargetPlan] = useState<'PRO_LIFETIME' | 'ENTERPRISE_1Y' | 'MULTI_BRANCH'>('PRO_LIFETIME');
   const [generatedKey, setGeneratedKey] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  // Clusters Supabase State
+  const [clusters, setClusters] = useState<SupabaseCluster[]>(() => getSupabaseClusters());
+  const [isNewClusterModalOpen, setIsNewClusterModalOpen] = useState(false);
+  const [newClusterForm, setNewClusterForm] = useState({
+    name: '',
+    url: '',
+    anonKey: '',
+    notes: ''
+  });
+  const [isTestingCluster, setIsTestingCluster] = useState(false);
+  const [clusterTestResults, setClusterTestResults] = useState<Record<string, { success: boolean; message: string; latencyMs?: number }>>({});
+  const [isCopiedSql, setIsCopiedSql] = useState(false);
 
-  // New Client Store Modal
+  // New Client Store Modal & Cluster Selection State
   const [isNewStoreModalOpen, setIsNewStoreModalOpen] = useState(false);
   const [isSubmittingStore, setIsSubmittingStore] = useState(false);
+  const [isTestingModalCluster, setIsTestingModalCluster] = useState(false);
+  const [modalClusterTestResult, setModalClusterTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
+
   const [newStoreForm, setNewStoreForm] = useState({
     name: '',
     ownerName: '',
     phone: '',
     subdomain: '',
-    branchId: 'BR-02'
+    branchId: 'BR-02',
+    clusterChoice: 'cluster-default',
+    newClusterName: '',
+    newClusterUrl: '',
+    newClusterKey: ''
   });
+
   const [registeredStores, setRegisteredStores] = useState<RegisteredStore[]>(() => {
     try {
       const saved = localStorage.getItem('ketoko_registered_stores');
@@ -117,7 +157,10 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
         cashierUser: 'noor (Kasir Toko)',
         productsCount: '3.380 Produk Sparepart AC (Aktif & Siap Digunakan)',
         status: 'ONLINE',
-        isClean: false
+        isClean: false,
+        clusterId: 'cluster-default',
+        clusterName: 'Cluster 1 (Default Cloud)',
+        supabaseUrl: DEFAULT_SUPABASE_URL
       }
     ];
   });
@@ -136,6 +179,11 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
   useEffect(() => {
     syncStoresFromStorage();
+    const handleClusterChange = () => {
+      setClusters(getSupabaseClusters());
+    };
+    window.addEventListener('ketoko_supabase_clusters_changed', handleClusterChange);
+    return () => window.removeEventListener('ketoko_supabase_clusters_changed', handleClusterChange);
   }, []);
 
   const handleGenerateKey = () => {
@@ -154,18 +202,124 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
     setTimeout(() => setIsCopied(false), 2000);
   };
 
+  const handleTestCluster = async (cluster: SupabaseCluster) => {
+    setClusterTestResults(prev => ({
+      ...prev,
+      [cluster.id]: { success: false, message: 'Menguji koneksi...' }
+    }));
+    try {
+      const res = await testSupabaseConnection(cluster.url, cluster.anonKey);
+      setClusterTestResults(prev => ({
+        ...prev,
+        [cluster.id]: res
+      }));
+    } catch (err: any) {
+      setClusterTestResults(prev => ({
+        ...prev,
+        [cluster.id]: { success: false, message: err?.message || 'Gagal koneksi' }
+      }));
+    }
+  };
+
+  const handleTestModalCluster = async () => {
+    if (!newStoreForm.newClusterUrl.trim() || !newStoreForm.newClusterKey.trim()) {
+      alert('Masukkan Project URL dan Anon Key terlebih dahulu.');
+      return;
+    }
+    setIsTestingModalCluster(true);
+    try {
+      const res = await testSupabaseConnection(newStoreForm.newClusterUrl, newStoreForm.newClusterKey);
+      setModalClusterTestResult(res);
+    } catch (err: any) {
+      setModalClusterTestResult({ success: false, message: err?.message || 'Gagal terhubung ke Supabase.' });
+    } finally {
+      setIsTestingModalCluster(false);
+    }
+  };
+
+  const handleSaveNewClusterFromTab = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClusterForm.url.trim() || !newClusterForm.anonKey.trim()) {
+      alert('Project URL dan Anon Key tidak boleh kosong.');
+      return;
+    }
+    const created: SupabaseCluster = {
+      id: `cluster-${Date.now()}`,
+      name: newClusterForm.name.trim() || `Cluster ${clusters.length + 1} (Supabase Cloud)`,
+      url: newClusterForm.url.trim(),
+      anonKey: newClusterForm.anonKey.trim(),
+      maxStores: 20,
+      notes: newClusterForm.notes.trim() || 'Proyek Supabase Gratis'
+    };
+    saveSupabaseCluster(created);
+    setNewClusterForm({ name: '', url: '', anonKey: '', notes: '' });
+    setIsNewClusterModalOpen(false);
+    alert(`Cluster "${created.name}" berhasil ditambahkan dan siap digunakan untuk toko!`);
+  };
+
+  const handleDeleteCluster = (cluster: SupabaseCluster) => {
+    const storesInCluster = registeredStores.filter(s => (s.clusterId || 'cluster-default') === cluster.id);
+    if (storesInCluster.length > 0) {
+      alert(`Cluster "${cluster.name}" tidak dapat dihapus karena masih digunakan oleh ${storesInCluster.length} toko.`);
+      return;
+    }
+    if (confirm(`Apakah Anda yakin ingin menghapus cluster database "${cluster.name}"?`)) {
+      deleteSupabaseCluster(cluster.id);
+    }
+  };
+
   const handleAddStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStoreForm.name.trim() || isSubmittingStore) return;
 
     try {
       setIsSubmittingStore(true);
+      let targetClusterId = newStoreForm.clusterChoice;
+      let targetClusterName = 'Cluster 1 (Default Cloud)';
+      let targetUrl = '';
+      let targetAnonKey = '';
+
+      if (newStoreForm.clusterChoice === 'new') {
+        if (!newStoreForm.newClusterUrl.trim() || !newStoreForm.newClusterKey.trim()) {
+          alert('Harap masukkan URL dan Anon Key untuk Cluster Supabase Baru.');
+          setIsSubmittingStore(false);
+          return;
+        }
+        const createdClusterId = `cluster-${Date.now()}`;
+        const createdClusterName = newStoreForm.newClusterName.trim() || `Cluster ${clusters.length + 1}`;
+        const createdCluster: SupabaseCluster = {
+          id: createdClusterId,
+          name: createdClusterName,
+          url: newStoreForm.newClusterUrl.trim(),
+          anonKey: newStoreForm.newClusterKey.trim(),
+          maxStores: 20,
+          notes: `Dibuat untuk toko ${newStoreForm.name.trim()}`
+        };
+        saveSupabaseCluster(createdCluster);
+        targetClusterId = createdCluster.id;
+        targetClusterName = createdCluster.name;
+        targetUrl = createdCluster.url;
+        targetAnonKey = createdCluster.anonKey;
+      } else {
+        const found = clusters.find(c => c.id === targetClusterId) || clusters[0];
+        if (found) {
+          targetClusterId = found.id;
+          targetClusterName = found.name;
+          targetUrl = found.url;
+          targetAnonKey = found.anonKey;
+        }
+      }
+
       await onCreateNewStore({
         name: newStoreForm.name.trim(),
         ownerName: newStoreForm.ownerName.trim(),
         phone: newStoreForm.phone.trim(),
         subdomain: newStoreForm.subdomain.trim(),
-        branchId: newStoreForm.branchId.trim() || `BR-0${registeredStores.length + 1}`
+        branchId: newStoreForm.branchId.trim() || `BR-0${registeredStores.length + 1}`,
+        clusterId: targetClusterId,
+        clusterName: targetClusterName,
+        supabaseUrl: targetUrl,
+        supabaseAnonKey: targetAnonKey
       });
 
       setNewStoreForm({
@@ -173,8 +327,13 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
         ownerName: '',
         phone: '',
         subdomain: '',
-        branchId: `BR-0${registeredStores.length + 2}`
+        branchId: `BR-0${registeredStores.length + 2}`,
+        clusterChoice: 'cluster-default',
+        newClusterName: '',
+        newClusterUrl: '',
+        newClusterKey: ''
       });
+      setModalClusterTestResult(null);
       setIsNewStoreModalOpen(false);
     } catch (err: any) {
       alert('Gagal membuat toko baru: ' + (err?.message || err));
@@ -468,6 +627,16 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         <div>
                           <span className="text-stone-500 text-[10px] block">Akun Kasir Toko:</span>
                           <span className="font-bold text-stone-200">{store.cashierUser}</span>
+                        </div>
+                        <div className="col-span-2 pt-2 border-t border-[#4d2511] flex items-center justify-between">
+                          <span className="text-stone-400 text-[10px] flex items-center gap-1.5 font-bold">
+                            <Layers className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Database Cloud:</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-300 font-mono font-bold text-[10px] flex items-center gap-1">
+                            <Database className="w-3 h-3 text-sky-400" />
+                            <span>{store.clusterName || 'Cluster 1 (Default Cloud)'}</span>
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -798,55 +967,306 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
         {/* TAB 4: STATUS SUPABASE & CLOUDFLARE */}
         {activeTab === 'cloud' && (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-black text-white flex items-center gap-2">
-                <Database className="w-5 h-5 text-sky-400" />
-                <span>Pusat Database Cloud Supabase & Cloudflare</span>
-              </h2>
-              <p className="text-xs text-stone-400 mt-1">
-                Database pusat di cloud yang menjaga data 24.500 produk dan transaksi seluruh cabang tetap aman dan tersinkronisasi.
-              </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black text-white flex items-center gap-2">
+                  <Database className="w-5 h-5 text-sky-400" />
+                  <span>Pusat Database Cloud Supabase (Multi-Cluster Gratis) & Cloudflare</span>
+                </h2>
+                <p className="text-xs text-stone-400 mt-1">
+                  Arsitektur multi-tenant berbasis cluster: Setiap akun Supabase Gratis menampung hingga 20 toko. Buat cluster baru untuk toko ke-21 dst tanpa biaya bulanan (100% Gratis).
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsNewClusterModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-black text-xs flex items-center space-x-2 shadow-lg transition-all active:scale-95 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Daftarkan Cluster Supabase Baru</span>
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
-              {/* Supabase Status */}
-              <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Database className="w-5 h-5 text-emerald-400" />
-                    <h3 className="text-sm font-black text-white">Supabase Cloud Database</h3>
-                  </div>
-                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    TERHUBUNG
-                  </span>
+            {/* Quick KPI Cluster Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
+                <div className="p-3 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                  <Layers className="w-5 h-5" />
                 </div>
-
-                <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
-                  <div>
-                    <span className="text-stone-500 text-[10px] block">Project URL:</span>
-                    <span className="font-mono font-bold text-stone-200">https://quhjgsoqjcumckoshjtv.supabase.co</span>
-                  </div>
-                  <div className="pt-1">
-                    <span className="text-stone-500 text-[10px] block">Total Produk di Cloud:</span>
-                    <span className="font-bold text-emerald-300">3.380 Master Produk AC (Aktif)</span>
-                  </div>
-                  <div className="pt-1">
-                    <span className="text-stone-500 text-[10px] block">Status Sinkronisasi:</span>
-                    <span className="font-bold text-sky-300">Multi-Cabang Realtime</span>
-                  </div>
+                <div>
+                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Total Cluster Aktif</div>
+                  <div className="text-base font-black text-white">{clusters.length} Cluster Database</div>
+                  <div className="text-[10px] text-emerald-400 font-medium">Semua Proyek Supabase Free Tier</div>
                 </div>
+              </div>
 
+              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
+                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Toko Terdistribusi</div>
+                  <div className="text-base font-black text-white">{registeredStores.length} Toko Klien</div>
+                  <div className="text-[10px] text-amber-300 font-medium">Tersebar di {clusters.length} Cluster</div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
+                <div className="p-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Kapasitas Siap Pakai</div>
+                  <div className="text-base font-black text-emerald-300">{clusters.length * 20} Toko Bebas Biaya</div>
+                  <div className="text-[10px] text-stone-400 font-medium">Hemat Biaya Rp 400rb+/Bulan</div>
+                </div>
+              </div>
+            </div>
+
+            {/* DAFTAR CLUSTER SUPABASE */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-400" />
+                  <span>Daftar Cluster Database Supabase Aktif</span>
+                </h3>
+                <span className="text-xs text-stone-400">
+                  Rekomendasi aman: Maksimal 20 toko per akun Supabase gratis
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {clusters.map((cluster) => {
+                  const storesInCluster = registeredStores.filter(s => (s.clusterId || 'cluster-default') === cluster.id);
+                  const maxCap = cluster.maxStores || 20;
+                  const usagePercent = Math.min(100, Math.round((storesInCluster.length / maxCap) * 100));
+                  const testRes = clusterTestResults[cluster.id];
+
+                  return (
+                    <div 
+                      key={cluster.id}
+                      className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3.5">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <h4 className="text-sm font-black text-white">{cluster.name}</h4>
+                              {cluster.isDefault ? (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  CLUSTER UTAMA
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                  CLUSTER TAMBAHAN
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-stone-400 mt-0.5">{cluster.notes || 'Supabase Free Tier Project'}</p>
+                          </div>
+
+                          <span className="text-xs font-mono font-bold text-amber-300 bg-[#1c0b03] px-2.5 py-1 rounded-xl border border-[#4d2511]">
+                            {storesInCluster.length} / {maxCap} Toko
+                          </span>
+                        </div>
+
+                        {/* Capacity Progress Bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-stone-400 font-medium">Pemakaian Kuota Akun Gratis:</span>
+                            <span className={`font-bold ${usagePercent >= 100 ? 'text-rose-400' : usagePercent >= 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                              {usagePercent}% ({maxCap - storesInCluster.length} slot tersisa)
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 rounded-full bg-[#1c0b03] border border-[#4d2511] overflow-hidden">
+                            <div 
+                              className={`h-full transition-all duration-500 rounded-full ${
+                                usagePercent >= 100 
+                                  ? 'bg-rose-500' 
+                                  : usagePercent >= 75 
+                                  ? 'bg-amber-500' 
+                                  : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.max(5, usagePercent)}%` }}
+                            />
+                          </div>
+                          {storesInCluster.length >= maxCap && (
+                            <p className="text-[10px] text-amber-300 font-bold flex items-center gap-1 mt-1">
+                              <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                              <span>Kapasitas 20 toko telah tercapai. Buat Cluster baru untuk pendaftaran toko berikutnya.</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Cluster Info Details */}
+                        <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                          <div>
+                            <span className="text-stone-500 text-[10px] block">Project URL:</span>
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono font-bold text-stone-200 truncate max-w-[280px]">
+                                {cluster.url}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(cluster.url);
+                                  alert('Project URL disalin ke clipboard!');
+                                }}
+                                className="text-stone-400 hover:text-white p-1"
+                                title="Salin URL"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pt-1">
+                            <span className="text-stone-500 text-[10px] block">Toko yang Terdaftar di Cluster Ini:</span>
+                            {storesInCluster.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5 mt-1">
+                                {storesInCluster.map(s => (
+                                  <span 
+                                    key={s.id} 
+                                    className="px-2 py-0.5 rounded-md bg-[#381a0c] border border-[#5e2e17] text-stone-200 text-[10px] font-medium"
+                                  >
+                                    {s.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-stone-500 text-[11px] italic">Belum ada toko yang menggunakan cluster ini.</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Realtime Ping / Test Result Feedback */}
+                        {testRes && (
+                          <div className={`p-2.5 rounded-xl text-[11px] font-medium flex items-center justify-between ${
+                            testRes.success 
+                              ? 'bg-emerald-950/60 border border-emerald-700/60 text-emerald-200' 
+                              : 'bg-rose-950/60 border border-rose-700/60 text-rose-200'
+                          }`}>
+                            <div className="flex items-center gap-1.5">
+                              {testRes.success ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-400" />}
+                              <span>{testRes.message}</span>
+                            </div>
+                            {testRes.latencyMs && (
+                              <span className="font-mono font-bold text-[10px] bg-black/40 px-1.5 py-0.5 rounded">
+                                {testRes.latencyMs}ms
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cluster Actions */}
+                      <div className="pt-3 border-t border-[#4d2511] flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleTestCluster(cluster)}
+                          className="px-3 py-2 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs border border-[#6b381d] transition-all flex items-center space-x-1.5"
+                        >
+                          <Activity className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Uji Latensi Ping</span>
+                        </button>
+
+                        <div className="flex items-center space-x-1.5">
+                          {cluster.isDefault && (
+                            <button
+                              type="button"
+                              onClick={onOpenLanModal}
+                              className="px-3 py-2 rounded-xl bg-[#3d190b] hover:bg-[#4d200e] text-stone-300 font-bold text-xs border border-[#5c2a13] transition-all flex items-center space-x-1.5"
+                            >
+                              <Settings className="w-3.5 h-3.5 text-stone-400" />
+                              <span>Pengaturan Kunci</span>
+                            </button>
+                          )}
+
+                          {!cluster.isDefault && (
+                            <button
+                              type="button"
+                              disabled={storesInCluster.length > 0}
+                              onClick={() => handleDeleteCluster(cluster)}
+                              className={`p-2 rounded-xl border transition-all ${
+                                storesInCluster.length > 0
+                                  ? 'bg-stone-800 text-stone-600 border-stone-700 cursor-not-allowed'
+                                  : 'bg-rose-950/40 hover:bg-rose-900 text-rose-300 border-rose-800/40'
+                              }`}
+                              title={storesInCluster.length > 0 ? 'Tidak dapat menghapus cluster yang masih memiliki toko terdaftar' : 'Hapus Cluster'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* PANDUAN PRAKTIS: MULTI-AKUN SUPABASE GRATIS */}
+            <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-sm font-black text-white">Panduan Multi-Akun Supabase Gratis (Bila Toko Sudah 20+)</h3>
+                </div>
                 <button
                   type="button"
-                  onClick={onOpenLanModal}
-                  className="w-full py-2.5 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs border border-[#6b381d] transition-all flex items-center justify-center space-x-2"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`supabase_schema.sql`);
+                    setIsCopiedSql(true);
+                    setTimeout(() => setIsCopiedSql(false), 2500);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all shadow-md"
                 >
-                  <Settings className="w-4 h-4 text-amber-300" />
-                  <span>Ubah Kunci Supabase / Sinkronkan Data</span>
+                  {isCopiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{isCopiedSql ? 'Nama File Tersalin!' : 'Salin Lokasi: supabase_schema.sql'}</span>
                 </button>
               </div>
 
+              <div className="space-y-3 text-xs text-stone-300">
+                <p className="leading-relaxed">
+                  Supabase menyediakan tier <strong>100% Gratis</strong> dengan batas 500 MB database dan ~50.000 transaksi per bulan per proyek. Dengan arsitektur Ketoko POS, Anda <strong>TIDAK PERLU membayar langganan Pro ($25/bulan)</strong> ketika toko klien bertambah. Cukup gunakan clustering multi-akun gratis:
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
+                    <span className="font-extrabold text-amber-300 block">Langkah 1</span>
+                    <span className="text-[11px] text-stone-400">
+                      Buka <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-sky-400 underline font-bold">supabase.com</a> dan buat akun baru dengan email/Google baru.
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
+                    <span className="font-extrabold text-amber-300 block">Langkah 2</span>
+                    <span className="text-[11px] text-stone-400">
+                      Klik <strong>+ New Project</strong>, beri nama (misal: <code>ketoko-cluster-2</code>), pilih region <strong>Singapore</strong>.
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
+                    <span className="font-extrabold text-amber-300 block">Langkah 3</span>
+                    <span className="text-[11px] text-stone-400">
+                      Buka <strong>SQL Editor</strong> di dashboard Supabase baru → Tempelkan isi file <code className="text-amber-200">supabase_schema.sql</code> → Klik <strong>Run</strong>.
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
+                    <span className="font-extrabold text-amber-300 block">Langkah 4</span>
+                    <span className="text-[11px] text-stone-400">
+                      Buka Project Settings → API, salin <strong>URL</strong> & <strong>anon key</strong>, lalu klik tombol <strong>+ Daftarkan Cluster Supabase Baru</strong> di atas. Selesai!
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CLOUDFLARE & SUBDOMAIN INFRASTRUCTURE */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
               {/* Cloudflare Pages & Tunnel */}
               <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
@@ -1030,6 +1450,94 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 />
               </div>
 
+              {/* Pilihan Cluster Database Supabase */}
+              <div className="space-y-2 pt-2 border-t border-[#4d2511]">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-stone-300">Database Cloud (Cluster Supabase):</label>
+                  <span className="text-[10px] text-emerald-400 font-bold">100% Free Tier</span>
+                </div>
+
+                <select
+                  value={newStoreForm.clusterChoice}
+                  onChange={(e) => {
+                    setNewStoreForm({ ...newStoreForm, clusterChoice: e.target.value });
+                    setModalClusterTestResult(null);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500 font-medium text-xs"
+                >
+                  {clusters.map((c) => {
+                    const storesInC = registeredStores.filter(s => (s.clusterId || 'cluster-default') === c.id);
+                    const isFull = storesInC.length >= (c.maxStores || 20);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — {storesInC.length}/20 Toko {isFull ? '(Kapasitas 20 Penuh)' : '(Tersedia)'}
+                      </option>
+                    );
+                  })}
+                  <option value="new">+ Buat & Hubungkan Cluster Supabase Baru...</option>
+                </select>
+
+                {newStoreForm.clusterChoice === 'new' && (
+                  <div className="p-3 rounded-2xl bg-[#170802] border border-amber-600/40 space-y-2.5 mt-2 animate-fadeIn">
+                    <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Cluster Supabase Baru (Akun Free Tier Baru)</span>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-stone-400 block mb-0.5">Nama Cluster:</label>
+                      <input
+                        type="text"
+                        value={newStoreForm.newClusterName}
+                        onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterName: e.target.value })}
+                        placeholder={`Cluster ${clusters.length + 1} (Supabase Cloud)`}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-stone-400 block mb-0.5">Project URL Supabase:</label>
+                      <input
+                        type="url"
+                        value={newStoreForm.newClusterUrl}
+                        onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterUrl: e.target.value })}
+                        placeholder="https://xyzproject.supabase.co"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-stone-400 block mb-0.5">Anon Public Key:</label>
+                      <input
+                        type="password"
+                        value={newStoreForm.newClusterKey}
+                        onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterKey: e.target.value })}
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs font-mono"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        disabled={isTestingModalCluster || !newStoreForm.newClusterUrl || !newStoreForm.newClusterKey}
+                        onClick={handleTestModalCluster}
+                        className="px-3 py-1.5 rounded-lg bg-[#3a1a0b] hover:bg-[#4d230e] text-amber-200 text-[11px] font-bold border border-[#6b381d] transition-all flex items-center space-x-1"
+                      >
+                        <Activity className="w-3 h-3 text-amber-400" />
+                        <span>{isTestingModalCluster ? 'Menguji...' : 'Uji Koneksi Supabase'}</span>
+                      </button>
+
+                      {modalClusterTestResult && (
+                        <span className={`text-[10px] font-bold ${modalClusterTestResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {modalClusterTestResult.success ? `✓ Terhubung (${modalClusterTestResult.latencyMs}ms)` : '✕ Gagal Konek'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Highlight Clean Database Notice */}
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
@@ -1055,6 +1563,115 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all"
                 >
                   <span>{isSubmittingStore ? 'Membuat Toko Bersih...' : 'Buat Toko Baru (Data Kosong)'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. MODAL DAFTARKAN CLUSTER SUPABASE BARU */}
+      {isNewClusterModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-[#2a1307] border border-[#6b381d] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 animate-smooth-modal">
+            <div className="flex items-center justify-between pb-3 border-b border-[#4d2511]">
+              <h3 className="font-black text-sm text-white flex items-center gap-2">
+                <Database className="w-4 h-4 text-sky-400" />
+                <span>Daftarkan Cluster Supabase Baru</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsNewClusterModalOpen(false)}
+                className="text-stone-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewClusterFromTab} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-stone-300 mb-1">Nama Cluster Database:</label>
+                <input
+                  type="text"
+                  required
+                  value={newClusterForm.name}
+                  onChange={(e) => setNewClusterForm({ ...newClusterForm, name: e.target.value })}
+                  placeholder={`Contoh: Cluster ${clusters.length + 1} (Toko 21-40)`}
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-300 mb-1">Project URL Supabase:</label>
+                <input
+                  type="url"
+                  required
+                  value={newClusterForm.url}
+                  onChange={(e) => setNewClusterForm({ ...newClusterForm, url: e.target.value })}
+                  placeholder="https://xyzproject.supabase.co"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white font-mono focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-300 mb-1">Anon Public API Key:</label>
+                <textarea
+                  required
+                  rows={2}
+                  value={newClusterForm.anonKey}
+                  onChange={(e) => setNewClusterForm({ ...newClusterForm, anonKey: e.target.value })}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white font-mono focus:outline-none focus:border-amber-500 text-[11px]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-300 mb-1">Catatan Tambahan (Opsional):</label>
+                <input
+                  type="text"
+                  value={newClusterForm.notes}
+                  onChange={(e) => setNewClusterForm({ ...newClusterForm, notes: e.target.value })}
+                  placeholder="Contoh: Akun Supabase Kedua - Toko Samarinda Seberang"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Ping Live Test in New Cluster Modal */}
+              <div className="pt-1 flex items-center justify-between">
+                <button
+                  type="button"
+                  disabled={isTestingCluster || !newClusterForm.url || !newClusterForm.anonKey}
+                  onClick={async () => {
+                    setIsTestingCluster(true);
+                    try {
+                      const res = await testSupabaseConnection(newClusterForm.url, newClusterForm.anonKey);
+                      alert(res.message);
+                    } catch (e: any) {
+                      alert('Gagal tes: ' + e?.message);
+                    } finally {
+                      setIsTestingCluster(false);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl bg-[#3d1a0b] hover:bg-[#52230e] text-amber-200 font-bold border border-[#6b381d] transition-all flex items-center space-x-1.5"
+                >
+                  <Activity className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{isTestingCluster ? 'Menguji...' : 'Uji Koneksi Supabase'}</span>
+                </button>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsNewClusterModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 font-bold hover:bg-stone-700"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all"
+                >
+                  <span>Simpan Cluster Database</span>
                 </button>
               </div>
             </form>

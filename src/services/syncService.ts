@@ -137,6 +137,19 @@ export class SyncService {
     return ch;
   }
 
+  public resetCloudLiveChannel() {
+    if (this.cloudLiveChannel) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          supabase.removeChannel(this.cloudLiveChannel);
+        }
+      } catch {}
+      this.cloudLiveChannel = null;
+      this.channelReadyPromise = null;
+    }
+  }
+
   public getCloudLiveChannel() {
     return this.initCloudLiveChannel();
   }

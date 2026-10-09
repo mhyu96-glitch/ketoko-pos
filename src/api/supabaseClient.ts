@@ -6,31 +6,149 @@ export interface SupabaseConfig {
   isConfigured: boolean;
 }
 
-let cachedClient: SupabaseClient | null = null;
-let lastUsedUrl = '';
-let lastUsedKey = '';
+export interface SupabaseCluster {
+  id: string;
+  name: string;
+  url: string;
+  anonKey: string;
+  isDefault?: boolean;
+  maxStores?: number;
+  notes?: string;
+  createdAt?: string;
+}
+
+export const DEFAULT_SUPABASE_URL = 'https://quhjgsoqjcumckoshjtv.supabase.co';
+export const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1aGpnc29xamN1bWNrb3NoanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDE0MTQsImV4cCI6MjEwNTc3NzQxNH0.fh79f6QFSdBA3QD8f7vFZ7P1z29ilPeFq_htxy_OKgM';
+
+const clientCache = new Map<string, SupabaseClient>();
 
 /**
- * Mendapatkan kredensial Supabase dari localStorage atau environment variables
+ * Mengambil definisi cluster default
  */
-export function getSupabaseConfig(): SupabaseConfig {
+export function getDefaultCluster(): SupabaseCluster {
   const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
   const localUrl = isBrowser ? (localStorage.getItem('ketoko_supabase_url')?.trim() || '') : '';
   const localKey = isBrowser ? (localStorage.getItem('ketoko_supabase_anon_key')?.trim() || '') : '';
-
   const envUrl = ((import.meta as any).env?.VITE_SUPABASE_URL || '').trim();
   const envKey = ((import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '').trim();
 
-  const DEFAULT_SUPABASE_URL = 'https://quhjgsoqjcumckoshjtv.supabase.co';
-  const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1aGpnc29xamN1bWNrb3NoanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDE0MTQsImV4cCI6MjEwNTc3NzQxNH0.fh79f6QFSdBA3QD8f7vFZ7P1z29ilPeFq_htxy_OKgM';
-
-  const url = localUrl || envUrl || DEFAULT_SUPABASE_URL;
-  const anonKey = localKey || envKey || DEFAULT_SUPABASE_KEY;
-
   return {
-    url,
-    anonKey,
-    isConfigured: Boolean(url && anonKey && url.startsWith('http'))
+    id: 'cluster-default',
+    name: 'Cluster 1 (Default Cloud)',
+    url: localUrl || envUrl || DEFAULT_SUPABASE_URL,
+    anonKey: localKey || envKey || DEFAULT_SUPABASE_KEY,
+    isDefault: true,
+    maxStores: 20,
+    notes: 'Cluster Supabase Gratis Utama (Kapasitas: 1-20 Toko, 500MB DB)'
+  };
+}
+
+/**
+ * Mengambil daftar seluruh cluster Supabase yang terdaftar
+ */
+export function getSupabaseClusters(): SupabaseCluster[] {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return [getDefaultCluster()];
+  }
+  try {
+    const raw = localStorage.getItem('ketoko_supabase_clusters');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  const defaultList = [getDefaultCluster()];
+  localStorage.setItem('ketoko_supabase_clusters', JSON.stringify(defaultList));
+  return defaultList;
+}
+
+/**
+ * Menyimpan atau memperbarui cluster Supabase
+ */
+export function saveSupabaseCluster(cluster: SupabaseCluster): void {
+  if (typeof localStorage === 'undefined') return;
+  const clusters = getSupabaseClusters();
+  const index = clusters.findIndex(c => c.id === cluster.id);
+  if (index >= 0) {
+    clusters[index] = cluster;
+  } else {
+    clusters.push(cluster);
+  }
+  localStorage.setItem('ketoko_supabase_clusters', JSON.stringify(clusters));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ketoko_supabase_clusters_changed', { detail: { clusters } }));
+  }
+}
+
+/**
+ * Menghapus cluster Supabase (cluster default tidak dapat dihapus)
+ */
+export function deleteSupabaseCluster(clusterId: string): boolean {
+  if (clusterId === 'cluster-default' || typeof localStorage === 'undefined') return false;
+  const clusters = getSupabaseClusters().filter(c => c.id !== clusterId);
+  localStorage.setItem('ketoko_supabase_clusters', JSON.stringify(clusters));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ketoko_supabase_clusters_changed', { detail: { clusters } }));
+  }
+  return true;
+}
+
+/**
+ * Mendapatkan kredensial Supabase dari store aktif, localStorage, atau default cluster
+ */
+export function getSupabaseConfig(storeId?: string): SupabaseConfig & { clusterId?: string; clusterName?: string } {
+  const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+  
+  if (isBrowser) {
+    // 1. Cek apakah ada profil toko aktif dengan kredensial custom
+    const targetId = storeId || localStorage.getItem('ketoko_active_store_id');
+    const profileRaw = localStorage.getItem('ketoko_store_profile');
+    if (profileRaw) {
+      try {
+        const profile = JSON.parse(profileRaw);
+        if (profile.supabase_url && profile.supabase_anon_key) {
+          return {
+            url: profile.supabase_url.trim(),
+            anonKey: profile.supabase_anon_key.trim(),
+            clusterId: profile.cluster_id || 'cluster-custom',
+            clusterName: profile.cluster_name || 'Cluster Klien',
+            isConfigured: true
+          };
+        }
+      } catch {}
+    }
+
+    // 2. Cek apakah toko terdaftar memiliki spesifikasi cluster tersendiri
+    const storesRaw = localStorage.getItem('ketoko_registered_stores');
+    if (storesRaw && targetId) {
+      try {
+        const stores = JSON.parse(storesRaw);
+        if (Array.isArray(stores)) {
+          const matched = stores.find((s: any) => s.id === targetId);
+          if (matched && matched.supabaseUrl && matched.supabaseAnonKey) {
+            return {
+              url: matched.supabaseUrl.trim(),
+              anonKey: matched.supabaseAnonKey.trim(),
+              clusterId: matched.clusterId || 'cluster-store',
+              clusterName: matched.clusterName || matched.name,
+              isConfigured: true
+            };
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Fallback ke Cluster Default
+  const defaultCluster = getDefaultCluster();
+  return {
+    url: defaultCluster.url,
+    anonKey: defaultCluster.anonKey,
+    clusterId: defaultCluster.id,
+    clusterName: defaultCluster.name,
+    isConfigured: Boolean(defaultCluster.url && defaultCluster.anonKey && defaultCluster.url.startsWith('http'))
   };
 }
 
@@ -44,12 +162,18 @@ export function saveSupabaseConfig(url: string, anonKey: string) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('ketoko_supabase_url', cleanUrl);
     localStorage.setItem('ketoko_supabase_anon_key', cleanKey);
+    // Sinkronkan ke default cluster
+    const clusters = getSupabaseClusters();
+    const def = clusters.find(c => c.id === 'cluster-default');
+    if (def) {
+      def.url = cleanUrl;
+      def.anonKey = cleanKey;
+      localStorage.setItem('ketoko_supabase_clusters', JSON.stringify(clusters));
+    }
   }
 
-  // Invalidate cached client
-  cachedClient = null;
-  lastUsedUrl = '';
-  lastUsedKey = '';
+  // Invalidate cached clients
+  clientCache.clear();
 
   // Trigger global custom event for reactive UI updates
   if (typeof window !== 'undefined') {
@@ -67,9 +191,7 @@ export function clearSupabaseConfig() {
     localStorage.removeItem('ketoko_supabase_url');
     localStorage.removeItem('ketoko_supabase_anon_key');
   }
-  cachedClient = null;
-  lastUsedUrl = '';
-  lastUsedKey = '';
+  clientCache.clear();
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ketoko_supabase_config_changed', {
@@ -79,28 +201,36 @@ export function clearSupabaseConfig() {
 }
 
 /**
- * Mengambil instance SupabaseClient aktif
+ * Mengambil instance SupabaseClient aktif (multi-client caching berdasarkan URL dan AnonKey)
  */
-export function getSupabaseClient(): SupabaseClient | null {
-  const config = getSupabaseConfig();
-  if (!config.isConfigured) {
-    return null;
+export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
+  let url = customUrl?.trim();
+  let anonKey = customKey?.trim();
+
+  if (!url || !anonKey) {
+    const config = getSupabaseConfig();
+    if (!config.isConfigured) {
+      return null;
+    }
+    url = config.url;
+    anonKey = config.anonKey;
   }
 
-  if (cachedClient && lastUsedUrl === config.url && lastUsedKey === config.anonKey) {
-    return cachedClient;
+  const cacheKey = `${url}|${anonKey}`;
+  const existing = clientCache.get(cacheKey);
+  if (existing) {
+    return existing;
   }
 
   try {
-    cachedClient = createClient(config.url, config.anonKey, {
+    const client = createClient(url, anonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true
       }
     });
-    lastUsedUrl = config.url;
-    lastUsedKey = config.anonKey;
-    return cachedClient;
+    clientCache.set(cacheKey, client);
+    return client;
   } catch (err) {
     console.error('[SupabaseClient] Gagal inisialisasi client:', err);
     return null;
