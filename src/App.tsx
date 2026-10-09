@@ -1239,7 +1239,7 @@ export const App: React.FC = () => {
           licensePlan: 'PRO LIFETIME (Aktif)',
           adminUser: 'suciawati (Owner)',
           cashierUser: 'noor (Kasir Toko)',
-          productsCount: '3.380 Produk Sparepart AC',
+          productsCount: '1.503 Produk Sparepart AC',
           status: 'ONLINE',
           isClean: false,
           clusterId: 'cluster-default',

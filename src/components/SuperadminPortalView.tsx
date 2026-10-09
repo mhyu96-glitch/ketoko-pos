@@ -235,7 +235,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
         licensePlan: 'PRO LIFETIME (Aktif)',
         adminUser: 'suciawati (Owner)',
         cashierUser: 'noor (Kasir Toko)',
-        productsCount: '3.380 Produk Sparepart AC (Aktif & Siap Digunakan)',
+        productsCount: '1.503 Produk Sparepart AC (Aktif & Siap Digunakan)',
         status: 'ONLINE',
         isClean: false,
         clusterId: 'cluster-default',
@@ -251,7 +251,14 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setRegisteredStores(parsed);
+          const updated = parsed.map((s: RegisteredStore) => {
+            if (s.productsCount && s.productsCount.includes('3.380')) {
+              return { ...s, productsCount: s.productsCount.replace('3.380', '1.503') };
+            }
+            return s;
+          });
+          setRegisteredStores(updated);
+          localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
         }
       }
     } catch {}
@@ -776,7 +783,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           onClick={onInjectCatalog} 
                           className="text-[10px] font-bold text-emerald-600 hover:underline"
                         >
-                          + Inject 3.380
+                          + Inject 1.503
                         </button>
                       )}
                     </div>
@@ -828,16 +835,16 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
                       <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                         <circle cx="50" cy="50" r="38" fill="transparent" stroke="#F1F2F6" strokeWidth="15" />
-                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#6C5CE7" strokeWidth="15" strokeDasharray="83 155" strokeDashoffset="0" strokeLinecap="round" />
-                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#2ECC71" strokeWidth="15" strokeDasharray="60 178" strokeDashoffset="-85" strokeLinecap="round" />
-                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#FDCB6E" strokeWidth="15" strokeDasharray="43 195" strokeDashoffset="-147" strokeLinecap="round" />
-                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#FF7675" strokeWidth="15" strokeDasharray="33 205" strokeDashoffset="-192" strokeLinecap="round" />
-                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#74B9FF" strokeWidth="15" strokeDasharray="20 218" strokeDashoffset="-227" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#6C5CE7" strokeWidth="15" strokeDasharray="98 141" strokeDashoffset="0" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#2ECC71" strokeWidth="15" strokeDasharray="56 183" strokeDashoffset="-100" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#FDCB6E" strokeWidth="15" strokeDasharray="41 198" strokeDashoffset="-158" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#FF7675" strokeWidth="15" strokeDasharray="28 211" strokeDashoffset="-201" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="38" fill="transparent" stroke="#74B9FF" strokeWidth="15" strokeDasharray="16 223" strokeDashoffset="-231" strokeLinecap="round" />
                       </svg>
                       
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
-                        <span className="text-lg font-black text-slate-900 tracking-tight">3.380</span>
+                        <span className="text-lg font-black text-slate-900 tracking-tight">1.503</span>
                         <span className="text-[10px] font-bold text-[#6C5CE7]">Produk AC</span>
                       </div>
                     </div>
@@ -849,8 +856,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           <span className="text-slate-600 font-medium">Sparepart AC</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-slate-900">1.250</span>
-                          <span className="text-[11px] text-slate-400 font-normal">37%</span>
+                          <span className="text-slate-900">620</span>
+                          <span className="text-[11px] text-slate-400 font-normal">41%</span>
                         </div>
                       </div>
 
@@ -860,8 +867,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           <span className="text-slate-600 font-medium">Pipa & Tembaga</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-slate-900">845</span>
-                          <span className="text-[11px] text-slate-400 font-normal">25%</span>
+                          <span className="text-slate-900">350</span>
+                          <span className="text-[11px] text-slate-400 font-normal">23%</span>
                         </div>
                       </div>
 
@@ -871,7 +878,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           <span className="text-slate-600 font-medium">Freon & Kimia</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-slate-900">590</span>
+                          <span className="text-slate-900">260</span>
                           <span className="text-[11px] text-slate-400 font-normal">17%</span>
                         </div>
                       </div>
@@ -882,8 +889,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           <span className="text-slate-600 font-medium">Kompresor AC</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-slate-900">460</span>
-                          <span className="text-[11px] text-slate-400 font-normal">14%</span>
+                          <span className="text-slate-900">175</span>
+                          <span className="text-[11px] text-slate-400 font-normal">12%</span>
                         </div>
                       </div>
 
@@ -893,7 +900,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                           <span className="text-slate-600 font-medium">Lain-lain / Tool</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-slate-900">235</span>
+                          <span className="text-slate-900">98</span>
                           <span className="text-[11px] text-slate-400 font-normal">7%</span>
                         </div>
                       </div>
@@ -993,7 +1000,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-500 font-mono truncate">
-                            quhjgsoqjcumckoshjtv • 1.503 / 3.380 Produk Aktif
+                            quhjgsoqjcumckoshjtv • 1.503 Produk Cloud Aktif
                           </p>
                         </div>
                       </div>
@@ -1167,7 +1174,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         onClick={onInjectCatalog}
                         className="py-2 px-3 rounded-xl bg-emerald-700 text-white font-black text-[11px] shadow-sm hover:bg-emerald-800 transition-all text-center"
                       >
-                        ⚡ Inject 3.380
+                        ⚡ Inject 1.503
                       </button>
                     )}
                   </div>
