@@ -1,0 +1,17 @@
+{
+  "name": "supabase-sync-worker",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/index.test.js",
+    "check": "node --check src/index.js && node test/index.test.js",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

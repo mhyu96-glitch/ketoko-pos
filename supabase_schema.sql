@@ -204,3 +204,61 @@ CREATE TRIGGER trg_deduct_stock
 AFTER INSERT ON transaction_items
 FOR EACH ROW
 EXECUTE FUNCTION deduct_product_stock_on_sale();
+
+-- ==============================================================================
+-- 13. CLOUDFLARE WORKER & TELEGRAM KEEP-ALIVE (ANTI-PAUSE SUPABASE FREE TIER)
+-- Menjaga project Supabase tetap aktif 24/7 dan mengirim laporan ke Telegram
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.app_configurations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key_name TEXT NOT NULL UNIQUE,
+    last_sync_timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+ALTER TABLE public.app_configurations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read/write app_configurations" ON public.app_configurations FOR ALL USING (true) WITH CHECK (true);
+
+DROP FUNCTION IF EXISTS public.sync_application_data();
+
+CREATE OR REPLACE FUNCTION public.sync_application_data()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    affected_rows integer;
+BEGIN
+    INSERT INTO public.app_configurations (
+        key_name,
+        last_sync_timestamp,
+        metadata
+    )
+    VALUES (
+        'system_sync_service',
+        now(),
+        jsonb_build_object(
+            'service', 'supabase_sync_worker',
+            'version', '2.0.0',
+            'last_status', 'success'
+        )
+    )
+    ON CONFLICT (key_name) DO UPDATE
+    SET last_sync_timestamp = excluded.last_sync_timestamp,
+        metadata = coalesce(public.app_configurations.metadata, '{}'::jsonb)
+            || excluded.metadata;
+
+    GET DIAGNOSTICS affected_rows = row_count;
+
+    RETURN jsonb_build_object(
+        'status', 'synchronized',
+        'timestamp', now(),
+        'affected_rows', affected_rows,
+        'version', '2.0.0'
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.sync_application_data() FROM public;
+GRANT EXECUTE ON FUNCTION public.sync_application_data() TO anon, authenticated;

@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "supabase-sync-worker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Cloudflare memakai waktu UTC.
+  // 00:00 UTC = 08:00 WITA
+  // 08:00 UTC = 16:00 WITA
+  // 15:00 UTC = 23:00 WITA
+  "triggers": {
+    "crons": ["0 0 * * *", "0 8 * * *", "0 15 * * *"]
+  },
+
+  "kv_namespaces": [
+    {
+      "binding": "SYNC_MEMORY",
+      "id": "ae5b88442df842d49a3c17b0e99ed2dd"
+    }
+  ],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  }
+}

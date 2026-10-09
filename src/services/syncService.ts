@@ -4,6 +4,7 @@ import { getSupabaseClient, getSupabaseConfig } from '../api/supabaseClient';
 import { INITIAL_PRODUCTS } from '../api/mockData';
 import type { Transaction, Product } from '../types';
 import { lanService } from './lanService';
+import { notifySaleToTelegram } from './telegramService';
 
 export interface SyncStatusInfo {
   isConfigured: boolean;
@@ -380,6 +381,14 @@ export class SyncService {
     if (updatedStocks.length > 0) {
       this.broadcastCloudEvent('stock_updated', updatedStocks);
     }
+
+    notifySaleToTelegram({
+      receipt_number: transaction.receipt_number,
+      grand_total: transaction.grand_total,
+      cashier_name: transaction.cashier_name,
+      payment_method: transaction.payment_method,
+      total_items: transaction.items?.length || 1
+    }).catch(() => {});
 
     this.notifyStatusChange();
 
