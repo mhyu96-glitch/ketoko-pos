@@ -31,6 +31,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [pupilShift, setPupilShift] = useState({ x: 0, y: 0, rot: 0 });
   const passwordInputRef = React.useRef<HTMLInputElement>(null);
 
+  const storeProfile = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem('ketoko_store_profile');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  }, []);
+
+  const isDefaultStore = !storeProfile || !storeProfile.name || storeProfile.name === 'CV. Tumbuh Makmur Air Conindo';
+
   if (isOpen === false) return null;
 
   const handleSelectQuickAccount = (uname: string) => {
@@ -327,9 +337,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
 
           <h2 className="text-xl font-black text-[#3d2617] tracking-tight">
-            Ketoko<span className="text-[#96633b]">POS</span>
+            {isDefaultStore ? (
+              <>Ketoko<span className="text-[#96633b]">POS</span></>
+            ) : (
+              storeProfile?.name
+            )}
           </h2>
-          <p className="text-xs text-[#8a6b53] mt-0.5 font-medium">Sistem Kasir & Toko • Cabang Samarinda (BR-01)</p>
+          <p className="text-xs text-[#8a6b53] mt-0.5 font-medium">
+            {isDefaultStore ? 'Sistem Kasir & Toko • Cabang Samarinda (BR-01)' : storeProfile?.branch_name || 'Sistem Kasir & Toko'}
+          </p>
         </div>
 
         {error && (
@@ -349,9 +365,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Kasir Quick Button */}
             <button
               type="button"
-              onClick={() => handleSelectQuickAccount('noor')}
+              onClick={() => handleSelectQuickAccount(isDefaultStore ? 'noor' : 'kasir')}
               className={`p-3 rounded-2xl border text-left transition-all group flex flex-col justify-between shadow-2xs ${
-                username === 'noor' 
+                username === (isDefaultStore ? 'noor' : 'kasir') 
                   ? 'border-[#96633b] bg-[#faebd7]/70 ring-2 ring-[#96633b]/30' 
                   : 'border-[#ddc3aa] bg-white hover:bg-[#f5ebe0]'
               }`}
@@ -365,7 +381,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </span>
               </div>
               <div>
-                <div className="font-bold text-xs text-[#3d2617]">Noor Afifah</div>
+                <div className="font-bold text-xs text-[#3d2617]">
+                  {isDefaultStore ? 'Noor Afifah' : 'Kasir Toko'}
+                </div>
                 <div className="text-[10px] text-[#96633b] leading-tight">Kasir • Operator POS</div>
               </div>
             </button>
@@ -373,9 +391,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Admin Quick Button */}
             <button
               type="button"
-              onClick={() => handleSelectQuickAccount('suciawati')}
+              onClick={() => handleSelectQuickAccount(isDefaultStore ? 'suciawati' : 'admin')}
               className={`p-3 rounded-2xl border text-left transition-all group flex flex-col justify-between shadow-2xs ${
-                username === 'suciawati' 
+                username === (isDefaultStore ? 'suciawati' : 'admin') 
                   ? 'border-[#83532e] bg-[#faebd7]/70 ring-2 ring-[#83532e]/30' 
                   : 'border-[#ddc3aa] bg-white hover:bg-[#f5ebe0]'
               }`}
@@ -389,7 +407,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </span>
               </div>
               <div>
-                <div className="font-bold text-xs text-[#3d2617]">suciawati Ramadhani</div>
+                <div className="font-bold text-xs text-[#3d2617]">
+                  {isDefaultStore ? 'suciawati Ramadhani' : (storeProfile?.owner_name || 'Admin Toko')}
+                </div>
                 <div className="text-[10px] text-[#96633b] leading-tight">Owner Toko • Admin</div>
               </div>
             </button>

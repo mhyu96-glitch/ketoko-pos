@@ -145,21 +145,30 @@ export const App: React.FC = () => {
   const [isStoreSettingsOpen, setIsStoreSettingsOpen] = useState(false);
   const [storeSettingsTab, setStoreSettingsTab] = useState<'profile' | 'theme' | 'csv' | 'backup' | 'users'>('profile');
 
+  // Active Store Tracking
+  const [activeStoreId, setActiveStoreId] = useState<string>(() => {
+    return localStorage.getItem('ketoko_active_store_id') || 'store-01';
+  });
+
   // Store Profile State (Custom POS Name & Branch Subtitle)
   const [storeProfile, setStoreProfile] = useState<{
     name: string;
     branch_name: string;
     logo_base64?: string;
+    owner_name?: string;
+    phone?: string;
   }>(() => {
     const saved = localStorage.getItem('ketoko_store_profile');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.name && parsed.name !== 'Ketoko POS') {
+        if (parsed.name) {
           return {
             name: parsed.name,
-            branch_name: parsed.branch_name || 'Cabang Samarinda (BR-01)',
-            logo_base64: parsed.logo_base64 || ''
+            branch_name: parsed.branch_name || 'Cabang Utama',
+            logo_base64: parsed.logo_base64 || '',
+            owner_name: parsed.owner_name || '',
+            phone: parsed.phone || ''
           };
         }
       } catch {}
@@ -184,7 +193,9 @@ export const App: React.FC = () => {
         setStoreProfile({
           name: parsed.name || DEFAULT_STORE_PROFILE.name,
           branch_name: parsed.branch_name || 'Cabang Samarinda (BR-01)',
-          logo_base64: parsed.logo_base64 || ''
+          logo_base64: parsed.logo_base64 || '',
+          owner_name: parsed.owner_name || '',
+          phone: parsed.phone || ''
         });
       } catch {}
     }
@@ -260,6 +271,9 @@ export const App: React.FC = () => {
   // Load products & count overdue debts/receivables once on startup
   const loadLocalProducts = useCallback(async () => {
     try {
+      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
+      const activeStore = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+
       if (lanService.isClientMode()) {
         try {
           const serverProds = await lanService.fetchCentralProducts();
@@ -278,81 +292,88 @@ export const App: React.FC = () => {
           setProducts(all);
         }
       } else {
-        // 1. Fetch all products into state (Auto-seed from /data/products.json if empty or containing old dummy products)
+        // 1. Fetch all products into state (Auto-seed from /data/products.json ONLY for initial store-01 and NOT clean store)
         let all = await db.products.toArray();
-        const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
-        if (all.length === 0 || hasOldDummy) {
-          try {
-            const res = await fetch('/data/products.json');
-            if (res.ok) {
-              const defaultProds = await res.json();
-              if (defaultProds && defaultProds.length > 0) {
-                await db.products.clear();
-                const chunkSize = 1000;
-                for (let i = 0; i < defaultProds.length; i += chunkSize) {
-                  await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
+        if (!isCleanStore && activeStore === 'store-01') {
+          const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
+          if (all.length === 0 || hasOldDummy) {
+            try {
+              const res = await fetch('/data/products.json');
+              if (res.ok) {
+                const defaultProds = await res.json();
+                if (defaultProds && defaultProds.length > 0) {
+                  await db.products.clear();
+                  const chunkSize = 1000;
+                  for (let i = 0; i < defaultProds.length; i += chunkSize) {
+                    await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
+                  }
+                  all = defaultProds;
+                  console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
                 }
-                all = defaultProds;
-                console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
               }
+            } catch (err) {
+              console.warn('[App] Gagal auto-load /data/products.json:', err);
             }
-          } catch (err) {
-            console.warn('[App] Gagal auto-load /data/products.json:', err);
           }
-        }
-        setProducts(all);
+          setProducts(all);
 
-        // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase
-        if (navigator.onLine) {
-          syncService.pullFromSupabase().then(async (res) => {
-            if (res && res.products) {
-              const fresh = await db.products.toArray();
-              setProducts(fresh);
-            }
-          }).catch(() => {});
+          // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase
+          if (navigator.onLine) {
+            syncService.pullFromSupabase().then(async (res) => {
+              if (res && res.products) {
+                const fresh = await db.products.toArray();
+                setProducts(fresh);
+              }
+            }).catch(() => {});
+          }
+        } else {
+          // Mode Toko Bersih Baru: JANGAN auto-seed produk katalog dummy dan JANGAN pull produk Supabase CV Tumbuh Makmur!
+          setProducts(all);
         }
       }
 
-      // Ensure active users for CV. Tumbuh Makmur Air Conindo are registered
-      try {
-        await db.users.bulkPut([
-          {
-            id: 'usr-000',
-            username: 'superadmin',
-            name: 'Master Superadmin (Developer)',
-            role: 'SUPERADMIN',
-            branch_id: 'BR-01'
-          },
-          {
-            id: 'usr-001',
-            username: 'suciawati',
-            name: 'suciawati Ramadhani',
-            role: 'ADMIN',
-            branch_id: 'BR-01'
-          },
-          {
-            id: 'usr-002',
-            username: 'noor',
-            name: 'Noor Afifah',
-            role: 'CASHIER',
-            branch_id: 'BR-01'
-          },
-          {
-            id: 'usr-003',
-            username: 'admin',
-            name: 'suciawati Ramadhani',
-            role: 'ADMIN',
-            branch_id: 'BR-01'
-          },
-          {
-            id: 'usr-004',
-            username: 'kasir',
-            name: 'Noor Afifah',
-            role: 'CASHIER',
-            branch_id: 'BR-01'
-          }
-        ]);
-      } catch {}
+      // Ensure active users: only seed CV Tumbuh Makmur users if default store-01 and NOT clean store
+      if (!isCleanStore && activeStore === 'store-01') {
+        try {
+          await db.users.bulkPut([
+            {
+              id: 'usr-000',
+              username: 'superadmin',
+              name: 'Master Superadmin (Developer)',
+              role: 'SUPERADMIN',
+              branch_id: 'BR-01'
+            },
+            {
+              id: 'usr-001',
+              username: 'suciawati',
+              name: 'suciawati Ramadhani',
+              role: 'ADMIN',
+              branch_id: 'BR-01'
+            },
+            {
+              id: 'usr-002',
+              username: 'noor',
+              name: 'Noor Afifah',
+              role: 'CASHIER',
+              branch_id: 'BR-01'
+            },
+            {
+              id: 'usr-003',
+              username: 'admin',
+              name: 'suciawati Ramadhani',
+              role: 'ADMIN',
+              branch_id: 'BR-01'
+            },
+            {
+              id: 'usr-004',
+              username: 'kasir',
+              name: 'Noor Afifah',
+              role: 'CASHIER',
+              branch_id: 'BR-01'
+            }
+          ]);
+        } catch {}
+      }
 
       const pendingCount = await syncService.getPendingCount();
       setPendingSyncCount(pendingCount);
@@ -372,6 +393,9 @@ export const App: React.FC = () => {
   // Load latest cashier transactions from LAN Server, Supabase, or local Dexie
   const loadTransactions = useCallback(async (): Promise<Transaction[]> => {
     try {
+      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
+      const activeStore = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+
       if (lanService.isClientMode()) {
         try {
           const centralTrx = await lanService.fetchCentralTransactions(100);
@@ -383,7 +407,7 @@ export const App: React.FC = () => {
         }
       }
 
-      if (navigator.onLine) {
+      if (navigator.onLine && !isCleanStore && activeStore === 'store-01') {
         await Promise.allSettled([
           syncService.pushLocalTransactionsToSupabase(),
           syncService.pullTransactionsFromSupabase(100)
@@ -702,7 +726,9 @@ export const App: React.FC = () => {
 
   // Manual & Auto-sync trigger: synchronizes transactions, restocks, debts/receivables
   const handleManualSync = useCallback(async () => {
-    if (!isOnline || isSyncingRef.current) return;
+    const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
+    const activeStore = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    if (!isOnline || isSyncingRef.current || isCleanStore || activeStore !== 'store-01') return;
     isSyncingRef.current = true;
     setIsSyncing(true);
     try {
@@ -1027,12 +1053,253 @@ export const App: React.FC = () => {
             await db.products.bulkPut(prods.slice(i, i + chunkSize));
           }
           setProducts(prods);
+          localStorage.setItem('ketoko_is_clean_store', 'false');
           alert(`Berhasil menginjeksi ${prods.length.toLocaleString('id-ID')} data produk sparepart AC CV. Tumbuh Makmur ke sistem kasir!`);
         }
       }
     } catch (err) {
       alert('Gagal menginjeksi katalog: ' + err);
     }
+  };
+
+  // Superadmin Store Creation & Switching Handlers
+  const handleCreateNewStore = async (storeData: {
+    name: string;
+    ownerName: string;
+    phone: string;
+    subdomain: string;
+    branchId: string;
+  }) => {
+    const storeId = `store-${Date.now()}`;
+
+    // 1. Bersihkan seluruh database secara tuntas (data kosong bersih)
+    await Promise.all([
+      db.products.clear(),
+      db.transactions.clear(),
+      db.syncQueue.clear(),
+      db.customers.clear(),
+      db.suppliers.clear(),
+      db.debts.clear(),
+      db.receivables.clear(),
+      db.purchases.clear(),
+      db.purchaseReturns.clear(),
+      db.salesReturns.clear(),
+      db.stockMovements.clear(),
+      db.users.clear(),
+      db.usersLocal.clear()
+    ]);
+
+    // 2. Daftarkan akun awal untuk toko baru
+    const cleanUsers: User[] = [
+      {
+        id: 'usr-000',
+        username: 'superadmin',
+        name: 'Master Superadmin (Developer)',
+        role: 'SUPERADMIN',
+        branch_id: storeData.branchId || 'BR-02'
+      },
+      {
+        id: 'usr-001',
+        username: 'admin',
+        name: storeData.ownerName ? `${storeData.ownerName} (Owner)` : `Admin ${storeData.name}`,
+        role: 'ADMIN',
+        branch_id: storeData.branchId || 'BR-02'
+      },
+      {
+        id: 'usr-002',
+        username: 'kasir',
+        name: `Kasir ${storeData.name}`,
+        role: 'CASHIER',
+        branch_id: storeData.branchId || 'BR-02'
+      }
+    ];
+
+    if (storeData.ownerName && storeData.ownerName.trim()) {
+      const ownerSimple = storeData.ownerName.trim().toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '');
+      if (ownerSimple && !cleanUsers.some(u => u.username === ownerSimple)) {
+        cleanUsers.push({
+          id: 'usr-003',
+          username: ownerSimple,
+          name: `${storeData.ownerName} (Owner)`,
+          role: 'ADMIN',
+          branch_id: storeData.branchId || 'BR-02'
+        });
+      }
+    }
+    await db.users.bulkPut(cleanUsers);
+
+    // 3. Simpan flag toko bersih di localStorage
+    localStorage.setItem('ketoko_active_store_id', storeId);
+    localStorage.setItem('ketoko_is_clean_store', 'true');
+    localStorage.setItem('ketoko_has_initialized_v2', 'true');
+    localStorage.removeItem('ketoko_held_carts');
+
+    const newProfile = {
+      name: storeData.name,
+      branch_name: `${storeData.name} (${storeData.branchId || 'BR-02'})`,
+      logo_base64: '',
+      owner_name: storeData.ownerName || '',
+      phone: storeData.phone || ''
+    };
+    localStorage.setItem('ketoko_store_profile', JSON.stringify(newProfile));
+    setStoreProfile({
+      name: newProfile.name,
+      branch_name: newProfile.branch_name,
+      logo_base64: ''
+    });
+    setActiveStoreId(storeId);
+
+    // 4. Perbarui daftar toko tersimpan
+    let list: any[] = [];
+    try {
+      const saved = localStorage.getItem('ketoko_registered_stores');
+      list = saved ? JSON.parse(saved) : [];
+    } catch {}
+    if (!list || list.length === 0) {
+      list = [
+        {
+          id: 'store-01',
+          name: 'CV. Tumbuh Makmur Air Conindo',
+          branch: 'Cabang Samarinda (BR-01)',
+          branchId: 'BR-01',
+          ownerName: 'suciawati Ramadhani',
+          phone: '08123456789',
+          onlineDomain: 'https://tumbuhmakmur.ketokopos.online',
+          localServer: 'http://localhost:5858',
+          licensePlan: 'PRO LIFETIME (Aktif)',
+          adminUser: 'suciawati (Owner)',
+          cashierUser: 'noor (Kasir Toko)',
+          productsCount: '3.380 Produk Sparepart AC',
+          status: 'ONLINE',
+          isClean: false
+        }
+      ];
+    }
+    const newStoreItem = {
+      id: storeId,
+      name: storeData.name,
+      branch: `${storeData.name} (${storeData.branchId || 'BR-02'})`,
+      branchId: storeData.branchId || 'BR-02',
+      ownerName: storeData.ownerName,
+      phone: storeData.phone,
+      onlineDomain: storeData.subdomain ? `https://${storeData.subdomain}.ketokopos.online` : 'Belum diatur',
+      localServer: 'http://localhost:5858',
+      licensePlan: 'PRO LIFETIME (Aktif)',
+      adminUser: `${storeData.ownerName || 'admin'} (Owner)`,
+      cashierUser: `kasir (Kasir ${storeData.name})`,
+      productsCount: '0 Produk (Toko Bersih Baru)',
+      status: 'ONLINE',
+      isClean: true
+    };
+    list.push(newStoreItem);
+    localStorage.setItem('ketoko_registered_stores', JSON.stringify(list));
+
+    // 5. Reset semua state produk, keranjang, dan transaksi ke 0
+    setProducts([]);
+    setTransactions([]);
+    clearCart();
+    setOverdueCount(0);
+    setPendingSyncCount(0);
+
+    // 6. Langsung masuk ke tampilan POS dalam kondisi toko kosong bersih
+    setCurrentView('pos');
+  };
+
+  const handleSelectStorePos = async (store?: any) => {
+    if (!store) {
+      setCurrentView('pos');
+      return;
+    }
+
+    const currentActive = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    if (store.id === currentActive) {
+      setCurrentView('pos');
+      return;
+    }
+
+    localStorage.setItem('ketoko_active_store_id', store.id);
+    localStorage.setItem('ketoko_is_clean_store', store.isClean ? 'true' : 'false');
+    setActiveStoreId(store.id);
+
+    const targetProfile = {
+      name: store.name,
+      branch_name: store.branch || 'Cabang Utama',
+      logo_base64: '',
+      owner_name: store.ownerName || '',
+      phone: store.phone || ''
+    };
+    localStorage.setItem('ketoko_store_profile', JSON.stringify(targetProfile));
+    setStoreProfile({
+      name: targetProfile.name,
+      branch_name: targetProfile.branch_name,
+      logo_base64: ''
+    });
+
+    if (store.id === 'store-01' && !store.isClean) {
+      const count = await db.products.count();
+      if (count === 0) {
+        await handleInjectCatalog();
+      } else {
+        await loadLocalProducts();
+        await loadTransactions();
+      }
+    } else {
+      const prods = await db.products.toArray();
+      setProducts(prods);
+      const trxs = await db.transactions.toArray();
+      setTransactions(trxs);
+    }
+
+    clearCart();
+    setCurrentView('pos');
+  };
+
+  const handleClearStoreData = async (storeId: string) => {
+    await Promise.all([
+      db.products.clear(),
+      db.transactions.clear(),
+      db.syncQueue.clear(),
+      db.customers.clear(),
+      db.suppliers.clear(),
+      db.debts.clear(),
+      db.receivables.clear(),
+      db.purchases.clear(),
+      db.purchaseReturns.clear(),
+      db.salesReturns.clear(),
+      db.stockMovements.clear()
+    ]);
+    localStorage.setItem('ketoko_is_clean_store', 'true');
+    localStorage.removeItem('ketoko_held_carts');
+    setProducts([]);
+    setTransactions([]);
+    clearCart();
+    setOverdueCount(0);
+    setPendingSyncCount(0);
+
+    try {
+      const saved = localStorage.getItem('ketoko_registered_stores');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const updated = list.map((s: any) => {
+          if (s.id === storeId) {
+            return { ...s, productsCount: '0 Produk (Dibersihkan)', isClean: true };
+          }
+          return s;
+        });
+        localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
+      }
+    } catch {}
+  };
+
+  const handleDeleteStore = (storeId: string) => {
+    try {
+      const saved = localStorage.getItem('ketoko_registered_stores');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const updated = list.filter((s: any) => s.id !== storeId);
+        localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
+      }
+    } catch {}
   };
 
   // If not logged in, render login modal
@@ -1047,11 +1314,16 @@ export const App: React.FC = () => {
         <SuperadminPortalView
           currentUser={currentUser}
           onLogout={handleLogout}
-          onEnterStorePos={() => setCurrentView('pos')}
+          onEnterStorePos={handleSelectStorePos}
+          onCreateNewStore={handleCreateNewStore}
+          onClearStoreData={handleClearStoreData}
+          onDeleteStore={handleDeleteStore}
           onOpenLanModal={() => setIsLanModalOpen(true)}
           onOpenLicenseModal={() => setIsLicenseModalOpen(true)}
           onInjectCatalog={handleInjectCatalog}
           totalProductsLoaded={products.length}
+          activeStoreId={activeStoreId}
+          activeStoreName={storeProfile.name}
         />
 
         {/* LAN Network, Cloudflare Tunnel & Supabase Cloud */}
@@ -1095,7 +1367,7 @@ export const App: React.FC = () => {
               👑 Mode Inspeksi Toko Klien
             </span>
             <span className="font-semibold text-purple-100">
-              Anda sedang membuka kasir toko: <strong>CV. Tumbuh Makmur Air Conindo</strong>
+              Anda sedang membuka kasir toko: <strong>{storeProfile.name}</strong> ({storeProfile.branch_name})
             </span>
           </div>
           <button

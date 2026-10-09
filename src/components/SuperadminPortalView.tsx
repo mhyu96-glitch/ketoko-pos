@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Store, 
@@ -16,29 +16,64 @@ import {
   LogOut,
   Users,
   CheckCircle2,
-  Settings
+  Settings,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import type { User } from '../types';
 import { generateSuperAdminKey } from '../services/licenseService';
 
+export interface RegisteredStore {
+  id: string;
+  name: string;
+  branch: string;
+  branchId?: string;
+  ownerName?: string;
+  phone?: string;
+  onlineDomain: string;
+  localServer: string;
+  licensePlan: string;
+  adminUser: string;
+  cashierUser: string;
+  productsCount: string;
+  status: 'ONLINE' | 'STANDALONE' | 'OFFLINE';
+  isClean?: boolean;
+}
+
 interface SuperadminPortalViewProps {
   currentUser: User;
   onLogout: () => void;
-  onEnterStorePos: () => void;
+  onEnterStorePos: (store?: RegisteredStore) => void;
+  onCreateNewStore: (storeData: {
+    name: string;
+    ownerName: string;
+    phone: string;
+    subdomain: string;
+    branchId: string;
+  }) => Promise<void>;
+  onClearStoreData?: (storeId: string) => Promise<void>;
+  onDeleteStore?: (storeId: string) => void;
   onOpenLanModal: () => void;
   onOpenLicenseModal: () => void;
   onInjectCatalog?: () => void;
   totalProductsLoaded?: number;
+  activeStoreId?: string;
+  activeStoreName?: string;
 }
 
 export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
   currentUser,
   onLogout,
   onEnterStorePos,
+  onCreateNewStore,
+  onClearStoreData,
+  onDeleteStore,
   onOpenLanModal,
   onOpenLicenseModal,
   onInjectCatalog,
-  totalProductsLoaded = 0
+  totalProductsLoaded = 0,
+  activeStoreId = 'store-01',
+  activeStoreName = 'CV. Tumbuh Makmur Air Conindo'
 }) => {
   const [activeTab, setActiveTab] = useState<'tenants' | 'keygen' | 'topology' | 'cloud'>('tenants');
 
@@ -51,6 +86,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
   // New Client Store Modal
   const [isNewStoreModalOpen, setIsNewStoreModalOpen] = useState(false);
+  const [isSubmittingStore, setIsSubmittingStore] = useState(false);
   const [newStoreForm, setNewStoreForm] = useState({
     name: '',
     ownerName: '',
@@ -58,20 +94,49 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
     subdomain: '',
     branchId: 'BR-02'
   });
-  const [registeredStores, setRegisteredStores] = useState([
-    {
-      id: 'store-01',
-      name: 'CV. Tumbuh Makmur Air Conindo',
-      branch: 'Cabang Samarinda (BR-01)',
-      onlineDomain: 'https://tumbuhmakmur.ketokopos.online',
-      localServer: 'http://localhost:5858',
-      licensePlan: 'PRO LIFETIME (Aktif)',
-      adminUser: 'suciawati (Owner)',
-      cashierUser: 'noor (Kasir Toko)',
-      productsCount: '3.380 Produk Sparepart AC (Aktif & Siap Digunakan)',
-      status: 'ONLINE'
-    }
-  ]);
+  const [registeredStores, setRegisteredStores] = useState<RegisteredStore[]>(() => {
+    try {
+      const saved = localStorage.getItem('ketoko_registered_stores');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: 'store-01',
+        name: 'CV. Tumbuh Makmur Air Conindo',
+        branch: 'Cabang Samarinda (BR-01)',
+        branchId: 'BR-01',
+        ownerName: 'suciawati Ramadhani',
+        phone: '08123456789',
+        onlineDomain: 'https://tumbuhmakmur.ketokopos.online',
+        localServer: 'http://localhost:5858',
+        licensePlan: 'PRO LIFETIME (Aktif)',
+        adminUser: 'suciawati (Owner)',
+        cashierUser: 'noor (Kasir Toko)',
+        productsCount: '3.380 Produk Sparepart AC (Aktif & Siap Digunakan)',
+        status: 'ONLINE',
+        isClean: false
+      }
+    ];
+  });
+
+  const syncStoresFromStorage = () => {
+    try {
+      const saved = localStorage.getItem('ketoko_registered_stores');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRegisteredStores(parsed);
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    syncStoresFromStorage();
+  }, []);
 
   const handleGenerateKey = () => {
     const key = generateSuperAdminKey(
@@ -89,34 +154,56 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const handleAddStore = (e: React.FormEvent) => {
+  const handleAddStore = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStoreForm.name.trim()) return;
+    if (!newStoreForm.name.trim() || isSubmittingStore) return;
 
-    setRegisteredStores(prev => [
-      ...prev,
-      {
-        id: `store-0${prev.length + 1}`,
-        name: newStoreForm.name,
-        branch: `${newStoreForm.name} (${newStoreForm.branchId})`,
-        onlineDomain: newStoreForm.subdomain ? `https://${newStoreForm.subdomain}.ketokopos.online` : 'Belum diatur',
-        localServer: 'http://localhost:5858',
-        licensePlan: 'PRO LIFETIME (Aktif)',
-        adminUser: `${newStoreForm.ownerName || 'admin'} (Owner)`,
-        cashierUser: 'kasir (Kasir Toko)',
-        productsCount: 'Siap Digunakan',
-        status: 'ONLINE'
+    try {
+      setIsSubmittingStore(true);
+      await onCreateNewStore({
+        name: newStoreForm.name.trim(),
+        ownerName: newStoreForm.ownerName.trim(),
+        phone: newStoreForm.phone.trim(),
+        subdomain: newStoreForm.subdomain.trim(),
+        branchId: newStoreForm.branchId.trim() || `BR-0${registeredStores.length + 1}`
+      });
+
+      setNewStoreForm({
+        name: '',
+        ownerName: '',
+        phone: '',
+        subdomain: '',
+        branchId: `BR-0${registeredStores.length + 2}`
+      });
+      setIsNewStoreModalOpen(false);
+    } catch (err: any) {
+      alert('Gagal membuat toko baru: ' + (err?.message || err));
+    } finally {
+      setIsSubmittingStore(false);
+    }
+  };
+
+  const handleClearStore = async (store: RegisteredStore) => {
+    if (confirm(`Apakah Anda yakin ingin MENGOSONGKAN SEMUA DATA (0 Produk, 0 Transaksi) untuk toko "${store.name}"? Tindakan ini tidak dapat dibatalkan.`)) {
+      if (onClearStoreData) {
+        await onClearStoreData(store.id);
+        syncStoresFromStorage();
+        alert(`Data toko "${store.name}" telah berhasil dikosongkan (0 Produk).`);
       }
-    ]);
+    }
+  };
 
-    setNewStoreForm({
-      name: '',
-      ownerName: '',
-      phone: '',
-      subdomain: '',
-      branchId: `BR-0${registeredStores.length + 2}`
-    });
-    setIsNewStoreModalOpen(false);
+  const handleDeleteStoreClick = (store: RegisteredStore) => {
+    if (confirm(`Hapus toko "${store.name}" dari daftar pendaftaran sistem?`)) {
+      if (onDeleteStore) {
+        onDeleteStore(store.id);
+      }
+      setRegisteredStores(prev => {
+        const updated = prev.filter(s => s.id !== store.id);
+        localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
+        return updated;
+      });
+    }
   };
 
   return (
@@ -150,13 +237,13 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           {/* Quick Enter Store POS Simulation */}
           <button
             type="button"
-            onClick={onEnterStorePos}
+            onClick={() => onEnterStorePos()}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-extrabold text-xs flex items-center space-x-2 shadow-lg transition-all active:scale-95"
-            title="Buka Kasir POS Toko CV. Tumbuh Makmur untuk mencoba transaksi / inspeksi"
+            title={`Buka Kasir POS Toko ${activeStoreName}`}
           >
             <Monitor className="w-4 h-4 text-amber-200" />
-            <span>Buka Kasir POS Toko</span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+            <span className="max-w-[180px] sm:max-w-xs truncate">Buka POS ({activeStoreName})</span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-70 shrink-0" />
           </button>
 
           {/* Logout */}
@@ -193,9 +280,9 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Klien Toko Aktif</div>
+              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Klien Toko Terdaftar</div>
               <div className="text-sm font-black text-white">{registeredStores.length} Toko Terdaftar</div>
-              <div className="text-[10px] text-amber-300">CV. Tumbuh Makmur (Aktif)</div>
+              <div className="text-[10px] text-amber-300 font-medium truncate max-w-[150px]">Aktif: {activeStoreName}</div>
             </div>
           </div>
 
@@ -205,11 +292,11 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
               <Database className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Katalog Sparepart AC</div>
-              <div className="text-sm font-black text-sky-300">3.380 Produk Terdaftar</div>
-              <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold">
-                <span>CV. Tumbuh Makmur</span>
-                {totalProductsLoaded > 0 && <span className="text-stone-400">({totalProductsLoaded} aktif di kasir)</span>}
+              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Status Database Kasir</div>
+              <div className="text-sm font-black text-sky-300">{totalProductsLoaded} Produk di Kasir</div>
+              <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold truncate">
+                <span className="truncate">{activeStoreName}</span>
+                {totalProductsLoaded === 0 && <span className="text-amber-300 font-bold shrink-0">(Kosong / Bersih)</span>}
               </div>
               {onInjectCatalog && (
                 <button
@@ -320,91 +407,128 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
             {/* Store Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {registeredStores.map(store => (
-                <div 
-                  key={store.id} 
-                  className="rounded-3xl bg-[#2e1509] border border-[#5c2e17] p-5 shadow-xl flex flex-col justify-between space-y-4 hover:border-amber-600/50 transition-all"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase mb-1.5">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{store.status}</span>
+              {registeredStores.map(store => {
+                const isThisStoreActive = activeStoreId === store.id || (!activeStoreId && store.id === 'store-01');
+                return (
+                  <div 
+                    key={store.id} 
+                    className={`rounded-3xl bg-[#2e1509] border p-5 shadow-xl flex flex-col justify-between space-y-4 transition-all ${
+                      isThisStoreActive ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-[#5c2e17] hover:border-amber-600/50'
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center space-x-1.5 mb-1.5">
+                            <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>{store.status}</span>
+                            </div>
+                            {isThisStoreActive && (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                                ★ AKTIF DI KASIR
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-base font-black text-white">{store.name}</h3>
+                          <p className="text-xs text-stone-400 font-medium">{store.branch}</p>
                         </div>
-                        <h3 className="text-base font-black text-white">{store.name}</h3>
-                        <p className="text-xs text-stone-400 font-medium">{store.branch}</p>
+
+                        <div className="text-right">
+                          <span className="text-[11px] font-extrabold text-amber-300 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 block">
+                            {store.licensePlan}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="text-right">
-                        <span className="text-[11px] font-extrabold text-amber-300 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 block">
-                          {store.licensePlan}
-                        </span>
+                      {/* Detail Items */}
+                      <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-[#4d2511] text-xs">
+                        <div>
+                          <span className="text-stone-500 text-[10px] block">Akses Online (Cloudflare):</span>
+                          <a 
+                            href={store.onlineDomain} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="font-bold text-sky-400 hover:text-sky-300 truncate block flex items-center space-x-1"
+                          >
+                            <span className="truncate">{store.onlineDomain}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        </div>
+                        <div>
+                          <span className="text-stone-500 text-[10px] block">Database Master:</span>
+                          <span className="font-bold text-emerald-300">
+                            {isThisStoreActive ? `${totalProductsLoaded} Produk (Kasir Aktif)` : store.productsCount}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-stone-500 text-[10px] block">Owner / Admin:</span>
+                          <span className="font-bold text-stone-200">{store.adminUser}</span>
+                        </div>
+                        <div>
+                          <span className="text-stone-500 text-[10px] block">Akun Kasir Toko:</span>
+                          <span className="font-bold text-stone-200">{store.cashierUser}</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Detail Items */}
-                    <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-[#4d2511] text-xs">
-                      <div>
-                        <span className="text-stone-500 text-[10px] block">Akses Online (Cloudflare):</span>
-                        <a 
-                          href={store.onlineDomain} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="font-bold text-sky-400 hover:text-sky-300 truncate block flex items-center space-x-1"
+                    {/* Actions for this store */}
+                    <div className="pt-3 border-t border-[#4d2511] flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onEnterStorePos(store)}
+                        className={`flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-md transition-all active:scale-95 ${
+                          isThisStoreActive 
+                            ? 'bg-amber-600 hover:bg-amber-500 text-white ring-1 ring-amber-400' 
+                            : 'bg-stone-700 hover:bg-amber-600 text-white'
+                        }`}
+                      >
+                        <Monitor className="w-4 h-4 text-amber-200" />
+                        <span>{isThisStoreActive ? 'Buka POS Toko Ini (Aktif)' : 'Beralih & Buka POS Toko Ini'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleClearStore(store)}
+                        className="py-2.5 px-2.5 rounded-xl bg-[#3d190d] hover:bg-amber-900/60 text-amber-300 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        title="Kosongkan database produk dan transaksi toko ini (0 Data)"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Kosongkan</span>
+                      </button>
+
+                      {store.id !== 'store-01' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStoreClick(store)}
+                          className="py-2.5 px-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900 text-rose-300 font-bold text-xs flex items-center space-x-1 border border-rose-800/40 transition-all"
+                          title="Hapus toko dari pendaftaran"
                         >
-                          <span className="truncate">{store.onlineDomain}</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </a>
-                      </div>
-                      <div>
-                        <span className="text-stone-500 text-[10px] block">Database Master:</span>
-                        <span className="font-bold text-emerald-300">{store.productsCount}</span>
-                      </div>
-                      <div>
-                        <span className="text-stone-500 text-[10px] block">Owner / Admin:</span>
-                        <span className="font-bold text-stone-200">{store.adminUser}</span>
-                      </div>
-                      <div>
-                        <span className="text-stone-500 text-[10px] block">Akun Kasir Toko:</span>
-                        <span className="font-bold text-stone-200">{store.cashierUser}</span>
-                      </div>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={onOpenLanModal}
+                        className="py-2.5 px-2.5 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        title="Pengaturan Jaringan LAN & Cloud Toko"
+                      >
+                        <Network className="w-3.5 h-3.5 text-purple-300" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={onOpenLicenseModal}
+                        className="py-2.5 px-2.5 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        title="Kelola Lisensi Toko"
+                      >
+                        <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+                      </button>
                     </div>
                   </div>
-
-                  {/* Actions for this store */}
-                  <div className="pt-3 border-t border-[#4d2511] flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={onEnterStorePos}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-md transition-all active:scale-95"
-                    >
-                      <Monitor className="w-4 h-4 text-amber-200" />
-                      <span>Masuk ke POS Toko Ini</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={onOpenLanModal}
-                      className="py-2.5 px-3 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1.5 border border-[#6b381d] transition-all"
-                      title="Pengaturan Jaringan LAN & Cloud Toko"
-                    >
-                      <Network className="w-4 h-4 text-purple-300" />
-                      <span>Jaringan</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={onOpenLicenseModal}
-                      className="py-2.5 px-3 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1.5 border border-[#6b381d] transition-all"
-                      title="Kelola Lisensi Toko"
-                    >
-                      <KeyRound className="w-4 h-4 text-amber-300" />
-                      <span>Lisensi</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -812,6 +936,17 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
               </div>
 
               <div>
+                <label className="block font-bold text-stone-300 mb-1">No. WhatsApp / HP Toko:</label>
+                <input
+                  type="tel"
+                  value={newStoreForm.phone}
+                  onChange={(e) => setNewStoreForm({ ...newStoreForm, phone: e.target.value })}
+                  placeholder="08123456789"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
                 <label className="block font-bold text-stone-300 mb-1">Subdomain Cloudflare:</label>
                 <div className="flex items-center">
                   <input
@@ -837,6 +972,17 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 />
               </div>
 
+              {/* Highlight Clean Database Notice */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Database Toko Bersih Otomatis</span>
+                </div>
+                <p className="text-stone-300 leading-relaxed">
+                  Toko baru akan langsung dimulai dengan <strong>data kosong bersih (0 Produk, 0 Transaksi)</strong>. Anda dapat menginput produk baru di Master Data atau import dari file Excel/CSV.
+                </p>
+              </div>
+
               <div className="pt-2 flex items-center justify-end space-x-2">
                 <button
                   type="button"
@@ -847,9 +993,10 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md"
+                  disabled={isSubmittingStore}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all"
                 >
-                  Simpan Toko
+                  <span>{isSubmittingStore ? 'Membuat Toko Bersih...' : 'Buat Toko Baru (Data Kosong)'}</span>
                 </button>
               </div>
             </form>
