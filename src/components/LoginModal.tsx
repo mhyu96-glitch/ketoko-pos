@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LogIn, 
   KeyRound, 
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { User } from '../types';
+import { resolveStoreFromCurrentHost, fetchStoresFromCloud } from '../services/storeRegistry';
 
 interface LoginModalProps {
   isOpen?: boolean;
@@ -31,15 +32,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [pupilShift, setPupilShift] = useState({ x: 0, y: 0, rot: 0 });
   const passwordInputRef = React.useRef<HTMLInputElement>(null);
 
-  const storeProfile = React.useMemo(() => {
-    try {
-      const saved = localStorage.getItem('ketoko_store_profile');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return null;
+  const [currentStore, setCurrentStore] = useState(() => resolveStoreFromCurrentHost());
+
+  useEffect(() => {
+    fetchStoresFromCloud().then(() => {
+      setCurrentStore(resolveStoreFromCurrentHost());
+    });
   }, []);
 
-  const isDefaultStore = !storeProfile || !storeProfile.name || storeProfile.name === 'CV. Tumbuh Makmur Air Conindo';
+  const isDefaultStore = currentStore.id === 'store-01' || currentStore.subdomain === 'tumbuhmakmur';
 
   if (isOpen === false) return null;
 
@@ -85,16 +86,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           username: cleanUser,
           name: 'Master Superadmin (Developer)',
           role: 'SUPERADMIN',
-          branch_id: 'BR-01'
+          branch_id: currentStore.branchId || 'BR-01'
         };
         try { await db.users.put(superUser); } catch {}
         onLoginSuccess(superUser);
         return;
       }
 
-      // 2. Akun Owner Toko (suciawati / admin)
-      if (cleanUser.toLowerCase() === 'suciawati' || cleanUser.toLowerCase() === 'admin') {
-        const validAdminPass = ['admin123', '123456', 'suciawati123', 'tumbuhmakmur', 'admin'];
+      // 2. Akun Owner Toko (suciawati / admin / ownerName)
+      const isOwnerLogin = 
+        cleanUser.toLowerCase() === 'admin' ||
+        cleanUser.toLowerCase() === 'suciawati' ||
+        Boolean(currentStore.ownerName && cleanUser.toLowerCase() === currentStore.ownerName.toLowerCase().split(' ')[0]) ||
+        Boolean(currentStore.ownerName && cleanUser.toLowerCase() === currentStore.ownerName.toLowerCase());
+
+      if (isOwnerLogin) {
+        const validAdminPass = ['admin123', '123456', 'suciawati123', 'tumbuhmakmur', 'admin', '5858', 'borneoetam'];
         let matched = validAdminPass.includes(cleanPass.toLowerCase());
 
         const existingInDb = await db.users.where('username').equalsIgnoreCase(cleanUser).first();
@@ -109,9 +116,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         const ownerUser: User = {
           id: 'usr-001',
           username: cleanUser,
-          name: 'suciawati Ramadhani',
+          name: isDefaultStore ? 'suciawati Ramadhani' : (currentStore.ownerName || 'Admin Toko'),
           role: 'ADMIN',
-          branch_id: 'BR-01'
+          branch_id: currentStore.branchId || 'BR-01'
         };
         try { await db.users.put(ownerUser); } catch {}
         onLoginSuccess(ownerUser);
@@ -120,7 +127,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       // 3. Akun Kasir (noor / kasir)
       if (cleanUser.toLowerCase() === 'noor' || cleanUser.toLowerCase() === 'kasir') {
-        const validKasirPass = ['kasir123', '123456', 'noor123', 'kasir'];
+        const validKasirPass = ['kasir123', '123456', 'noor123', 'kasir', '5858', 'borneoetam'];
         let matched = validKasirPass.includes(cleanPass.toLowerCase());
 
         const existingInDb = await db.users.where('username').equalsIgnoreCase(cleanUser).first();
@@ -135,9 +142,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         const cashierUser: User = {
           id: 'usr-002',
           username: cleanUser,
-          name: 'Noor Afifah',
+          name: isDefaultStore ? 'Noor Afifah' : (currentStore.cashierUser?.replace(/ \(.*\)/, '') || `Kasir ${currentStore.name}`),
           role: 'CASHIER',
-          branch_id: 'BR-01'
+          branch_id: currentStore.branchId || 'BR-01'
         };
         try { await db.users.put(cashierUser); } catch {}
         onLoginSuccess(cashierUser);
@@ -340,11 +347,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {isDefaultStore ? (
               <>Ketoko<span className="text-[#96633b]">POS</span></>
             ) : (
-              storeProfile?.name
+              currentStore.name
             )}
           </h2>
           <p className="text-xs text-[#8a6b53] mt-0.5 font-medium">
-            {isDefaultStore ? 'Sistem Kasir & Toko • Cabang Samarinda (BR-01)' : storeProfile?.branch_name || 'Sistem Kasir & Toko'}
+            {isDefaultStore ? 'Sistem Kasir & Toko • Cabang Samarinda (BR-01)' : (currentStore.branch || `${currentStore.name} (${currentStore.branchId || 'BR-02'})`)}
           </p>
         </div>
 
@@ -381,8 +388,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </span>
               </div>
               <div>
-                <div className="font-bold text-xs text-[#3d2617]">
-                  {isDefaultStore ? 'Noor Afifah' : 'Kasir Toko'}
+                <div className="font-bold text-xs text-[#3d2617] truncate">
+                  {isDefaultStore ? 'Noor Afifah' : (currentStore.cashierUser?.replace(/ \(.*\)/, '') || `Kasir ${currentStore.name}`)}
                 </div>
                 <div className="text-[10px] text-[#96633b] leading-tight">Kasir • Operator POS</div>
               </div>
@@ -391,9 +398,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Admin Quick Button */}
             <button
               type="button"
-              onClick={() => handleSelectQuickAccount(isDefaultStore ? 'suciawati' : 'admin')}
+              onClick={() => handleSelectQuickAccount(isDefaultStore ? 'suciawati' : (currentStore.ownerName ? currentStore.ownerName.toLowerCase().split(' ')[0] : 'admin'))}
               className={`p-3 rounded-2xl border text-left transition-all group flex flex-col justify-between shadow-2xs ${
-                username === (isDefaultStore ? 'suciawati' : 'admin') 
+                username === (isDefaultStore ? 'suciawati' : (currentStore.ownerName ? currentStore.ownerName.toLowerCase().split(' ')[0] : 'admin')) || username === 'admin'
                   ? 'border-[#83532e] bg-[#faebd7]/70 ring-2 ring-[#83532e]/30' 
                   : 'border-[#ddc3aa] bg-white hover:bg-[#f5ebe0]'
               }`}
@@ -407,8 +414,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </span>
               </div>
               <div>
-                <div className="font-bold text-xs text-[#3d2617]">
-                  {isDefaultStore ? 'suciawati Ramadhani' : (storeProfile?.owner_name || 'Admin Toko')}
+                <div className="font-bold text-xs text-[#3d2617] truncate">
+                  {isDefaultStore ? 'suciawati Ramadhani' : (currentStore.ownerName || 'Admin Toko')}
                 </div>
                 <div className="text-[10px] text-[#96633b] leading-tight">Owner Toko • Admin</div>
               </div>

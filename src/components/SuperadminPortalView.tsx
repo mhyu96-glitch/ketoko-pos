@@ -40,6 +40,7 @@ import {
   triggerWorkerSync,
   fetchWorkerHealth
 } from '../services/telegramService';
+import { fetchStoresFromCloud } from '../services/storeRegistry';
 
 export interface RegisteredStore {
   id: string;
@@ -266,11 +267,23 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
   useEffect(() => {
     syncStoresFromStorage();
+    fetchStoresFromCloud().then(stores => {
+      if (stores && stores.length > 0) {
+        setRegisteredStores(stores as RegisteredStore[]);
+      }
+    });
     const handleClusterChange = () => {
       setClusters(getSupabaseClusters());
     };
+    const handleStoresChange = () => {
+      syncStoresFromStorage();
+    };
     window.addEventListener('ketoko_supabase_clusters_changed', handleClusterChange);
-    return () => window.removeEventListener('ketoko_supabase_clusters_changed', handleClusterChange);
+    window.addEventListener('ketoko_registered_stores_changed', handleStoresChange);
+    return () => {
+      window.removeEventListener('ketoko_supabase_clusters_changed', handleClusterChange);
+      window.removeEventListener('ketoko_registered_stores_changed', handleStoresChange);
+    };
   }, []);
 
   const handleGenerateKey = () => {

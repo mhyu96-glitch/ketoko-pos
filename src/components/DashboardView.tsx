@@ -34,6 +34,7 @@ import {
 import type { Product, Transaction, User } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
+import { resolveStoreFromCurrentHost } from '../services/storeRegistry';
 
 export interface SoldProductSummary {
   id: string;
@@ -84,6 +85,10 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   isOnline = true,
   pendingSyncCount = 0
 }) => {
+  const currentStoreInfo = React.useMemo(() => {
+    return resolveStoreFromCurrentHost();
+  }, []);
+
   const [localProducts, setLocalProducts] = React.useState<Product[]>([]);
   const [localTransactions, setLocalTransactions] = React.useState<Transaction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,12 +97,30 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
 
   React.useEffect(() => {
     if (!initialProducts || initialProducts.length === 0) {
-      db.products.toArray().then(setLocalProducts);
+      if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
+        setLocalProducts([]);
+      } else {
+        db.products.toArray().then(prods => {
+          setLocalProducts(prods.filter((p: any) => {
+            if (currentStoreInfo.id === 'store-01') return !p.store_id || p.store_id === 'store-01';
+            return p.store_id === currentStoreInfo.id;
+          }));
+        });
+      }
     }
     if (initialTransactions === undefined) {
-      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(setLocalTransactions);
+      if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
+        setLocalTransactions([]);
+      } else {
+        db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
+          setLocalTransactions(trxs.filter((t: any) => {
+            if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
+            return t.store_id === currentStoreInfo.id;
+          }));
+        });
+      }
     }
-  }, [initialProducts, initialTransactions]);
+  }, [initialProducts, initialTransactions, currentStoreInfo]);
 
   // Real-time synchronization listeners for instant Dashboard updates (0ms delay)
   React.useEffect(() => {
@@ -110,6 +133,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const handleTrxCreated = (e: any) => {
       const trx = e.detail?.transaction;
       if (trx && trx.id) {
+        if (trx.store_id && trx.store_id !== currentStoreInfo.id) return;
         setLocalTransactions((prev) => {
           if (prev.some((t) => t.id === trx.id)) return prev;
           return [trx, ...prev];
@@ -117,7 +141,16 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       }
     };
     const handleTrxRefreshed = () => {
-      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(setLocalTransactions).catch(() => {});
+      if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
+        setLocalTransactions([]);
+        return;
+      }
+      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
+        setLocalTransactions(trxs.filter((t: any) => {
+          if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
+          return t.store_id === currentStoreInfo.id;
+        }));
+      }).catch(() => {});
     };
 
     window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
@@ -129,7 +162,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
     };
-  }, []);
+  }, [currentStoreInfo]);
 
   const handleRefreshTransactions = async () => {
     setIsRefreshing(true);
@@ -318,7 +351,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
 
             <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#fcf8f4] text-[#6b4832] border border-[#dfcebe] text-[11px] font-bold font-mono">
               <MapPin className="w-3.5 h-3.5 text-[#7c4e2f]" />
-              <span>{currentUser?.branch_id ? `Cabang (${currentUser.branch_id})` : 'Cabang Utama'}</span>
+              <span>{currentStoreInfo.branch || (currentUser?.branch_id ? `Cabang (${currentUser.branch_id})` : 'Cabang Utama')}</span>
             </div>
 
             <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#edf5ee] text-[#166534] border border-[#cce2cf] text-[11px] font-bold">

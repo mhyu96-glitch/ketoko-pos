@@ -5,7 +5,6 @@ import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
 import { api } from './api/client';
 import { syncService } from './services/syncService';
-import { DEFAULT_STORE_PROFILE } from './api/mockData';
 import type { Product, Transaction, User, DebtItem, ReceivableItem } from './types';
 
 import { Navbar } from './components/Navbar';
@@ -43,6 +42,11 @@ import { SuperadminPortalView } from './components/SuperadminPortalView';
 import { usePWA } from './hooks/usePWA';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { 
+  resolveStoreFromCurrentHost, 
+  fetchStoresFromCloud, 
+  saveStoresList 
+} from './services/storeRegistry';
 
 export const App: React.FC = () => {
   // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin')
@@ -145,9 +149,10 @@ export const App: React.FC = () => {
   const [isStoreSettingsOpen, setIsStoreSettingsOpen] = useState(false);
   const [storeSettingsTab, setStoreSettingsTab] = useState<'profile' | 'theme' | 'csv' | 'backup' | 'users'>('profile');
 
-  // Active Store Tracking
+  // Active Store Tracking (Dynamic Host Detection)
   const [activeStoreId, setActiveStoreId] = useState<string>(() => {
-    return localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    const store = resolveStoreFromCurrentHost();
+    return store.id;
   });
 
   // Store Profile State (Custom POS Name & Branch Subtitle)
@@ -158,31 +163,35 @@ export const App: React.FC = () => {
     owner_name?: string;
     phone?: string;
   }>(() => {
+    const store = resolveStoreFromCurrentHost();
     const saved = localStorage.getItem('ketoko_store_profile');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.name) {
+        if (parsed.name && parsed.name === store.name) {
           return {
             name: parsed.name,
-            branch_name: parsed.branch_name || 'Cabang Utama',
+            branch_name: parsed.branch_name || store.branch || 'Cabang Utama',
             logo_base64: parsed.logo_base64 || '',
-            owner_name: parsed.owner_name || '',
-            phone: parsed.phone || ''
+            owner_name: parsed.owner_name || store.ownerName || '',
+            phone: parsed.phone || store.phone || ''
           };
         }
       } catch {}
     }
-    const defaultProfile = {
-      ...DEFAULT_STORE_PROFILE,
-      branch_name: 'Cabang Samarinda (BR-01)'
+    const profile = {
+      name: store.name,
+      branch_name: store.branch || `${store.name} (${store.branchId || 'BR-01'})`,
+      logo_base64: '',
+      owner_name: store.ownerName || '',
+      phone: store.phone || ''
     };
-    localStorage.setItem('ketoko_store_profile', JSON.stringify(defaultProfile));
-    return {
-      name: defaultProfile.name,
-      branch_name: defaultProfile.branch_name,
-      logo_base64: defaultProfile.logo_base64 || ''
-    };
+    try {
+      localStorage.setItem('ketoko_active_store_id', store.id);
+      localStorage.setItem('ketoko_is_clean_store', store.isClean ? 'true' : 'false');
+      localStorage.setItem('ketoko_store_profile', JSON.stringify(profile));
+    } catch {}
+    return profile;
   });
 
   const handleProfileUpdated = useCallback(() => {
@@ -190,12 +199,13 @@ export const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const hostStore = resolveStoreFromCurrentHost();
         setStoreProfile({
-          name: parsed.name || DEFAULT_STORE_PROFILE.name,
-          branch_name: parsed.branch_name || 'Cabang Samarinda (BR-01)',
+          name: parsed.name || hostStore.name,
+          branch_name: parsed.branch_name || hostStore.branch,
           logo_base64: parsed.logo_base64 || '',
-          owner_name: parsed.owner_name || '',
-          phone: parsed.phone || ''
+          owner_name: parsed.owner_name || hostStore.ownerName || '',
+          phone: parsed.phone || hostStore.phone || ''
         });
       } catch {}
     }
@@ -303,6 +313,10 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    fetchStoresFromCloud().catch(() => {});
+  }, []);
+
   const isSyncingRef = useRef(false);
 
   // Sync products from Central LAN Server (if client mode)
@@ -324,8 +338,17 @@ export const App: React.FC = () => {
   // Load products & count overdue debts/receivables once on startup
   const loadLocalProducts = useCallback(async () => {
     try {
-      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
-      const activeStore = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+      const currentHostStore = resolveStoreFromCurrentHost();
+      const activeStore = localStorage.getItem('ketoko_active_store_id') || currentHostStore.id;
+      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true' || (activeStore !== 'store-01' && currentHostStore.isClean);
+
+      // Mode Toko Bersih Baru: JANGAN auto-seed produk katalog CV Tumbuh Makmur!
+      if (isCleanStore && activeStore !== 'store-01') {
+        const storeProds = (await db.products.toArray()).filter((p: any) => p.store_id === activeStore);
+        setProducts(storeProds);
+        setOverdueCount(0);
+        return;
+      }
 
       if (lanService.isClientMode()) {
         try {
@@ -347,47 +370,45 @@ export const App: React.FC = () => {
       } else {
         // 1. Fetch all products into state (Auto-seed from /data/products.json ONLY for initial store-01 and NOT clean store)
         let all = await db.products.toArray();
-        if (!isCleanStore) {
-          if (activeStore === 'store-01') {
-            const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
-            if (all.length === 0 || hasOldDummy) {
-              try {
-                const res = await fetch('/data/products.json');
-                if (res.ok) {
-                  const defaultProds = await res.json();
-                  if (defaultProds && defaultProds.length > 0) {
-                    await db.products.clear();
-                    const chunkSize = 1000;
-                    for (let i = 0; i < defaultProds.length; i += chunkSize) {
-                      await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
-                    }
-                    all = defaultProds;
-                    console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
+        if (!isCleanStore && activeStore === 'store-01') {
+          const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
+          if (all.length === 0 || hasOldDummy) {
+            try {
+              const res = await fetch('/data/products.json');
+              if (res.ok) {
+                const defaultProds = await res.json();
+                if (defaultProds && defaultProds.length > 0) {
+                  await db.products.clear();
+                  const chunkSize = 1000;
+                  for (let i = 0; i < defaultProds.length; i += chunkSize) {
+                    await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
                   }
+                  all = defaultProds;
+                  console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
                 }
-              } catch (err) {
-                console.warn('[App] Gagal auto-load /data/products.json:', err);
               }
+            } catch (err) {
+              console.warn('[App] Gagal auto-load /data/products.json:', err);
             }
           }
           setProducts(all);
 
-          // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase untuk store aktif
+          // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase untuk store-01
           if (navigator.onLine) {
             syncService.pullFromSupabase().then(async (res) => {
               if (res && res.products) {
                 const fresh = await db.products.toArray();
-                setProducts(fresh);
+                setProducts(fresh.filter((p: any) => !p.store_id || p.store_id === 'store-01'));
               }
             }).catch(() => {});
           }
         } else {
-          // Mode Toko Bersih Baru: JANGAN auto-seed produk katalog dummy dan JANGAN pull produk Supabase CV Tumbuh Makmur!
-          setProducts(all);
+          // Toko lain: filter produk berdasarkan activeStore saja
+          setProducts(all.filter((p: any) => p.store_id === activeStore));
         }
       }
 
-      // Ensure active users: only seed CV Tumbuh Makmur users if default store-01 and NOT clean store
+      // Ensure active users: seed store-specific users
       if (!isCleanStore && activeStore === 'store-01') {
         try {
           await db.users.bulkPut([
@@ -428,6 +449,32 @@ export const App: React.FC = () => {
             }
           ]);
         } catch {}
+      } else {
+        try {
+          await db.users.bulkPut([
+            {
+              id: 'usr-000',
+              username: 'superadmin',
+              name: 'Master Superadmin (Developer)',
+              role: 'SUPERADMIN',
+              branch_id: currentHostStore.branchId || 'BR-02'
+            },
+            {
+              id: 'usr-001',
+              username: 'admin',
+              name: currentHostStore.ownerName ? `${currentHostStore.ownerName} (Owner)` : `Admin ${currentHostStore.name}`,
+              role: 'ADMIN',
+              branch_id: currentHostStore.branchId || 'BR-02'
+            },
+            {
+              id: 'usr-002',
+              username: 'kasir',
+              name: currentHostStore.cashierUser || `Kasir ${currentHostStore.name}`,
+              role: 'CASHIER',
+              branch_id: currentHostStore.branchId || 'BR-02'
+            }
+          ]);
+        } catch {}
       }
 
       const pendingCount = await syncService.getPendingCount();
@@ -435,8 +482,8 @@ export const App: React.FC = () => {
 
       // Calculate overdue debts & receivables for top bar alert
       const nowStr = new Date().toISOString().split('T')[0];
-      const debts = await db.debts.toArray();
-      const recs = await db.receivables.toArray();
+      const debts = (await db.debts.toArray()).filter((d: any) => !d.store_id || d.store_id === activeStore);
+      const recs = (await db.receivables.toArray()).filter((r: any) => !r.store_id || r.store_id === activeStore);
       const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
       const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
       setOverdueCount(overdueDebts + overdueRecs);
@@ -448,7 +495,15 @@ export const App: React.FC = () => {
   // Load latest cashier transactions from LAN Server, Supabase, or local Dexie
   const loadTransactions = useCallback(async (): Promise<Transaction[]> => {
     try {
-      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
+      const currentHostStore = resolveStoreFromCurrentHost();
+      const activeStore = localStorage.getItem('ketoko_active_store_id') || currentHostStore.id;
+      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true' || (activeStore !== 'store-01' && currentHostStore.isClean);
+
+      // Clean store strictly has 0 transactions
+      if (isCleanStore && activeStore !== 'store-01') {
+        setTransactions([]);
+        return [];
+      }
 
       if (lanService.isClientMode()) {
         try {
@@ -469,8 +524,14 @@ export const App: React.FC = () => {
       }
 
       const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
-      setTransactions(allTrx);
-      return allTrx;
+      const filteredTrx = allTrx.filter((t: any) => {
+        if (activeStore === 'store-01') {
+          return !t.store_id || t.store_id === 'store-01';
+        }
+        return t.store_id === activeStore;
+      });
+      setTransactions(filteredTrx);
+      return filteredTrx;
     } catch (err) {
       console.warn('[App] Gagal memuat data transaksi:', err);
       return [];
@@ -1269,7 +1330,7 @@ export const App: React.FC = () => {
       supabaseAnonKey
     };
     list.push(newStoreItem);
-    localStorage.setItem('ketoko_registered_stores', JSON.stringify(list));
+    await saveStoresList(list);
 
     // Reset realtime channel untuk cluster toko baru
     syncService.resetCloudLiveChannel();
@@ -1326,7 +1387,38 @@ export const App: React.FC = () => {
     syncService.resetCloudLiveChannel();
     syncService.initCloudLiveChannel();
 
-    if (store.id === 'store-01' && !store.isClean) {
+    if (store.isClean || store.id !== 'store-01') {
+      const allProds = await db.products.toArray();
+      setProducts(allProds.filter((p: any) => p.store_id === store.id));
+      const allTrxs = await db.transactions.toArray();
+      setTransactions(allTrxs.filter((t: any) => t.store_id === store.id));
+
+      try {
+        await db.users.bulkPut([
+          {
+            id: 'usr-000',
+            username: 'superadmin',
+            name: 'Master Superadmin (Developer)',
+            role: 'SUPERADMIN',
+            branch_id: store.branchId || 'BR-02'
+          },
+          {
+            id: 'usr-001',
+            username: 'admin',
+            name: store.ownerName ? `${store.ownerName} (Owner)` : `Admin ${store.name}`,
+            role: 'ADMIN',
+            branch_id: store.branchId || 'BR-02'
+          },
+          {
+            id: 'usr-002',
+            username: 'kasir',
+            name: store.cashierUser || `Kasir ${store.name}`,
+            role: 'CASHIER',
+            branch_id: store.branchId || 'BR-02'
+          }
+        ]);
+      } catch {}
+    } else {
       const count = await db.products.count();
       if (count === 0) {
         await handleInjectCatalog();
@@ -1334,11 +1426,6 @@ export const App: React.FC = () => {
         await loadLocalProducts();
         await loadTransactions();
       }
-    } else {
-      const prods = await db.products.toArray();
-      setProducts(prods);
-      const trxs = await db.transactions.toArray();
-      setTransactions(trxs);
     }
 
     clearCart();
@@ -1377,18 +1464,18 @@ export const App: React.FC = () => {
           }
           return s;
         });
-        localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
+        await saveStoresList(updated);
       }
     } catch {}
   };
 
-  const handleDeleteStore = (storeId: string) => {
+  const handleDeleteStore = async (storeId: string) => {
     try {
       const saved = localStorage.getItem('ketoko_registered_stores');
       if (saved) {
         const list = JSON.parse(saved);
         const updated = list.filter((s: any) => s.id !== storeId);
-        localStorage.setItem('ketoko_registered_stores', JSON.stringify(updated));
+        await saveStoresList(updated);
       }
     } catch {}
   };

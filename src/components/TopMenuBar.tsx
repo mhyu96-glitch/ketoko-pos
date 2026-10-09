@@ -35,6 +35,7 @@ import {
   ShieldCheck,
   Download
 } from 'lucide-react';
+import { resolveStoreFromCurrentHost } from '../services/storeRegistry';
 
 export type NavView = 'pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin';
 
@@ -96,6 +97,10 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
 
   const isSuperAdmin = userRole === 'SUPERADMIN';
   const isAdmin = isSuperAdmin || userRole === 'ADMIN' || userRole === 'MANAGER';
+
+  const currentStoreInfo = React.useMemo(() => {
+    return resolveStoreFromCurrentHost();
+  }, []);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -1040,7 +1045,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
         <div className="flex items-center space-x-2 text-xs text-[#856b59] shrink-0">
           <div className="hidden sm:flex items-center space-x-1.5 bg-[#fbf7f2] px-2.5 py-1 rounded-lg border border-[#e4d5c7]">
             <Store className="w-3.5 h-3.5 text-[#7c4e2f]" />
-            <span className="font-semibold text-[#332219]">Toko Samarinda</span>
+            <span className="font-semibold text-[#332219] truncate max-w-[160px]">{currentStoreInfo.name || 'Toko Samarinda'}</span>
           </div>
         </div>
 
