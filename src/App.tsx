@@ -250,6 +250,59 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('ketoko_tax_rate_changed', handleTaxRateChanged);
   }, [setTaxRate]);
 
+  // Auto-detect store from subdomain (e.g. https://tokoberkah.ketokopos.online)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hostname = window.location.hostname.toLowerCase();
+    
+    // Skip localhost and internal IP addresses
+    if (
+      hostname === 'localhost' || 
+      hostname === '127.0.0.1' || 
+      hostname.startsWith('192.168.') || 
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.')
+    ) {
+      return;
+    }
+
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
+      const subdomain = parts[0];
+      try {
+        const saved = localStorage.getItem('ketoko_registered_stores');
+        if (saved) {
+          const stores = JSON.parse(saved);
+          const matched = stores.find((s: any) => 
+            s.subdomain?.toLowerCase() === subdomain ||
+            s.onlineDomain?.toLowerCase().includes(`//${subdomain}.`)
+          );
+          if (matched) {
+            const currentActive = localStorage.getItem('ketoko_active_store_id');
+            if (currentActive !== matched.id) {
+              localStorage.setItem('ketoko_active_store_id', matched.id);
+              localStorage.setItem('ketoko_is_clean_store', matched.isClean ? 'true' : 'false');
+              setActiveStoreId(matched.id);
+              const targetProfile = {
+                name: matched.name,
+                branch_name: matched.branch || 'Cabang Utama',
+                logo_base64: '',
+                owner_name: matched.ownerName || '',
+                phone: matched.phone || ''
+              };
+              localStorage.setItem('ketoko_store_profile', JSON.stringify(targetProfile));
+              setStoreProfile({
+                name: targetProfile.name,
+                branch_name: targetProfile.branch_name,
+                logo_base64: ''
+              });
+            }
+          }
+        }
+      } catch {}
+    }
+  }, []);
+
   const isSyncingRef = useRef(false);
 
   // Sync products from Central LAN Server (if client mode)
@@ -1182,6 +1235,7 @@ export const App: React.FC = () => {
       branchId: storeData.branchId || 'BR-02',
       ownerName: storeData.ownerName,
       phone: storeData.phone,
+      subdomain: storeData.subdomain,
       onlineDomain: storeData.subdomain ? `https://${storeData.subdomain}.ketokopos.online` : 'Belum diatur',
       localServer: 'http://localhost:5858',
       licensePlan: 'PRO LIFETIME (Aktif)',

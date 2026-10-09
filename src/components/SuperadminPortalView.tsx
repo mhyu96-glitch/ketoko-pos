@@ -887,6 +887,61 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 </div>
               </div>
 
+              {/* Panduan Menghubungkan Subdomain Toko Baru */}
+              <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Network className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-sm font-black text-white">Panduan Penambahan Subdomain Toko Baru di Cloudflare</h3>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  {/* Cara 1: Wildcard DNS */}
+                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-amber-300">Cara 1: Wildcard DNS (Otomatis untuk Semua Toko) - DIREKOMENDASIKAN</span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">1x Setup Selamanya</span>
+                    </div>
+                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                      Cukup buat 1 DNS Record di dashboard Cloudflare domain <code className="text-amber-300">ketokopos.online</code>:
+                    </p>
+                    <div className="bg-[#120601] p-2.5 rounded-xl border border-[#3d190b] font-mono text-[11px] text-stone-200 space-y-1">
+                      <div>• Type: <span className="text-emerald-400 font-bold">CNAME</span></div>
+                      <div>• Name: <span className="text-amber-300 font-bold">*</span> (tanda bintang)</div>
+                      <div>• Target: <span className="text-sky-300 font-bold">ketoko-pos.pages.dev</span> (atau domain Pages Anda)</div>
+                      <div>• Proxy status: <span className="text-amber-400 font-bold">Proxied (Orange Cloud)</span></div>
+                    </div>
+                    <p className="text-[11px] text-emerald-300 font-medium">
+                      ✓ Hasilnya: Setiap kali Anda membuat toko baru dengan subdomain apa pun (misal <code className="text-amber-200">tokoberkah</code>), subdomain tersebut <strong>langsung aktif otomatis seketika</strong> tanpa perlu setting DNS lagi!
+                    </p>
+                  </div>
+
+                  {/* Cara 2: Custom Domains Pages */}
+                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
+                    <span className="font-extrabold text-amber-300">Cara 2: Custom Domain di Cloudflare Pages (Manual per Toko)</span>
+                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                      Jika tidak memakai wildcard, Anda dapat menambahkan subdomain secara manual per toko:
+                    </p>
+                    <ol className="list-decimal list-inside text-[11px] text-stone-300 space-y-1 pl-1">
+                      <li>Buka Cloudflare Dashboard → <strong>Workers & Pages</strong> → Pilih project <strong>Ketoko POS</strong>.</li>
+                      <li>Pilih tab <strong>Custom domains</strong> → Klik <strong>Set up a custom domain</strong>.</li>
+                      <li>Ketik subdomain toko, misal: <code className="text-amber-300">tokoberkah.ketokopos.online</code>.</li>
+                      <li>Klik <strong>Continue</strong> dan <strong>Activate domain</strong>. Cloudflare akan menerbitkan SSL HTTPS otomatis.</li>
+                    </ol>
+                  </div>
+
+                  {/* Cara 3: Cloudflare Tunnel */}
+                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
+                    <span className="font-extrabold text-amber-300">Cara 3: Cloudflare Tunnel (Jika Toko Pakai Server PC Lokal)</span>
+                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                      Jika toko klien memasang server fisik di komputernya sendiri (port 5858):
+                    </p>
+                    <p className="text-[11px] text-stone-400">
+                      Buka <strong>Zero Trust</strong> → <strong>Networks</strong> → <strong>Tunnels</strong> → Tambahkan <strong>Public Hostname</strong> yang mengarah ke <code className="text-sky-300">HTTP localhost:5858</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
@@ -960,6 +1015,9 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     .ketokopos.online
                   </span>
                 </div>
+                <p className="text-[10px] text-stone-400 mt-1">
+                  Alamat akses online: <span className="text-amber-300 font-mono">https://{newStoreForm.subdomain || 'nama-toko'}.ketokopos.online</span>
+                </p>
               </div>
 
               <div>
