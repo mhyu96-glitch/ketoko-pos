@@ -708,6 +708,18 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                             <span className="truncate">{store.onlineDomain.replace(/^https?:\/\//, '')}</span>
                             <ExternalLink className="w-3 h-3 shrink-0" />
                           </a>
+                          <div className="pt-0.5">
+                            <a
+                              href="https://ketoko-pos.pages.dev"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[9px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+                              title="Akses langsung Cloudflare Pages (Live 100%)"
+                            >
+                              <span>⚡ Live: ketoko-pos.pages.dev</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          </div>
                         </div>
 
                         <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
@@ -1591,20 +1603,35 @@ SELECT public.sync_application_data();`;
                   </span>
                 </div>
 
-                <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
+                <div className="space-y-2.5 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                   <div>
-                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Domain Utama Toko:</span>
+                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Akses Langsung Cloudflare Pages (Live 100%):</span>
+                    <a 
+                      href="https://ketoko-pos.pages.dev" 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="font-mono font-bold text-emerald-400 hover:underline flex items-center gap-1.5 mt-0.5"
+                    >
+                      <span>https://ketoko-pos.pages.dev</span>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                  </div>
+                  <div className="pt-2 border-t border-slate-850">
+                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Custom Domain Subdomain Toko:</span>
                     <a 
                       href="https://tumbuhmakmur.ketokopos.online" 
                       target="_blank" 
                       rel="noreferrer" 
-                      className="font-mono font-bold text-sky-400 hover:underline flex items-center gap-1 mt-0.5"
+                      className="font-mono font-bold text-sky-400 hover:underline flex items-center gap-1.5 mt-0.5"
                     >
                       <span>https://tumbuhmakmur.ketokopos.online</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                     </a>
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      *Memerlukan verifikasi kontak email domain di registrar & CNAME Cloudflare.
+                    </span>
                   </div>
-                  <div className="pt-1.5 border-t border-slate-850">
+                  <div className="pt-2 border-t border-slate-850">
                     <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Akses Kompatibel:</span>
                     <span className="font-bold text-slate-200">HP Android, iOS (iPhone/iPad), PC Laptop</span>
                   </div>
