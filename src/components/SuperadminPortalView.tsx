@@ -1495,26 +1495,40 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-DECLARE affected_rows integer;
+DECLARE
+    affected_rows integer;
+    db_size_bytes bigint;
+    db_size_mb numeric;
+    quota_mb numeric := 500.0;
+    percent_used numeric;
 BEGIN
+    BEGIN
+        SELECT pg_database_size(current_database()) INTO db_size_bytes;
+        db_size_mb := ROUND((db_size_bytes::numeric / (1024 * 1024)), 2);
+        percent_used := ROUND((db_size_mb / quota_mb) * 100, 1);
+    EXCEPTION WHEN OTHERS THEN
+        db_size_mb := 0;
+        percent_used := 0;
+    END;
+
     INSERT INTO public.app_configurations (key_name, last_sync_timestamp, metadata)
-    VALUES ('system_sync_service', now(), jsonb_build_object('service', 'supabase_sync_worker', 'version', '2.0.0', 'last_status', 'success'))
+    VALUES ('system_sync_service', now(), jsonb_build_object('service', 'supabase_sync_worker', 'version', '2.1.0', 'last_status', 'success', 'db_size_mb', db_size_mb, 'percent_used', percent_used))
     ON CONFLICT (key_name) DO UPDATE
     SET last_sync_timestamp = excluded.last_sync_timestamp, metadata = coalesce(public.app_configurations.metadata, '{}'::jsonb) || excluded.metadata;
     GET DIAGNOSTICS affected_rows = row_count;
-    RETURN jsonb_build_object('status', 'synchronized', 'timestamp', now(), 'affected_rows', affected_rows, 'version', '2.0.0');
+    RETURN jsonb_build_object('status', 'synchronized', 'timestamp', now(), 'affected_rows', affected_rows, 'version', '2.1.0', 'db_size_mb', db_size_mb, 'quota_mb', quota_mb, 'percent_used', percent_used);
 END;
 $$;
 REVOKE ALL ON FUNCTION public.sync_application_data() FROM public;
 GRANT EXECUTE ON FUNCTION public.sync_application_data() TO anon, authenticated;
 SELECT public.sync_application_data();`;
                         navigator.clipboard.writeText(sql);
-                        alert('Skrip SQL RPC Keep-Alive berhasil disalin! Silakan tempel dan Run di SQL Editor project Supabase (quhjgsoqjcumckoshjtv).');
+                        alert('Skrip SQL RPC Keep-Alive & Storage Monitor v2.1.0 berhasil disalin! Silakan tempel dan Run di SQL Editor project Supabase (quhjgsoqjcumckoshjtv).');
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 font-bold text-[11px] border border-amber-600/40 transition-all flex items-center justify-center space-x-1.5"
                     >
                       <Copy className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Salin Skrip SQL RPC untuk Node 2 (Agar Sehat ✅)</span>
+                      <span>Salin Skrip SQL RPC & Kuota Storage untuk Node 2 (v2.1.0)</span>
                     </button>
                   </div>
                 </div>

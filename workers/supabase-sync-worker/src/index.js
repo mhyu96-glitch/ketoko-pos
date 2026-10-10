@@ -5,15 +5,53 @@ const HEALTH_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const RUN_TTL_SECONDS = 60 * 24 * 60 * 60;
 const CRON_LABEL = '08:00, 16:00, dan 23:00 WITA';
 const BOT_STARTED_AT = '2026-03-01T00:00:00+08:00';
-const TELEGRAM_BUTTONS = {
-    inline_keyboard: [
-        [{ text: '🔄 Sync sekarang', callback_data: 'sync' }],
+
+function extractProjectRef(url = '') {
+    try {
+        return new URL(url).hostname.split('.')[0];
+    } catch {
+        return null;
+    }
+}
+
+async function isSilentMode(env) {
+    if (!env?.SYNC_MEMORY) return false;
+    try {
+        const mode = await env.SYNC_MEMORY.get('config:notification_mode');
+        return mode === 'silent';
+    } catch {
+        return false;
+    }
+}
+
+function buildReplyMarkup(summary = null, isSilent = false) {
+    const keyboard = [];
+
+    // Jika ada project paused, pasang tombol direct link resume di paling atas
+    for (const item of summary?.details || []) {
+        if (item.state === 'paused' && item.url) {
+            const ref = extractProjectRef(item.url);
+            if (ref) {
+                keyboard.push([
+                    { text: `▶️ Buka Dashboard (${item.node})`, url: `https://supabase.com/dashboard/project/${ref}` }
+                ]);
+            }
+        }
+    }
+
+    keyboard.push(
         [
-            { text: '📊 Status', callback_data: 'status' },
-            { text: '📔 Riwayat', callback_data: 'memory' }
+            { text: '🔄 Sync Sekarang', callback_data: 'sync' },
+            { text: '📊 Status & Kuota', callback_data: 'status' }
+        ],
+        [
+            { text: isSilent ? '🔕 Mode: Hening (Error Saja)' : '🔔 Mode: Selalu Lapor', callback_data: 'toggle_mode' },
+            { text: '📈 Uptime', callback_data: 'uptime' }
         ]
-    ]
-};
+    );
+
+    return { inline_keyboard: keyboard };
+}
 
 export default {
     async scheduled(controller, env) {
@@ -205,9 +243,11 @@ function makeNodeResult(node, startedAt, result, data = undefined) {
     const completedAt = new Date();
     const displayName = typeof node === 'object' ? (node.name || node.id) : node;
     const rawId = typeof node === 'object' ? node.id : node;
+    const url = typeof node === 'object' ? node.url : undefined;
     return {
         node: displayName,
         node_id: rawId,
+        url,
         state: result.state,
         healthy: result.healthy,
         status: result.status,
@@ -276,8 +316,11 @@ async function runSync(env, options = {}) {
     summary.transitions = persistence.transitions;
     summary.failure_alerts = persistence.failureAlerts;
 
-    if (shouldSendReport(summary, options)) {
-        await sendTelegramMessage(env, formatSyncReport(summary));
+    if (await shouldSendReport(summary, options, env)) {
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, formatSyncReport(summary), {
+            replyMarkup: buildReplyMarkup(summary, isSilent)
+        });
     }
 
     log(success === nodes.length ? 'info' : 'error', 'sync_finished', {
@@ -339,14 +382,21 @@ async function persistRun(env, summary) {
     }
 }
 
-function shouldSendReport(summary, options) {
+async function shouldSendReport(summary, options, env) {
     if (options.notify === false) return false;
     if (options.source !== 'cron') return true;
+
+    const isSilent = await isSilentMode(env);
     const hasImportantFailure = summary.details.some((item) => item.state === 'paused');
-    const hasTransition = summary.transitions?.length > 0;
-    const hasRepeatedFailure = summary.failure_alerts?.length > 0;
-    const dailyMorningReport = options.cron === '0 0 * * *';
-    return summary.success === 0 || hasImportantFailure || hasTransition || hasRepeatedFailure || dailyMorningReport;
+    const hasTransition = (summary.transitions?.length || 0) > 0;
+    const hasRepeatedFailure = (summary.failure_alerts?.length || 0) > 0;
+    const isDegraded = summary.failed > 0;
+
+    if (isSilent) {
+        return summary.success === 0 || isDegraded || hasImportantFailure || hasTransition || hasRepeatedFailure;
+    }
+
+    return true;
 }
 
 async function getHealthSnapshot(env) {
@@ -404,7 +454,16 @@ async function getHealthSnapshot(env) {
             last_run: latest.completed_at,
             stale,
             schedule: CRON_LABEL,
-            nodes: latest.details.map((item) => ({ node: item.node, status: item.state }))
+            nodes: latest.details.map((item) => ({
+                node: item.node,
+                status: item.state,
+                duration_ms: item.duration_ms,
+                storage: item.data?.db_size_mb !== undefined ? {
+                    db_size_mb: item.data.db_size_mb,
+                    quota_mb: item.data.quota_mb || 500,
+                    percent_used: item.data.percent_used
+                } : undefined
+            }))
         }
     };
 }
@@ -434,44 +493,135 @@ async function handleTelegramUpdate(update, env) {
     if (callback?.id) await answerCallback(botToken, callback.id, 'Perintah diterima ✅');
 
     if (action === 'start') {
-        await sendTelegramMessage(env,
-            'Halo! Aku bantu menjaga Supabase tetap aktif.\n\nPilih tombol di bawah ya:',
-            { chatId, replyMarkup: TELEGRAM_BUTTONS }
-        );
+        const isSilent = await isSilentMode(env);
+        const welcome = [
+            '🤖 *SupaBot Keep-Alive & Infrastructure Monitor*',
+            '',
+            'Aku bertugas menjaga seluruh database Supabase Anda tetap hangat, aktif, dan terpantau tanpa risiko di-pause oleh inactivity timeout.',
+            '',
+            '📌 *Daftar Perintah Cepat:*',
+            '• /sync — Periksa & sinkronkan semua node sekarang',
+            '• /status — Ringkasan kesehatan & kuota storage (500 MB)',
+            '• /nodes — Detail daftar URL & nama node terdaftar',
+            '• /uptime — Statistik ketersediaan bot & server',
+            '• /mode — Ganti mode notifikasi (Selalu / Hening)',
+            '• /ping — Tes respons bot',
+            '',
+            `🔔 Status Saat Ini: *${isSilent ? '🔕 Mode Hening (Lapor Saat Error)' : '🔔 Mode Selalu Lapor'}*`,
+            '',
+            'Pilih tombol di bawah untuk tindakan cepat:'
+        ].join('\n');
+        await sendTelegramMessage(env, welcome, {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, isSilent),
+            parseMode: 'Markdown'
+        });
         return;
     }
 
     if (action === 'ping') {
-        await sendTelegramMessage(env, 'Pong! 🏓 Bot masih hidup.', { chatId, replyMarkup: TELEGRAM_BUTTONS });
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, 'Pong! 🏓 Bot Cloudflare Edge Worker aktif normal.', {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, isSilent)
+        });
         return;
     }
 
     if (action === 'sync') {
-        await sendTelegramMessage(env, '⏳ Sebentar ya, Supabase sedang diperiksa...', { chatId });
+        await sendTelegramMessage(env, '⏳ Sedang memeriksa seluruh node Supabase...', { chatId });
         const summary = await runSync(env, { source: 'telegram', notify: false });
-        await sendTelegramMessage(env, formatSyncReport(summary), { chatId, replyMarkup: TELEGRAM_BUTTONS });
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, formatSyncReport(summary), {
+            chatId,
+            replyMarkup: buildReplyMarkup(summary, isSilent)
+        });
         return;
     }
 
     if (action === 'status') {
         const snapshot = await getHealthSnapshot(env);
-        await sendTelegramMessage(env, formatHealthMessage(snapshot.body), { chatId, replyMarkup: TELEGRAM_BUTTONS });
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, formatHealthMessage(snapshot.body), {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, isSilent)
+        });
+        return;
+    }
+
+    if (action === 'uptime') {
+        const snapshot = await getHealthSnapshot(env);
+        const completedAt = snapshot.body.last_run || new Date().toISOString();
+        const lines = [
+            '📈 *Statistik Uptime & Ketersediaan*',
+            '',
+            `⏱️ Uptime Bot: *${formatUptime(completedAt)}*`,
+            `🗓️ Sejak: 1 Maret 2026`,
+            `📊 Status Global: *${snapshot.body.status === 'healthy' ? '✅ 100% Sehat' : '⚠️ Bermasalah'}*`,
+            `🏥 Node Sehat: *${snapshot.body.healthy_nodes}/${snapshot.body.configured_nodes}*`,
+            `⏰ Jadwal Ping: *${snapshot.body.schedule || CRON_LABEL}*`
+        ];
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, lines.join('\n'), {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, isSilent),
+            parseMode: 'Markdown'
+        });
+        return;
+    }
+
+    if (action === 'nodes') {
+        const nodes = buildNodeList(env);
+        const lines = ['📋 *Daftar Database Supabase Terdaftar:*', ''];
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            const ref = extractProjectRef(n.url);
+            lines.push(`${i + 1}. *${n.name || n.id}*`);
+            lines.push(`   • Ref: \`${ref}\``);
+            lines.push(`   • Endpoint: \`${n.url}\``);
+        }
+        lines.push('', `Total: *${nodes.length} node* aktif dipantau.`);
+        const isSilent = await isSilentMode(env);
+        await sendTelegramMessage(env, lines.join('\n'), {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, isSilent),
+            parseMode: 'Markdown'
+        });
+        return;
+    }
+
+    if (action === 'toggle_mode') {
+        const currentlySilent = await isSilentMode(env);
+        const nextSilent = !currentlySilent;
+        if (env.SYNC_MEMORY) {
+            await env.SYNC_MEMORY.put('config:notification_mode', nextSilent ? 'silent' : 'always');
+        }
+        const text = nextSilent
+            ? '🔕 Mode notifikasi diubah ke: *Hening (Error Saja)*\n\nCloudflare Worker tetap aktif berjalan 3x sehari menjaga database Supabase Anda, tetapi hanya akan mengirim notifikasi ke Telegram jika ada database yang *bermasalah* atau *paused*.'
+            : '🔔 Mode notifikasi diubah ke: *Selalu Lapor*\n\nBot akan mengirim laporan lengkap ke Telegram setiap jadwal sinkronisasi (08:00, 16:00, dan 23:00 WITA).';
+        await sendTelegramMessage(env, text, {
+            chatId,
+            replyMarkup: buildReplyMarkup(null, nextSilent),
+            parseMode: 'Markdown'
+        });
         return;
     }
 
     if (action === 'memory') {
         const latest = env.SYNC_MEMORY ? await env.SYNC_MEMORY.get('sync:latest', 'json') : null;
+        const isSilent = await isSilentMode(env);
         await sendTelegramMessage(
             env,
             latest ? formatSyncReport(latest) : '🗭 Belum ada riwayat sync.',
-            { chatId, replyMarkup: TELEGRAM_BUTTONS }
+            { chatId, replyMarkup: buildReplyMarkup(latest, isSilent) }
         );
         return;
     }
 
+    const isSilentDefault = await isSilentMode(env);
     await sendTelegramMessage(env, 'Aku belum mengerti perintah itu. Coba pilih tombol di bawah ya.', {
         chatId,
-        replyMarkup: TELEGRAM_BUTTONS
+        replyMarkup: buildReplyMarkup(null, isSilentDefault)
     });
 }
 
@@ -479,9 +629,13 @@ function commandToAction(text = '') {
     const command = text.trim().split(/\s+/)[0].toLowerCase().split('@')[0];
     const commands = {
         '/start': 'start',
+        '/help': 'start',
         '/ping': 'ping',
         '/sync': 'sync',
         '/status': 'status',
+        '/uptime': 'uptime',
+        '/mode': 'toggle_mode',
+        '/nodes': 'nodes',
         '/memory': 'memory'
     };
     return commands[command] || 'unknown';
@@ -506,26 +660,42 @@ function formatSyncReport(summary) {
     if (summary.total === 0) lines.push('⚠️ Belum ada node yang dipasang.');
     for (const item of summary.details || []) {
         const icon = item.healthy ? '✅' : item.state === 'paused' ? '⏸️' : '❌';
-        lines.push(`${icon} ${item.node}: ${friendlyState(item.state)} (${item.duration_ms ?? 0} ms)`);
-        if (item.error) lines.push(`   ${item.error}`);
+        let line = `${icon} ${item.node}: ${friendlyState(item.state)} (${item.duration_ms ?? 0} ms)`;
+        if (item.data?.db_size_mb !== undefined) {
+            line += `\n   ↳ 📦 Storage: ${item.data.db_size_mb} MB / ${item.data.quota_mb || 500} MB (${item.data.percent_used ?? 0}%)`;
+        }
+        lines.push(line);
+        if (item.error) lines.push(`   ⚠️ ${item.error}`);
     }
 
     if ((summary.details || []).some((item) => item.state === 'paused')) {
-        lines.push('', '🚨 Ada project paused. Buka Supabase Dashboard, lalu tekan Resume project.');
+        lines.push('', '🚨 Ada project paused! Tekan tombol di bawah untuk membuka dashboard Supabase.');
     }
     return lines.join('\n');
 }
 
 function formatHealthMessage(snapshot) {
     const icon = snapshot.status === 'healthy' ? '✅' : snapshot.status === 'degraded' ? '⚠️' : '❌';
-    return [
+    const lines = [
         `${icon} Status: ${snapshot.status || 'unknown'}`,
         `Node sehat: ${snapshot.healthy_nodes ?? 0}`,
         `Node gagal: ${snapshot.failed_nodes ?? 0}`,
         `Node paused: ${snapshot.paused_nodes ?? 0}`,
         `Sync terakhir: ${snapshot.last_run ? formatWita(snapshot.last_run) : 'belum ada'}`,
         `Jadwal: ${snapshot.schedule || CRON_LABEL}`
-    ].join('\n');
+    ];
+    if (snapshot.nodes?.length) {
+        lines.push('', '📦 Detail Node & Storage:');
+        for (const n of snapshot.nodes) {
+            const stIcon = n.status === 'healthy' ? '✅' : '❌';
+            let detailStr = `${stIcon} ${n.node}: ${friendlyState(n.status)}`;
+            if (n.storage) {
+                detailStr += ` (${n.storage.db_size_mb} MB / 500 MB • ${n.storage.percent_used}%)`;
+            }
+            lines.push(detailStr);
+        }
+    }
+    return lines.join('\n');
 }
 
 function friendlyState(state) {
@@ -579,6 +749,7 @@ async function sendTelegramMessage(env, text, options = {}) {
         chat_id: chatId,
         text,
         disable_web_page_preview: true,
+        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
         ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {})
     };
     const result = await callTelegram(botToken, 'sendMessage', payload);
@@ -667,8 +838,10 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
 
 export const __test = {
     buildNodeList,
+    buildReplyMarkup,
     classifySupabaseResponse,
     commandToAction,
+    extractProjectRef,
     formatUptime,
     secureCompare,
     syncNode

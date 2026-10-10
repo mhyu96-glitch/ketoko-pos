@@ -43,7 +43,26 @@ test('RPC sukses harus benar-benar memperbarui data', () => {
 test('perintah Telegram dipetakan ke tombol yang benar', () => {
     assert.equal(__test.commandToAction('/sync@nama_bot'), 'sync');
     assert.equal(__test.commandToAction('/status'), 'status');
+    assert.equal(__test.commandToAction('/uptime'), 'uptime');
+    assert.equal(__test.commandToAction('/mode'), 'toggle_mode');
+    assert.equal(__test.commandToAction('/nodes'), 'nodes');
+    assert.equal(__test.commandToAction('/help'), 'start');
     assert.equal(__test.commandToAction('halo'), 'unknown');
+});
+
+test('ekstraksi project ref Supabase dari URL', () => {
+    assert.equal(__test.extractProjectRef('https://quhjgsoqjcumckoshjtv.supabase.co'), 'quhjgsoqjcumckoshjtv');
+    assert.equal(__test.extractProjectRef('https://xukpisovkcflcwuhrzkx.supabase.co/rest/v1'), 'xukpisovkcflcwuhrzkx');
+});
+
+test('menampilkan tombol resume project jika ada node paused', () => {
+    const markupWithPaused = __test.buildReplyMarkup({
+        details: [
+            { node: 'Ketoko POS', state: 'paused', url: 'https://quhjgsoqjcumckoshjtv.supabase.co' }
+        ]
+    });
+    assert.equal(markupWithPaused.inline_keyboard[0][0].text, '▶️ Buka Dashboard (Ketoko POS)');
+    assert.equal(markupWithPaused.inline_keyboard[0][0].url, 'https://supabase.com/dashboard/project/quhjgsoqjcumckoshjtv');
 });
 
 test('token dibandingkan tanpa perbandingan string langsung', async () => {
