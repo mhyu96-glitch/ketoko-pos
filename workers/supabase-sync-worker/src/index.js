@@ -663,6 +663,8 @@ function formatSyncReport(summary) {
         let line = `${icon} ${item.node}: ${friendlyState(item.state)} (${item.duration_ms ?? 0} ms)`;
         if (item.data?.db_size_mb !== undefined) {
             line += `\n   ↳ 📦 Storage: ${item.data.db_size_mb} MB / ${item.data.quota_mb || 500} MB (${item.data.percent_used ?? 0}%)`;
+        } else {
+            line += `\n   ↳ 📦 Storage: Belum update SQL v2.1.0`;
         }
         lines.push(line);
         if (item.error) lines.push(`   ⚠️ ${item.error}`);
@@ -690,7 +692,9 @@ function formatHealthMessage(snapshot) {
             const stIcon = n.status === 'healthy' ? '✅' : '❌';
             let detailStr = `${stIcon} ${n.node}: ${friendlyState(n.status)}`;
             if (n.storage) {
-                detailStr += ` (${n.storage.db_size_mb} MB / 500 MB • ${n.storage.percent_used}%)`;
+                detailStr += `\n   ↳ 📦 Storage: ${n.storage.db_size_mb} MB / ${n.storage.quota_mb || 500} MB (${n.storage.percent_used}%)`;
+            } else {
+                detailStr += `\n   ↳ 📦 Storage: Belum update SQL v2.1.0`;
             }
             lines.push(detailStr);
         }
