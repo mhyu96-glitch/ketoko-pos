@@ -427,28 +427,39 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       });
     }
   };
+  // Helper to extract store initials
+  const getStoreInitials = (name: string) => {
+    const clean = name.replace(/^(cv\.|pt\.|ud\.|tb\.)\s*/i, '').trim();
+    const words = clean.split(/\s+/);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return (clean.slice(0, 2) || 'TK').toUpperCase();
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#200d04] via-[#3a1b0b] to-[#1a0a03] text-stone-100 flex flex-col font-sans select-none">
+    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans select-none relative overflow-x-hidden selection:bg-amber-500/20 selection:text-amber-300">
+      {/* Ambient background glows */}
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(59,130,246,0.07),rgba(0,0,0,0))] z-0" />
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_60%_40%_at_80%_15%,rgba(245,158,11,0.05),rgba(0,0,0,0))] z-0" />
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_60%_40%_at_10%_40%,rgba(168,85,247,0.04),rgba(0,0,0,0))] z-0" />
       
       {/* 1. TOP HEADER BRANDING SUPERADMIN */}
-      <header className="border-b border-[#5e321b] bg-[#2a1307]/90 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xl shadow-black/40 relative z-10">
         <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-amber-500 to-amber-300 p-0.5 shadow-lg flex items-center justify-center">
-            <div className="w-full h-full bg-[#200d04] rounded-[14px] flex items-center justify-center">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500/30 via-indigo-500/30 to-sky-500/30 p-[1px] shadow-lg shadow-amber-500/10 flex items-center justify-center shrink-0">
+            <div className="w-full h-full bg-slate-950/90 rounded-[15px] flex items-center justify-center">
               <ShieldCheck className="w-5 h-5 text-amber-400" />
             </div>
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
-                Ketoko POS <span className="text-amber-400 font-extrabold text-xs uppercase px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30">Vendor Hub</span>
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+                Ketoko POS <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">Vendor Hub</span>
               </h1>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/40">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono tracking-wider">
                 MASTER SUPERADMIN
               </span>
             </div>
-            <p className="text-[11px] text-stone-400 font-medium">
+            <p className="text-[11px] text-slate-400 font-medium">
               {currentUser.name} • Pusat Kontrol Pengembang, Manajemen Klien Toko & Lisensi
             </p>
           </div>
@@ -460,19 +471,19 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           <button
             type="button"
             onClick={() => onEnterStorePos()}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-extrabold text-xs flex items-center space-x-2 shadow-lg transition-all active:scale-95"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex items-center space-x-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95"
             title={`Buka Kasir POS Toko ${activeStoreName}`}
           >
-            <Monitor className="w-4 h-4 text-amber-200" />
+            <Monitor className="w-4 h-4 text-slate-950 shrink-0" />
             <span className="max-w-[180px] sm:max-w-xs truncate">Buka POS ({activeStoreName})</span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-70 shrink-0" />
+            <ExternalLink className="w-3.5 h-3.5 opacity-70 shrink-0 text-slate-950" />
           </button>
 
           {/* Logout */}
           <button
             type="button"
             onClick={onLogout}
-            className="p-2 rounded-xl bg-[#442211] hover:bg-rose-950/70 text-stone-300 hover:text-rose-200 border border-[#6b381d] transition-all"
+            className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-slate-700/80 hover:border-rose-800/60 transition-all shadow-sm"
             title="Keluar dari Akun Superadmin"
           >
             <LogOut className="w-4 h-4" />
@@ -481,41 +492,41 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       </header>
 
       {/* 2. SUB-BANNER VENDOR STATUS CARDS */}
-      <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-6 relative z-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           
           {/* Card 1: Lisensi Vendor */}
-          <div className="p-4 rounded-2xl bg-[#32170a]/90 border border-[#63331b] shadow-md flex items-center space-x-3.5">
-            <div className="p-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          <div className="p-4.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 backdrop-blur-md shadow-lg shadow-black/20 flex items-center space-x-3.5 group transition-all">
+            <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Status Lisensi Vendor</div>
-              <div className="text-sm font-black text-emerald-300">MASTER UNLIMITED</div>
-              <div className="text-[10px] text-stone-400">Bebas Transaksi & Tanpa Batas</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status Lisensi Vendor</div>
+              <div className="text-sm font-black text-emerald-400">MASTER UNLIMITED</div>
+              <div className="text-[10px] text-slate-400">Bebas Transaksi & Multi-Toko Lifetime</div>
             </div>
           </div>
 
           {/* Card 2: Toko Terdaftar */}
-          <div className="p-4 rounded-2xl bg-[#32170a]/90 border border-[#63331b] shadow-md flex items-center space-x-3.5">
-            <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+          <div className="p-4.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 backdrop-blur-md shadow-lg shadow-black/20 flex items-center space-x-3.5 group transition-all">
+            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-105 transition-transform shrink-0">
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Klien Toko Terdaftar</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Klien Toko Terdaftar</div>
               <div className="text-sm font-black text-white">{registeredStores.length} Toko Terdaftar</div>
-              <div className="text-[10px] text-amber-300 font-medium truncate max-w-[150px]">Aktif: {activeStoreName}</div>
+              <div className="text-[10px] text-amber-300 font-medium truncate max-w-[160px]">Aktif: {activeStoreName}</div>
             </div>
           </div>
 
           {/* Card 3: Cloud Database (Supabase) */}
-          <div className="p-4 rounded-2xl bg-[#32170a]/90 border border-[#63331b] shadow-md flex items-center space-x-3.5">
-            <div className="p-3 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+          <div className="p-4.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 backdrop-blur-md shadow-lg shadow-black/20 flex items-center space-x-3.5 group transition-all">
+            <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
               <Database className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Status Database Kasir</div>
-              <div className="text-sm font-black text-sky-300">{totalProductsLoaded} Produk di Kasir</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status Database Kasir</div>
+              <div className="text-sm font-black text-sky-400">{totalProductsLoaded.toLocaleString('id-ID')} Produk di Kasir</div>
               <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold truncate">
                 <span className="truncate">{activeStoreName}</span>
                 {totalProductsLoaded === 0 && <span className="text-amber-300 font-bold shrink-0">(Kosong / Bersih)</span>}
@@ -524,7 +535,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 <button
                   type="button"
                   onClick={onInjectCatalog}
-                  className="mt-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shadow-xs transition-all active:scale-95"
+                  className="mt-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-[10px] transition-all active:scale-95 flex items-center gap-1 w-fit"
                 >
                   ⚡ Inject 3.380 Produk ke POS
                 </button>
@@ -533,14 +544,14 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           </div>
 
           {/* Card 4: Multi-Kasir LAN Server */}
-          <div className="p-4 rounded-2xl bg-[#32170a]/90 border border-[#63331b] shadow-md flex items-center space-x-3.5">
-            <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+          <div className="p-4.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 backdrop-blur-md shadow-lg shadow-black/20 flex items-center space-x-3.5 group transition-all">
+            <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:scale-105 transition-transform shrink-0">
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Arsitektur Multi-Kasir</div>
-              <div className="text-sm font-black text-purple-300">1 Server + 4 Klien</div>
-              <div className="text-[10px] text-stone-400">Port 5858 + Cloudflare Live</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Arsitektur Multi-Kasir</div>
+              <div className="text-sm font-black text-purple-400">1 Server + 4 Klien</div>
+              <div className="text-[10px] text-slate-400">Port 5858 + Cloudflare Live</div>
             </div>
           </div>
 
@@ -548,15 +559,15 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       </div>
 
       {/* 3. NAVIGATION TABS */}
-      <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 mt-6">
-        <div className="flex items-center space-x-2 border-b border-[#542a15] pb-2 overflow-x-auto">
+      <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 mt-6 relative z-10">
+        <div className="p-1.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md flex items-center space-x-1.5 overflow-x-auto shadow-inner">
           <button
             type="button"
             onClick={() => setActiveTab('tenants')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all shrink-0 ${
               activeTab === 'tenants'
-                ? 'bg-amber-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white hover:bg-[#3d1c0c]'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
             <Store className="w-4 h-4" />
@@ -568,8 +579,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             onClick={() => setActiveTab('topology')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all shrink-0 ${
               activeTab === 'topology'
-                ? 'bg-amber-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white hover:bg-[#3d1c0c]'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
             <Network className="w-4 h-4" />
@@ -581,8 +592,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             onClick={() => setActiveTab('keygen')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all shrink-0 ${
               activeTab === 'keygen'
-                ? 'bg-amber-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white hover:bg-[#3d1c0c]'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
             <KeyRound className="w-4 h-4" />
@@ -594,8 +605,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             onClick={() => setActiveTab('cloud')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all shrink-0 ${
               activeTab === 'cloud'
-                ? 'bg-amber-600 text-white shadow-md'
-                : 'text-stone-400 hover:text-white hover:bg-[#3d1c0c]'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
             <Database className="w-4 h-4" />
@@ -605,22 +616,25 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
       </div>
 
       {/* 4. MAIN BODY VIEW */}
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 flex-1">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 flex-1 relative z-10">
         
         {/* TAB 1: DAFTAR KLIEN TOKO */}
         {activeTab === 'tenants' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-white">Daftar Toko / Usaha Klien (Tenants)</h2>
-                <p className="text-xs text-stone-400">
+                <h2 className="text-lg font-black text-white flex items-center gap-2">
+                  <Store className="w-5 h-5 text-amber-400" />
+                  <span>Daftar Toko / Usaha Klien (Tenants)</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
                   Kelola toko yang membeli software Ketoko POS. Setiap toko memiliki database, subdomain, dan lisensi tersendiri.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsNewStoreModalOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black text-xs flex items-center space-x-2 shadow-lg transition-all active:scale-95"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center space-x-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95 shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>Daftarkan Klien / Toko Baru</span>
@@ -634,69 +648,91 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 return (
                   <div 
                     key={store.id} 
-                    className={`rounded-3xl bg-[#2e1509] border p-5 shadow-xl flex flex-col justify-between space-y-4 transition-all ${
-                      isThisStoreActive ? 'border-amber-500 ring-2 ring-amber-500/30' : 'border-[#5c2e17] hover:border-amber-600/50'
+                    className={`relative rounded-3xl bg-slate-900/80 border p-5 sm:p-6 shadow-xl backdrop-blur-md flex flex-col justify-between space-y-4 transition-all duration-300 overflow-hidden group ${
+                      isThisStoreActive 
+                        ? 'border-amber-500/70 ring-2 ring-amber-500/20 shadow-amber-500/5' 
+                        : 'border-slate-800/80 hover:border-slate-700/80 hover:shadow-2xl'
                     }`}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center space-x-1.5 mb-1.5">
-                            <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase">
-                              <CheckCircle2 className="w-3 h-3" />
-                              <span>{store.status}</span>
-                            </div>
-                            {isThisStoreActive && (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
-                                ★ AKTIF DI KASIR
-                              </span>
-                            )}
+                    {/* Top accent line if active */}
+                    {isThisStoreActive && (
+                      <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-300" />
+                    )}
+
+                    <div className="space-y-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start space-x-3.5">
+                          {/* Store Avatar Badge */}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 shadow-inner ${
+                            isThisStoreActive
+                              ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/30 border border-amber-500/40 text-amber-300'
+                              : 'bg-gradient-to-br from-slate-800 to-slate-850 border border-slate-700/80 text-slate-300'
+                          }`}>
+                            {getStoreInitials(store.name)}
                           </div>
-                          <h3 className="text-base font-black text-white">{store.name}</h3>
-                          <p className="text-xs text-stone-400 font-medium">{store.branch}</p>
+
+                          <div>
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-black uppercase">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                <span>{store.status}</span>
+                              </span>
+                              {isThisStoreActive && (
+                                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  ★ AKTIF DI KASIR
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="text-base font-black text-white tracking-tight">{store.name}</h3>
+                            <p className="text-xs text-slate-400 font-medium">{store.branch}</p>
+                          </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="text-[11px] font-extrabold text-amber-300 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 block">
+                        <div className="shrink-0 text-right">
+                          <span className="text-[10px] font-extrabold text-amber-300 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 font-mono tracking-wider inline-block">
                             {store.licensePlan}
                           </span>
                         </div>
                       </div>
 
-                      {/* Detail Items */}
-                      <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-[#4d2511] text-xs">
-                        <div>
-                          <span className="text-stone-500 text-[10px] block">Akses Online (Cloudflare):</span>
+                      {/* 4-Metric Grid */}
+                      <div className="grid grid-cols-2 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Akses Online (Cloudflare):</span>
                           <a 
                             href={store.onlineDomain} 
                             target="_blank" 
                             rel="noreferrer" 
-                            className="font-bold text-sky-400 hover:text-sky-300 truncate block flex items-center space-x-1"
+                            className="font-bold text-sky-400 hover:text-sky-300 truncate flex items-center space-x-1"
                           >
-                            <span className="truncate">{store.onlineDomain}</span>
+                            <span className="truncate">{store.onlineDomain.replace(/^https?:\/\//, '')}</span>
                             <ExternalLink className="w-3 h-3 shrink-0" />
                           </a>
                         </div>
-                        <div>
-                          <span className="text-stone-500 text-[10px] block">Database Master:</span>
-                          <span className="font-bold text-emerald-300">
-                            {isThisStoreActive ? `${totalProductsLoaded} Produk (Kasir Aktif)` : store.productsCount}
+
+                        <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Database Master:</span>
+                          <span className="font-bold text-emerald-400 block truncate">
+                            {isThisStoreActive ? `${totalProductsLoaded.toLocaleString('id-ID')} Produk (Kasir Aktif)` : store.productsCount}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-stone-500 text-[10px] block">Owner / Admin:</span>
-                          <span className="font-bold text-stone-200">{store.adminUser}</span>
+
+                        <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Owner / Admin:</span>
+                          <span className="font-bold text-slate-200 block truncate">{store.adminUser}</span>
                         </div>
-                        <div>
-                          <span className="text-stone-500 text-[10px] block">Akun Kasir Toko:</span>
-                          <span className="font-bold text-stone-200">{store.cashierUser}</span>
+
+                        <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Akun Kasir Toko:</span>
+                          <span className="font-bold text-slate-200 block truncate">{store.cashierUser}</span>
                         </div>
-                        <div className="col-span-2 pt-2 border-t border-[#4d2511] flex items-center justify-between">
-                          <span className="text-stone-400 text-[10px] flex items-center gap-1.5 font-bold">
+
+                        <div className="col-span-2 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
+                          <span className="text-slate-400 text-[10px] flex items-center gap-1.5 font-bold uppercase tracking-wider">
                             <Layers className="w-3.5 h-3.5 text-sky-400" />
                             <span>Database Cloud:</span>
                           </span>
-                          <span className="px-2 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-300 font-mono font-bold text-[10px] flex items-center gap-1">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 font-mono font-bold text-[10px] flex items-center gap-1.5">
                             <Database className="w-3 h-3 text-sky-400" />
                             <span>{store.clusterName || 'Cluster 1 (Default Cloud)'}</span>
                           </span>
@@ -705,24 +741,24 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     </div>
 
                     {/* Actions for this store */}
-                    <div className="pt-3 border-t border-[#4d2511] flex flex-wrap items-center gap-2">
+                    <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => onEnterStorePos(store)}
-                        className={`flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-md transition-all active:scale-95 ${
+                        className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center space-x-1.5 shadow-md transition-all active:scale-95 ${
                           isThisStoreActive 
-                            ? 'bg-amber-600 hover:bg-amber-500 text-white ring-1 ring-amber-400' 
-                            : 'bg-stone-700 hover:bg-amber-600 text-white'
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20' 
+                            : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700/80 hover:border-slate-600'
                         }`}
                       >
-                        <Monitor className="w-4 h-4 text-amber-200" />
+                        <Monitor className={`w-4 h-4 ${isThisStoreActive ? 'text-slate-950' : 'text-amber-400'}`} />
                         <span>{isThisStoreActive ? 'Buka POS Toko Ini (Aktif)' : 'Beralih & Buka POS Toko Ini'}</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleClearStore(store)}
-                        className="py-2.5 px-2.5 rounded-xl bg-[#3d190d] hover:bg-amber-900/60 text-amber-300 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        className="py-2.5 px-3 rounded-xl bg-slate-800/80 hover:bg-amber-950/50 text-amber-300 hover:text-amber-200 font-bold text-xs flex items-center space-x-1 border border-slate-700/80 hover:border-amber-700/50 transition-all active:scale-95"
                         title="Kosongkan database produk dan transaksi toko ini (0 Data)"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
@@ -733,7 +769,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteStoreClick(store)}
-                          className="py-2.5 px-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900 text-rose-300 font-bold text-xs flex items-center space-x-1 border border-rose-800/40 transition-all"
+                          className="py-2.5 px-2.5 rounded-xl bg-slate-800/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 font-bold text-xs flex items-center space-x-1 border border-slate-700/80 hover:border-rose-800/50 transition-all active:scale-95"
                           title="Hapus toko dari pendaftaran"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -743,19 +779,19 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                       <button
                         type="button"
                         onClick={onOpenLanModal}
-                        className="py-2.5 px-2.5 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        className="py-2.5 px-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-purple-300 font-bold text-xs flex items-center space-x-1 border border-slate-700/80 transition-all active:scale-95"
                         title="Pengaturan Jaringan LAN & Cloud Toko"
                       >
-                        <Network className="w-3.5 h-3.5 text-purple-300" />
+                        <Network className="w-3.5 h-3.5" />
                       </button>
 
                       <button
                         type="button"
                         onClick={onOpenLicenseModal}
-                        className="py-2.5 px-2.5 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs flex items-center space-x-1 border border-[#6b381d] transition-all"
+                        className="py-2.5 px-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-amber-300 font-bold text-xs flex items-center space-x-1 border border-slate-700/80 transition-all active:scale-95"
                         title="Kelola Lisensi Toko"
                       >
-                        <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+                        <KeyRound className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -773,7 +809,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 <Network className="w-5 h-5 text-amber-400" />
                 <span>Arsitektur Jaringan: 1 Server Pusat + 4 Klien Kasir & Akses HP Online</span>
               </h2>
-              <p className="text-xs text-stone-400 mt-1">
+              <p className="text-xs text-slate-400 mt-1">
                 Berikut adalah skema praktis dan panduan bagaimana sistem Ketoko POS bekerja dalam satu jaringan toko (LAN/Wi-Fi) serta terhubung online ke HP lewat Cloudflare.
               </p>
             </div>
@@ -782,9 +818,10 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               
               {/* Kolom 1: Komputer Server Pusat */}
-              <div className="p-5 rounded-3xl bg-gradient-to-b from-[#3a1b0b] to-[#250f04] border-2 border-amber-500/50 shadow-xl flex flex-col space-y-4">
+              <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-amber-500/40 shadow-xl flex flex-col space-y-4 relative overflow-hidden backdrop-blur-md">
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-300" />
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500 text-stone-950">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-mono">
                     KOMPUTER 1 (SERVER PUSAT)
                   </span>
                   <Server className="w-5 h-5 text-amber-400" />
@@ -792,35 +829,36 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 
                 <div>
                   <h3 className="text-base font-black text-white">Server Database Toko</h3>
-                  <p className="text-xs text-stone-300 mt-1">
+                  <p className="text-xs text-slate-300 mt-1">
                     Komputer utama toko yang menyala sepanjang jam operasional kasir.
                   </p>
                 </div>
 
-                <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Mode Sistem:</span>
-                    <span className="font-bold text-amber-300">SERVER (Port 5858)</span>
+                    <span className="text-slate-400">Mode Sistem:</span>
+                    <span className="font-bold text-amber-400">SERVER (Port 5858)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Alamat LAN Toko:</span>
-                    <span className="font-bold text-emerald-300 font-mono">http://192.168.1.X:5858</span>
+                    <span className="text-slate-400">Alamat LAN Toko:</span>
+                    <span className="font-bold text-emerald-400 font-mono">http://192.168.1.X:5858</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Aplikasi Desktop:</span>
-                    <span className="font-bold text-stone-200">Ketoko POS Desktop</span>
+                    <span className="text-slate-400">Aplikasi Desktop:</span>
+                    <span className="font-bold text-slate-200">Ketoko POS Desktop</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-amber-200 bg-amber-950/40 p-3 rounded-xl border border-amber-800/30">
+                <div className="text-[11px] text-amber-200 bg-amber-500/10 p-3.5 rounded-2xl border border-amber-500/20">
                   💡 <strong>Tugas:</strong> Menyimpan seluruh data 24.500 produk, memproses transaksi secara realtime, dan memotong stok otomatis untuk semua kasir.
                 </div>
               </div>
 
               {/* Kolom 2: 4 Komputer Klien Kasir */}
-              <div className="p-5 rounded-3xl bg-gradient-to-b from-[#2e1509] to-[#1c0b03] border border-[#5c2e17] shadow-xl flex flex-col space-y-4">
+              <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-purple-500/40 shadow-xl flex flex-col space-y-4 relative overflow-hidden backdrop-blur-md">
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-indigo-400" />
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/30">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-400/30 font-mono">
                     KOMPUTER 2, 3, 4, 5 (4 KASIR KLIEN)
                   </span>
                   <Users className="w-5 h-5 text-purple-400" />
@@ -828,35 +866,36 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 
                 <div>
                   <h3 className="text-base font-black text-white">Terminal Kasir Meja</h3>
-                  <p className="text-xs text-stone-300 mt-1">
+                  <p className="text-xs text-slate-300 mt-1">
                     4 Komputer kasir yang berada di meja kasir toko, terhubung ke Wi-Fi / kabel LAN yang sama.
                   </p>
                 </div>
 
-                <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Mode Sistem:</span>
-                    <span className="font-bold text-purple-300">CLIENT (Klien LAN)</span>
+                    <span className="text-slate-400">Mode Sistem:</span>
+                    <span className="font-bold text-purple-400">CLIENT (Klien LAN)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Akses:</span>
-                    <span className="font-bold text-stone-200">Desktop / Google Chrome</span>
+                    <span className="text-slate-400">Akses:</span>
+                    <span className="font-bold text-slate-200">Desktop / Google Chrome</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Akun Kasir:</span>
+                    <span className="text-slate-400">Akun Kasir:</span>
                     <span className="font-bold text-amber-300">noor / kasir1 / kasir2</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-purple-200 bg-purple-950/40 p-3 rounded-xl border border-purple-800/30">
+                <div className="text-[11px] text-purple-200 bg-purple-500/10 p-3.5 rounded-2xl border border-purple-500/20">
                   💡 <strong>Cara Pakai:</strong> Buka Ketoko POS Desktop di PC Klien (atau buka Chrome ke <code className="font-mono bg-black/40 px-1 rounded">http://IP-SERVER:5858</code>), kasir langsung bisa scan barcode & cetak nota!
                 </div>
               </div>
 
               {/* Kolom 3: HP / Tablet Online via Cloudflare */}
-              <div className="p-5 rounded-3xl bg-gradient-to-b from-[#2e1509] to-[#1c0b03] border border-[#5c2e17] shadow-xl flex flex-col space-y-4">
+              <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-sky-500/40 shadow-xl flex flex-col space-y-4 relative overflow-hidden backdrop-blur-md">
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-sky-400 via-sky-500 to-blue-400" />
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/30">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono">
                     HP / TABLET (ONLINE DI MANAPUN)
                   </span>
                   <Smartphone className="w-5 h-5 text-sky-400" />
@@ -864,27 +903,27 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 
                 <div>
                   <h3 className="text-base font-black text-white">Owner & Kasir Mobile</h3>
-                  <p className="text-xs text-stone-300 mt-1">
+                  <p className="text-xs text-slate-300 mt-1">
                     Bisa diakses dari HP android/iPhone dari luar kota atau di perjalanan tanpa kabel LAN.
                   </p>
                 </div>
 
-                <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Jalur Akses:</span>
-                    <span className="font-bold text-sky-300">Cloudflare Pages & Tunnel</span>
+                    <span className="text-slate-400">Jalur Akses:</span>
+                    <span className="font-bold text-sky-400">Cloudflare Pages & Tunnel</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Domain Resmi:</span>
+                    <span className="text-slate-400">Domain Resmi:</span>
                     <span className="font-bold text-amber-300 font-mono text-[10px]">tumbuhmakmur.ketokopos.online</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-stone-400">Cloud Sync:</span>
-                    <span className="font-bold text-emerald-300">Supabase Cloud Live</span>
+                    <span className="text-slate-400">Cloud Sync:</span>
+                    <span className="font-bold text-emerald-400">Supabase Cloud Live</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-sky-200 bg-sky-950/40 p-3 rounded-xl border border-sky-800/30">
+                <div className="text-[11px] text-sky-200 bg-sky-500/10 p-3.5 rounded-2xl border border-sky-500/20">
                   💡 <strong>Keuntungan:</strong> Owner bisa memantau omzet toko dan laporan penjualan langsung dari HP secara live dari rumah.
                 </div>
               </div>
@@ -892,15 +931,15 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             </div>
 
             {/* Quick Action to LAN Modal */}
-            <div className="p-4 rounded-2xl bg-[#32170a] border border-[#5c2e17] flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="p-4.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg backdrop-blur-md">
               <div>
                 <h4 className="text-xs font-black text-white">Ingin Mengatur IP Server atau Cloudflare Tunnel Sekarang?</h4>
-                <p className="text-[11px] text-stone-400">Buka panel konfigurasi LAN & Supabase untuk melihat alamat IP server toko Anda saat ini.</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Buka panel konfigurasi LAN & Supabase untuk melihat alamat IP server toko Anda saat ini.</p>
               </div>
               <button
                 type="button"
                 onClick={onOpenLanModal}
-                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center space-x-1.5 shadow-md transition-all shrink-0 active:scale-95"
+                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center space-x-1.5 shadow-md shadow-purple-600/20 transition-all shrink-0 active:scale-95"
               >
                 <Network className="w-4 h-4" />
                 <span>Buka Pengaturan Jaringan LAN Toko</span>
@@ -917,14 +956,14 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 <KeyRound className="w-5 h-5 text-amber-400" />
                 <span>Pusat Pembuatan Serial Key Lisensi Klien</span>
               </h2>
-              <p className="text-xs text-stone-400 mt-1">
+              <p className="text-xs text-slate-400 mt-1">
                 Gunakan alat ini untuk membuat Kunci Lisensi Resmi bagi toko pembeli aplikasi Ketoko POS. Kunci ini dimasukkan pada layar aktivasi komputer klien.
               </p>
             </div>
 
-            <div className="p-6 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
+            <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-2xl space-y-4.5 backdrop-blur-md">
               <div>
-                <label className="block text-xs font-bold text-stone-300 mb-1">
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
                   Nama Toko / Usaha Pembeli:
                 </label>
                 <input
@@ -932,12 +971,12 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   value={targetStoreName}
                   onChange={(e) => setTargetStoreName(e.target.value)}
                   placeholder="Contoh: CV. Tumbuh Makmur Air Conindo"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-xs font-bold text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-stone-300 mb-1">
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
                   Kode Mesin Komputer Klien (Machine ID):
                 </label>
                 <input
@@ -945,21 +984,21 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   value={targetMachineId}
                   onChange={(e) => setTargetMachineId(e.target.value)}
                   placeholder="Contoh: KPOS-7E3A-9F2B-XXXX (Didapat dari layar aktivasi klien)"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-xs font-mono font-bold text-amber-300 focus:outline-none focus:border-amber-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-amber-300 focus:outline-none focus:border-amber-500 transition-colors"
                 />
-                <span className="text-[10px] text-stone-400 mt-1 block">
+                <span className="text-[10px] text-slate-400 mt-1 block">
                   *Kosongkan jika ingin membuat lisensi umum berbasis nama toko saja.
                 </span>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-stone-300 mb-1">
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
                   Paket Lisensi:
                 </label>
                 <select
                   value={targetPlan}
                   onChange={(e) => setTargetPlan(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-xs font-bold text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white focus:outline-none focus:border-amber-500 transition-colors"
                 >
                   <option value="PRO_LIFETIME">PRO LIFETIME — Permanen Selamanya (Rekomendasi Jual)</option>
                   <option value="ENTERPRISE_1Y">ENTERPRISE 1 TAHUN — Langganan Tahunan</option>
@@ -970,20 +1009,21 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
               <button
                 type="button"
                 onClick={handleGenerateKey}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-lg transition-all active:scale-[0.98]"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 transition-all active:scale-[0.98]"
               >
-                <Sparkles className="w-4 h-4 text-amber-200" />
+                <Sparkles className="w-4 h-4 text-slate-950" />
                 <span>GENERATE SERIAL KEY LISENSI RESMI</span>
               </button>
 
               {/* Generated Result */}
               {generatedKey && (
-                <div className="mt-4 p-4 rounded-2xl bg-[#1c0b03] border-2 border-emerald-500/50 space-y-3 animate-smooth-modal">
+                <div className="mt-4 p-4.5 rounded-2xl bg-slate-950/90 border-2 border-emerald-500/50 space-y-3 animate-smooth-modal">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-emerald-400">
-                      ✔ Kunci Lisensi Berhasil Dibuat
+                    <span className="text-[10px] font-black uppercase text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Kunci Lisensi Berhasil Dibuat</span>
                     </span>
-                    <span className="text-[10px] text-stone-400">{targetPlan}</span>
+                    <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md">{targetPlan}</span>
                   </div>
 
                   <div className="flex items-center space-x-2">
@@ -991,19 +1031,19 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                       type="text"
                       readOnly
                       value={generatedKey}
-                      className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-emerald-500/30 text-emerald-300 font-mono font-black text-sm tracking-wider select-all"
+                      className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-emerald-500/30 text-emerald-300 font-mono font-black text-sm tracking-wider select-all"
                     />
                     <button
                       type="button"
                       onClick={handleCopyKey}
-                      className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all"
+                      className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95 shadow-sm"
                     >
                       {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       <span>{isCopied ? 'Tersalin!' : 'Salin'}</span>
                     </button>
                   </div>
 
-                  <div className="text-[11px] text-stone-300 flex items-center justify-between pt-1 border-t border-[#3d1908]">
+                  <div className="text-[11px] text-slate-300 flex items-center justify-between pt-2 border-t border-slate-800">
                     <span>Kirimkan kunci ini ke WhatsApp pemilik toko pembeli.</span>
                     <button
                       type="button"
@@ -1016,9 +1056,10 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         );
                         window.open(`https://wa.me/?text=${text}`, '_blank');
                       }}
-                      className="text-amber-400 hover:underline font-bold text-xs"
+                      className="text-amber-400 hover:text-amber-300 font-bold text-xs hover:underline flex items-center gap-1"
                     >
-                      Kirim via WhatsApp →
+                      <span>Kirim via WhatsApp</span>
+                      <ExternalLink className="w-3 h-3" />
                     </button>
                   </div>
                 </div>
@@ -1036,7 +1077,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   <Database className="w-5 h-5 text-sky-400" />
                   <span>Pusat Database Cloud Supabase (Multi-Cluster Gratis) & Cloudflare</span>
                 </h2>
-                <p className="text-xs text-stone-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Arsitektur multi-tenant berbasis cluster: Setiap akun Supabase Gratis menampung hingga 20 toko. Buat cluster baru untuk toko ke-21 dst tanpa biaya bulanan (100% Gratis).
                 </p>
               </div>
@@ -1044,7 +1085,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsNewClusterModalOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-black text-xs flex items-center space-x-2 shadow-lg transition-all active:scale-95 shrink-0"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-black text-xs flex items-center space-x-2 shadow-lg shadow-sky-600/20 transition-all active:scale-95 shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>+ Daftarkan Cluster Supabase Baru</span>
@@ -1052,37 +1093,37 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             </div>
 
             {/* Quick KPI Cluster Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
-                <div className="p-3 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-lg flex items-center space-x-3.5 backdrop-blur-md">
+                <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Total Cluster Aktif</div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Cluster Aktif</div>
                   <div className="text-base font-black text-white">{clusters.length} Cluster Database</div>
                   <div className="text-[10px] text-emerald-400 font-medium">Semua Proyek Supabase Free Tier</div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
-                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <div className="p-4.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-lg flex items-center space-x-3.5 backdrop-blur-md">
+                <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
                   <Store className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Toko Terdistribusi</div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Toko Terdistribusi</div>
                   <div className="text-base font-black text-white">{registeredStores.length} Toko Klien</div>
                   <div className="text-[10px] text-amber-300 font-medium">Tersebar di {clusters.length} Cluster</div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-[#2e1509] border border-[#5c2e17] shadow-lg flex items-center space-x-3">
-                <div className="p-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <div className="p-4.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-lg flex items-center space-x-3.5 backdrop-blur-md">
+                <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Kapasitas Siap Pakai</div>
-                  <div className="text-base font-black text-emerald-300">{clusters.length * 20} Toko Bebas Biaya</div>
-                  <div className="text-[10px] text-stone-400 font-medium">Hemat Biaya Rp 400rb+/Bulan</div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Kapasitas Siap Pakai</div>
+                  <div className="text-base font-black text-emerald-400">{clusters.length * 20} Toko Bebas Biaya</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Hemat Biaya Rp 400rb+/Bulan</div>
                 </div>
               </div>
             </div>
@@ -1094,7 +1135,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   <Database className="w-4 h-4 text-emerald-400" />
                   <span>Daftar Cluster Database Supabase Aktif</span>
                 </h3>
-                <span className="text-xs text-stone-400">
+                <span className="text-xs text-slate-400">
                   Rekomendasi aman: Maksimal 20 toko per akun Supabase gratis
                 </span>
               </div>
@@ -1108,8 +1149,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
                   return (
                     <div 
-                      key={cluster.id}
-                      className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4 flex flex-col justify-between"
+                      key={cluster.id} 
+                      className="p-5.5 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-xl space-y-4 flex flex-col justify-between backdrop-blur-md"
                     >
                       <div className="space-y-3.5">
                         <div className="flex items-start justify-between">
@@ -1117,19 +1158,19 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                             <div className="flex items-center space-x-2">
                               <h4 className="text-sm font-black text-white">{cluster.name}</h4>
                               {cluster.isDefault ? (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                                   CLUSTER UTAMA
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">
                                   CLUSTER TAMBAHAN
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-stone-400 mt-0.5">{cluster.notes || 'Supabase Free Tier Project'}</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">{cluster.notes || 'Supabase Free Tier Project'}</p>
                           </div>
 
-                          <span className="text-xs font-mono font-bold text-amber-300 bg-[#1c0b03] px-2.5 py-1 rounded-xl border border-[#4d2511]">
+                          <span className="text-xs font-mono font-bold text-amber-300 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
                             {storesInCluster.length} / {maxCap} Toko
                           </span>
                         </div>
@@ -1137,12 +1178,12 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         {/* Capacity Progress Bar */}
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-stone-400 font-medium">Pemakaian Kuota Akun Gratis:</span>
+                            <span className="text-slate-400 font-medium">Pemakaian Kuota Akun Gratis:</span>
                             <span className={`font-bold ${usagePercent >= 100 ? 'text-rose-400' : usagePercent >= 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
                               {usagePercent}% ({maxCap - storesInCluster.length} slot tersisa)
                             </span>
                           </div>
-                          <div className="w-full h-2.5 rounded-full bg-[#1c0b03] border border-[#4d2511] overflow-hidden">
+                          <div className="w-full h-2.5 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
                             <div 
                               className={`h-full transition-all duration-500 rounded-full ${
                                 usagePercent >= 100 
@@ -1163,11 +1204,11 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                         </div>
 
                         {/* Cluster Info Details */}
-                        <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                        <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                           <div>
-                            <span className="text-stone-500 text-[10px] block">Project URL:</span>
+                            <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Project URL:</span>
                             <div className="flex items-center justify-between">
-                              <span className="font-mono font-bold text-stone-200 truncate max-w-[280px]">
+                              <span className="font-mono font-bold text-slate-200 truncate max-w-[280px]">
                                 {cluster.url}
                               </span>
                               <button
@@ -1176,7 +1217,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                                   navigator.clipboard.writeText(cluster.url);
                                   alert('Project URL disalin ke clipboard!');
                                 }}
-                                className="text-stone-400 hover:text-white p-1"
+                                className="text-slate-400 hover:text-white p-1"
                                 title="Salin URL"
                               >
                                 <Copy className="w-3.5 h-3.5" />
@@ -1184,21 +1225,21 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                             </div>
                           </div>
 
-                          <div className="pt-1">
-                            <span className="text-stone-500 text-[10px] block">Toko yang Terdaftar di Cluster Ini:</span>
+                          <div className="pt-1 border-t border-slate-850">
+                            <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Toko yang Terdaftar di Cluster Ini:</span>
                             {storesInCluster.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5 mt-1">
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
                                 {storesInCluster.map(s => (
                                   <span 
                                     key={s.id} 
-                                    className="px-2 py-0.5 rounded-md bg-[#381a0c] border border-[#5e2e17] text-stone-200 text-[10px] font-medium"
+                                    className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/80 text-slate-200 text-[10px] font-medium"
                                   >
                                     {s.name}
                                   </span>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-stone-500 text-[11px] italic">Belum ada toko yang menggunakan cluster ini.</span>
+                              <span className="text-slate-400 text-[11px] italic">Belum ada toko yang menggunakan cluster ini.</span>
                             )}
                           </div>
                         </div>
@@ -1224,13 +1265,13 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                       </div>
 
                       {/* Cluster Actions */}
-                      <div className="pt-3 border-t border-[#4d2511] flex items-center justify-between gap-2">
+                      <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={() => handleTestCluster(cluster)}
-                          className="px-3 py-2 rounded-xl bg-[#442110] hover:bg-[#592b15] text-stone-200 font-bold text-xs border border-[#6b381d] transition-all flex items-center space-x-1.5"
+                          className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-slate-200 font-bold text-xs border border-slate-700/80 transition-all flex items-center space-x-1.5 active:scale-95"
                         >
-                          <Activity className="w-3.5 h-3.5 text-amber-300" />
+                          <Activity className="w-3.5 h-3.5 text-amber-400" />
                           <span>Uji Latensi Ping</span>
                         </button>
 
@@ -1239,9 +1280,9 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                             <button
                               type="button"
                               onClick={onOpenLanModal}
-                              className="px-3 py-2 rounded-xl bg-[#3d190b] hover:bg-[#4d200e] text-stone-300 font-bold text-xs border border-[#5c2a13] transition-all flex items-center space-x-1.5"
+                              className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-slate-200 font-bold text-xs border border-slate-700/80 transition-all flex items-center space-x-1.5 active:scale-95"
                             >
-                              <Settings className="w-3.5 h-3.5 text-stone-400" />
+                              <Settings className="w-3.5 h-3.5 text-slate-400" />
                               <span>Pengaturan Kunci</span>
                             </button>
                           )}
@@ -1253,8 +1294,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                               onClick={() => handleDeleteCluster(cluster)}
                               className={`p-2 rounded-xl border transition-all ${
                                 storesInCluster.length > 0
-                                  ? 'bg-stone-800 text-stone-600 border-stone-700 cursor-not-allowed'
-                                  : 'bg-rose-950/40 hover:bg-rose-900 text-rose-300 border-rose-800/40'
+                                  ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed'
+                                  : 'bg-rose-950/40 hover:bg-rose-900 text-rose-300 border-rose-800/40 active:scale-95'
                               }`}
                               title={storesInCluster.length > 0 ? 'Tidak dapat menghapus cluster yang masih memiliki toko terdaftar' : 'Hapus Cluster'}
                             >
@@ -1270,8 +1311,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             </div>
 
             {/* PANDUAN PRAKTIS: MULTI-AKUN SUPABASE GRATIS */}
-            <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="w-5 h-5 text-amber-400" />
                   <h3 className="text-sm font-black text-white">Panduan Multi-Akun Supabase Gratis (Bila Toko Sudah 20+)</h3>
@@ -1283,43 +1324,43 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     setIsCopiedSql(true);
                     setTimeout(() => setIsCopiedSql(false), 2500);
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all shadow-md"
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition-all shadow-md active:scale-95"
                 >
                   {isCopiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{isCopiedSql ? 'Nama File Tersalin!' : 'Salin Lokasi: supabase_schema.sql'}</span>
                 </button>
               </div>
 
-              <div className="space-y-3 text-xs text-stone-300">
+              <div className="space-y-3 text-xs text-slate-300">
                 <p className="leading-relaxed">
                   Supabase menyediakan tier <strong>100% Gratis</strong> dengan batas 500 MB database dan ~50.000 transaksi per bulan per proyek. Dengan arsitektur Ketoko POS, Anda <strong>TIDAK PERLU membayar langganan Pro ($25/bulan)</strong> ketika toko klien bertambah. Cukup gunakan clustering multi-akun gratis:
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
-                    <span className="font-extrabold text-amber-300 block">Langkah 1</span>
-                    <span className="text-[11px] text-stone-400">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                    <span className="font-extrabold text-amber-400 block">Langkah 1</span>
+                    <span className="text-[11px] text-slate-400">
                       Buka <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-sky-400 underline font-bold">supabase.com</a> dan buat akun baru dengan email/Google baru.
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
-                    <span className="font-extrabold text-amber-300 block">Langkah 2</span>
-                    <span className="text-[11px] text-stone-400">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                    <span className="font-extrabold text-amber-400 block">Langkah 2</span>
+                    <span className="text-[11px] text-slate-400">
                       Klik <strong>+ New Project</strong>, beri nama (misal: <code>ketoko-cluster-2</code>), pilih region <strong>Singapore</strong>.
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
-                    <span className="font-extrabold text-amber-300 block">Langkah 3</span>
-                    <span className="text-[11px] text-stone-400">
-                      Buka <strong>SQL Editor</strong> di dashboard Supabase baru → Tempelkan isi file <code className="text-amber-200">supabase_schema.sql</code> → Klik <strong>Run</strong>.
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                    <span className="font-extrabold text-amber-400 block">Langkah 3</span>
+                    <span className="text-[11px] text-slate-400">
+                      Buka <strong>SQL Editor</strong> di dashboard Supabase baru → Tempelkan isi file <code className="text-amber-300">supabase_schema.sql</code> → Klik <strong>Run</strong>.
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1">
-                    <span className="font-extrabold text-amber-300 block">Langkah 4</span>
-                    <span className="text-[11px] text-stone-400">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                    <span className="font-extrabold text-amber-400 block">Langkah 4</span>
+                    <span className="text-[11px] text-slate-400">
                       Buka Project Settings → API, salin <strong>URL</strong> & <strong>anon key</strong>, lalu klik tombol <strong>+ Daftarkan Cluster Supabase Baru</strong> di atas. Selesai!
                     </span>
                   </div>
@@ -1328,31 +1369,31 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
             </div>
 
             {/* INTEGRASI BOT TELEGRAM & CLOUDFLARE KEEP-ALIVE WORKER */}
-            <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#4d2511]">
-                <div className="flex items-center space-x-2.5">
-                  <div className="p-2.5 rounded-2xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+            <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
                     <Send className="w-5 h-5 text-sky-400" />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-white flex items-center gap-2">
                       <span>Integrasi Bot Telegram & Cloudflare Keep-Alive Worker</span>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                         AKTIF & TERHUBUNG 🟢
                       </span>
                     </h3>
-                    <p className="text-[11px] text-stone-400">
+                    <p className="text-[11px] text-slate-400 mt-0.5">
                       Menjaga seluruh database Supabase tetap aktif 24/7 (anti-pause) serta mengirimkan laporan & notifikasi kasir otomatis ke Telegram.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 shrink-0">
                   <button
                     type="button"
                     disabled={isTestingTelegram}
                     onClick={handleTestTelegram}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-bold text-xs flex items-center space-x-1.5 shadow-md transition-all active:scale-95"
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-bold text-xs flex items-center space-x-1.5 shadow-md shadow-sky-600/20 transition-all active:scale-95"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{isTestingTelegram ? 'Mengirim Tes...' : '⚡ Kirim Pesan Tes ke Telegram'}</span>
@@ -1362,7 +1403,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     type="button"
                     disabled={isTriggeringSync}
                     onClick={handleTriggerWorkerSync}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold text-xs flex items-center space-x-1.5 shadow-md transition-all active:scale-95"
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs flex items-center space-x-1.5 shadow-md shadow-amber-500/20 transition-all active:scale-95"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isTriggeringSync ? 'animate-spin' : ''}`} />
                     <span>Trigger Sync Sekarang</span>
@@ -1383,7 +1424,7 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                       setTelegramTestFeedback(null);
                       setSyncTriggerFeedback(null);
                     }}
-                    className="text-stone-400 hover:text-white font-bold text-xs"
+                    className="text-slate-400 hover:text-white font-bold text-xs"
                   >
                     ✕
                   </button>
@@ -1392,9 +1433,9 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 {/* Kartu 1: Bot Telegram Detail */}
-                <div className="p-4 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-3">
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+                    <span className="font-extrabold text-amber-400 flex items-center gap-1.5">
                       <Send className="w-3.5 h-3.5 text-sky-400" />
                       <span>Bot Telegram Penerima Laporan</span>
                     </span>
@@ -1409,42 +1450,42 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     </a>
                   </div>
 
-                  <div className="space-y-1.5 bg-[#120601] p-3 rounded-xl border border-[#3d190b] font-mono text-[11px]">
+                  <div className="space-y-1.5 bg-slate-900/90 p-3 rounded-xl border border-slate-800 font-mono text-[11px]">
                     <div>• Username Bot: <span className="text-emerald-400 font-bold">@supabotborneo_bot</span> (supabot_keeplive)</div>
                     <div>• Chat ID Tujuan: <span className="text-amber-300 font-bold">{telegramConfig.chatId}</span> (Wahyu)</div>
-                    <div>• Token Bot: <span className="text-stone-400">8956076739:AAH4f...</span> (Terverifikasi)</div>
+                    <div>• Token Bot: <span className="text-slate-400">8956076739:AAH4f...</span> (Terverifikasi)</div>
                   </div>
 
                   {/* Pengaturan Notifikasi Otomatis */}
                   <div className="space-y-2 pt-1">
-                    <span className="text-[10px] text-stone-400 font-bold block uppercase tracking-wider">Pilihan Notifikasi Otomatis ke Telegram:</span>
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Pilihan Notifikasi Otomatis ke Telegram:</span>
                     
-                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                    <label className="flex items-center space-x-2.5 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={telegramConfig.notifyOnSale}
                         onChange={(e) => handleToggleTelegramNotifySale(e.target.checked)}
-                        className="rounded border-[#5c2e17] text-amber-500 focus:ring-0 bg-[#1c0b03]"
+                        className="rounded border-slate-700 text-amber-500 focus:ring-0 bg-slate-900"
                       />
-                      <span className="text-stone-200 text-[11px]">Kirim Notifikasi Setiap Transaksi Kasir POS Selesai</span>
+                      <span className="text-slate-200 text-[11px]">Kirim Notifikasi Setiap Transaksi Kasir POS Selesai</span>
                     </label>
 
-                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                    <label className="flex items-center space-x-2.5 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={telegramConfig.notifyOnShiftClose}
                         onChange={(e) => handleToggleTelegramNotifyShift(e.target.checked)}
-                        className="rounded border-[#5c2e17] text-amber-500 focus:ring-0 bg-[#1c0b03]"
+                        className="rounded border-slate-700 text-amber-500 focus:ring-0 bg-slate-900"
                       />
-                      <span className="text-stone-200 text-[11px]">Kirim Ringkasan Tutup Shift & Total Kas Kasir Harian</span>
+                      <span className="text-slate-200 text-[11px]">Kirim Ringkasan Tutup Shift & Total Kas Kasir Harian</span>
                     </label>
                   </div>
                 </div>
 
                 {/* Kartu 2: Cloudflare Keep-Alive Worker */}
-                <div className="p-4 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-3">
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+                    <span className="font-extrabold text-amber-400 flex items-center gap-1.5">
                       <Server className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Cloudflare Keep-Alive Worker</span>
                     </span>
@@ -1457,25 +1498,25 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                     </button>
                   </div>
 
-                  <div className="space-y-1.5 bg-[#120601] p-3 rounded-xl border border-[#3d190b] font-mono text-[11px]">
+                  <div className="space-y-1.5 bg-slate-900/90 p-3 rounded-xl border border-slate-800 font-mono text-[11px]">
                     <div>• Worker URL: <span className="text-sky-300 font-bold truncate block">{telegramConfig.workerUrl}</span></div>
                     <div>• Jadwal Ping Otomatis: <span className="text-emerald-400 font-bold">08:00, 16:00, dan 23:00 WITA</span></div>
-                    <div>• Node 1 (Catatan Kehamilan): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-stone-400 text-[10px]">(xukpisovkcflcwuhrzkx)</span></div>
-                    <div>• Node 2 (Ketoko POS): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-stone-400 text-[10px]">(quhjgsoqjcumckoshjtv)</span></div>
+                    <div>• Node 1 (Catatan Kehamilan): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-slate-400 text-[10px]">(xukpisovkcflcwuhrzkx)</span></div>
+                    <div>• Node 2 (Ketoko POS): <span className="text-emerald-400 font-bold">Aktif ✅</span> <span className="text-slate-400 text-[10px]">(quhjgsoqjcumckoshjtv)</span></div>
                   </div>
 
                   {workerHealthData && (
                     <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 text-[10px] space-y-0.5">
                       <div>Status Worker: <b>{workerHealthData.status}</b> • Node Sehat: <b>{workerHealthData.healthy_nodes}/{workerHealthData.configured_nodes}</b></div>
-                      <div className="text-stone-400">Pemeriksaan Terakhir: {workerHealthData.checked_at ? new Date(workerHealthData.checked_at).toLocaleTimeString('id-ID') : '-'}</div>
+                      <div className="text-slate-400">Pemeriksaan Terakhir: {workerHealthData.checked_at ? new Date(workerHealthData.checked_at).toLocaleTimeString('id-ID') : '-'}</div>
                     </div>
                   )}
 
-                  <p className="text-[11px] text-stone-400 leading-relaxed">
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
                     Worker ini berjalan otomatis di jaringan Cloudflare tepi (*Edge Workers*) 3 kali sehari untuk menjaga database Supabase tetap hangat tanpa risiko di-pause. Hasil ping langsung dilaporkan ke Telegram Anda.
                   </p>
 
-                  <div className="pt-1 border-t border-[#3d190b]">
+                  <div className="pt-1 border-t border-slate-800">
                     <button
                       type="button"
                       onClick={() => {
@@ -1525,7 +1566,7 @@ SELECT public.sync_application_data();`;
                         navigator.clipboard.writeText(sql);
                         alert('Skrip SQL RPC Keep-Alive & Storage Monitor v2.1.0 berhasil disalin! Silakan tempel dan Run di SQL Editor project Supabase (quhjgsoqjcumckoshjtv).');
                       }}
-                      className="w-full py-2 px-3 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 font-bold text-[11px] border border-amber-600/40 transition-all flex items-center justify-center space-x-1.5"
+                      className="w-full py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-bold text-[11px] border border-amber-500/30 transition-all flex items-center justify-center space-x-1.5 active:scale-95"
                     >
                       <Copy className="w-3.5 h-3.5 text-amber-400" />
                       <span>Salin Skrip SQL RPC & Kuota Storage untuk Node 2 (v2.1.0)</span>
@@ -1539,47 +1580,47 @@ SELECT public.sync_application_data();`;
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
               {/* Cloudflare Pages & Tunnel */}
-              <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
+              <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <Smartphone className="w-5 h-5 text-sky-400" />
                     <h3 className="text-sm font-black text-white">Cloudflare Pages & Tunnel</h3>
                   </div>
-                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30 font-mono">
                     ACTIVE LIVE
                   </span>
                 </div>
 
-                <div className="space-y-2 text-xs bg-[#1f0b02] p-3 rounded-2xl border border-[#4d2511]">
+                <div className="space-y-2 text-xs bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/80">
                   <div>
-                    <span className="text-stone-500 text-[10px] block">Domain Utama Toko:</span>
+                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Domain Utama Toko:</span>
                     <a 
                       href="https://tumbuhmakmur.ketokopos.online" 
                       target="_blank" 
                       rel="noreferrer" 
-                      className="font-mono font-bold text-sky-400 hover:underline flex items-center gap-1"
+                      className="font-mono font-bold text-sky-400 hover:underline flex items-center gap-1 mt-0.5"
                     >
                       <span>https://tumbuhmakmur.ketokopos.online</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
-                  <div className="pt-1">
-                    <span className="text-stone-500 text-[10px] block">Akses Kompatibel:</span>
-                    <span className="font-bold text-stone-200">HP Android, iOS (iPhone/iPad), PC Laptop</span>
+                  <div className="pt-1.5 border-t border-slate-850">
+                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Akses Kompatibel:</span>
+                    <span className="font-bold text-slate-200">HP Android, iOS (iPhone/iPad), PC Laptop</span>
                   </div>
-                  <div className="pt-1">
-                    <span className="text-stone-500 text-[10px] block">Protokol Keamanan:</span>
-                    <span className="font-bold text-emerald-300">SSL / HTTPS Enkripsi Penuh</span>
+                  <div className="pt-1.5 border-t border-slate-850">
+                    <span className="text-slate-400 text-[10px] font-bold block uppercase tracking-wider">Protokol Keamanan:</span>
+                    <span className="font-bold text-emerald-400">SSL / HTTPS Enkripsi Penuh</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-stone-400 bg-[#1f0b02] p-3 rounded-xl border border-[#4d2511]">
+                <div className="text-[11px] text-slate-400 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/60">
                   Setiap pembaruan kode di GitHub branch <code>main</code> otomatis terpasang ke Cloudflare Pages ini dalam hitungan menit.
                 </div>
               </div>
 
               {/* Panduan Menghubungkan Subdomain Toko Baru */}
-              <div className="p-5 rounded-3xl bg-[#2e1509] border border-[#5c2e17] shadow-xl space-y-4">
+              <div className="p-5.5 rounded-3xl bg-slate-900/80 border border-slate-800/80 shadow-xl space-y-4 backdrop-blur-md">
                 <div className="flex items-center space-x-2">
                   <Network className="w-5 h-5 text-amber-400" />
                   <h3 className="text-sm font-black text-white">Panduan Penambahan Subdomain Toko Baru di Cloudflare</h3>
@@ -1587,32 +1628,32 @@ SELECT public.sync_application_data();`;
 
                 <div className="space-y-3 text-xs">
                   {/* Cara 1: Wildcard DNS */}
-                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-amber-300">Cara 1: Wildcard DNS (Otomatis untuk Semua Toko) - DIREKOMENDASIKAN</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">1x Setup Selamanya</span>
+                      <span className="font-extrabold text-amber-400">Cara 1: Wildcard DNS (Otomatis untuk Semua Toko) - DIREKOMENDASIKAN</span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">1x Setup Selamanya</span>
                     </div>
-                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
                       Cukup buat 1 DNS Record di dashboard Cloudflare domain <code className="text-amber-300">ketokopos.online</code>:
                     </p>
-                    <div className="bg-[#120601] p-2.5 rounded-xl border border-[#3d190b] font-mono text-[11px] text-stone-200 space-y-1">
+                    <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-200 space-y-1">
                       <div>• Type: <span className="text-emerald-400 font-bold">CNAME</span></div>
                       <div>• Name: <span className="text-amber-300 font-bold">*</span> (tanda bintang)</div>
                       <div>• Target: <span className="text-sky-300 font-bold">ketoko-pos.pages.dev</span> (atau domain Pages Anda)</div>
                       <div>• Proxy status: <span className="text-amber-400 font-bold">Proxied (Orange Cloud)</span></div>
                     </div>
-                    <p className="text-[11px] text-emerald-300 font-medium">
+                    <p className="text-[11px] text-emerald-400 font-medium">
                       ✓ Hasilnya: Setiap kali Anda membuat toko baru dengan subdomain apa pun (misal <code className="text-amber-200">tokoberkah</code>), subdomain tersebut <strong>langsung aktif otomatis seketika</strong> tanpa perlu setting DNS lagi!
                     </p>
                   </div>
 
                   {/* Cara 2: Custom Domains Pages */}
-                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
-                    <span className="font-extrabold text-amber-300">Cara 2: Custom Domain di Cloudflare Pages (Manual per Toko)</span>
-                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1.5">
+                    <span className="font-extrabold text-amber-400">Cara 2: Custom Domain di Cloudflare Pages (Manual per Toko)</span>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
                       Jika tidak memakai wildcard, Anda dapat menambahkan subdomain secara manual per toko:
                     </p>
-                    <ol className="list-decimal list-inside text-[11px] text-stone-300 space-y-1 pl-1">
+                    <ol className="list-decimal list-inside text-[11px] text-slate-300 space-y-1 pl-1">
                       <li>Buka Cloudflare Dashboard → <strong>Workers & Pages</strong> → Pilih project <strong>Ketoko POS</strong>.</li>
                       <li>Pilih tab <strong>Custom domains</strong> → Klik <strong>Set up a custom domain</strong>.</li>
                       <li>Ketik subdomain toko, misal: <code className="text-amber-300">tokoberkah.ketokopos.online</code>.</li>
@@ -1621,12 +1662,12 @@ SELECT public.sync_application_data();`;
                   </div>
 
                   {/* Cara 3: Cloudflare Tunnel */}
-                  <div className="p-3.5 rounded-2xl bg-[#1f0b02] border border-[#4d2511] space-y-1.5">
-                    <span className="font-extrabold text-amber-300">Cara 3: Cloudflare Tunnel (Jika Toko Pakai Server PC Lokal)</span>
-                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1.5">
+                    <span className="font-extrabold text-amber-400">Cara 3: Cloudflare Tunnel (Jika Toko Pakai Server PC Lokal)</span>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
                       Jika toko klien memasang server fisik di komputernya sendiri (port 5858):
                     </p>
-                    <p className="text-[11px] text-stone-400">
+                    <p className="text-[11px] text-slate-400">
                       Buka <strong>Zero Trust</strong> → <strong>Networks</strong> → <strong>Tunnels</strong> → Tambahkan <strong>Public Hostname</strong> yang mengarah ke <code className="text-sky-300">HTTP localhost:5858</code>.
                     </p>
                   </div>
@@ -1641,9 +1682,9 @@ SELECT public.sync_application_data();`;
 
       {/* 5. MODAL DAFTARKAN TOKO BARU */}
       {isNewStoreModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2a1307] border border-[#6b381d] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 animate-smooth-modal">
-            <div className="flex items-center justify-between pb-3 border-b border-[#4d2511]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl shadow-black/80 space-y-4 animate-smooth-modal">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="font-black text-sm text-white flex items-center gap-2">
                 <Store className="w-4 h-4 text-amber-400" />
                 <span>Daftarkan Klien / Toko Baru</span>
@@ -1651,7 +1692,7 @@ SELECT public.sync_application_data();`;
               <button
                 type="button"
                 onClick={() => setIsNewStoreModalOpen(false)}
-                className="text-stone-400 hover:text-white font-bold"
+                className="text-slate-400 hover:text-white font-bold p-1"
               >
                 ✕
               </button>
@@ -1659,72 +1700,72 @@ SELECT public.sync_application_data();`;
 
             <form onSubmit={handleAddStore} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Nama Toko / Perusahaan:</label>
+                <label className="block font-bold text-slate-300 mb-1">Nama Toko / Perusahaan:</label>
                 <input
                   type="text"
                   required
                   value={newStoreForm.name}
                   onChange={(e) => setNewStoreForm({ ...newStoreForm, name: e.target.value })}
                   placeholder="Contoh: Toko Berkah Abadi"
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Nama Pemilik (Owner):</label>
+                <label className="block font-bold text-slate-300 mb-1">Nama Pemilik (Owner):</label>
                 <input
                   type="text"
                   value={newStoreForm.ownerName}
                   onChange={(e) => setNewStoreForm({ ...newStoreForm, ownerName: e.target.value })}
                   placeholder="Contoh: Haji Ahmad"
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">No. WhatsApp / HP Toko:</label>
+                <label className="block font-bold text-slate-300 mb-1">No. WhatsApp / HP Toko:</label>
                 <input
                   type="tel"
                   value={newStoreForm.phone}
                   onChange={(e) => setNewStoreForm({ ...newStoreForm, phone: e.target.value })}
                   placeholder="08123456789"
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Subdomain Cloudflare:</label>
+                <label className="block font-bold text-slate-300 mb-1">Subdomain Cloudflare:</label>
                 <div className="flex items-center">
                   <input
                     type="text"
                     value={newStoreForm.subdomain}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
                     placeholder="berkahabadi"
-                    className="flex-1 px-3 py-2 rounded-l-xl bg-[#1c0b03] border border-[#5c2e17] text-amber-300 font-mono focus:outline-none focus:border-amber-500"
+                    className="flex-1 px-3 py-2 rounded-l-xl bg-slate-950 border border-slate-800 text-amber-300 font-mono focus:outline-none focus:border-amber-500 transition-colors"
                   />
-                  <span className="px-3 py-2 bg-[#3d1c0c] border border-l-0 border-[#5c2e17] rounded-r-xl text-stone-400 font-mono text-[11px]">
+                  <span className="px-3 py-2 bg-slate-850 border border-l-0 border-slate-800 rounded-r-xl text-slate-400 font-mono text-[11px]">
                     .ketokopos.online
                   </span>
                 </div>
-                <p className="text-[10px] text-stone-400 mt-1">
+                <p className="text-[10px] text-slate-400 mt-1">
                   Alamat akses online: <span className="text-amber-300 font-mono">https://{newStoreForm.subdomain || 'nama-toko'}.ketokopos.online</span>
                 </p>
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Kode Cabang:</label>
+                <label className="block font-bold text-slate-300 mb-1">Kode Cabang:</label>
                 <input
                   type="text"
                   value={newStoreForm.branchId}
                   onChange={(e) => setNewStoreForm({ ...newStoreForm, branchId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-stone-300 font-mono"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 font-mono"
                 />
               </div>
 
               {/* Pilihan Cluster Database Supabase */}
-              <div className="space-y-2 pt-2 border-t border-[#4d2511]">
+              <div className="space-y-2 pt-2 border-t border-slate-800">
                 <div className="flex items-center justify-between">
-                  <label className="block font-bold text-stone-300">Database Cloud (Cluster Supabase):</label>
+                  <label className="block font-bold text-slate-300">Database Cloud (Cluster Supabase):</label>
                   <span className="text-[10px] text-emerald-400 font-bold">100% Free Tier</span>
                 </div>
 
@@ -1734,7 +1775,7 @@ SELECT public.sync_application_data();`;
                     setNewStoreForm({ ...newStoreForm, clusterChoice: e.target.value });
                     setModalClusterTestResult(null);
                   }}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500 font-medium text-xs"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 font-medium text-xs transition-colors"
                 >
                   {clusters.map((c) => {
                     const storesInC = registeredStores.filter(s => (s.clusterId || 'cluster-default') === c.id);
@@ -1749,42 +1790,42 @@ SELECT public.sync_application_data();`;
                 </select>
 
                 {newStoreForm.clusterChoice === 'new' && (
-                  <div className="p-3 rounded-2xl bg-[#170802] border border-amber-600/40 space-y-2.5 mt-2 animate-fadeIn">
+                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2.5 mt-2 animate-fadeIn">
                     <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>Cluster Supabase Baru (Akun Free Tier Baru)</span>
                     </div>
 
                     <div>
-                      <label className="text-[10px] text-stone-400 block mb-0.5">Nama Cluster:</label>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Nama Cluster:</label>
                       <input
                         type="text"
                         value={newStoreForm.newClusterName}
                         onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterName: e.target.value })}
                         placeholder={`Cluster ${clusters.length + 1} (Supabase Cloud)`}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[10px] text-stone-400 block mb-0.5">Project URL Supabase:</label>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Project URL Supabase:</label>
                       <input
                         type="url"
                         value={newStoreForm.newClusterUrl}
                         onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterUrl: e.target.value })}
                         placeholder="https://xyzproject.supabase.co"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs font-mono"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs font-mono"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[10px] text-stone-400 block mb-0.5">Anon Public Key:</label>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Anon Public Key:</label>
                       <input
                         type="password"
                         value={newStoreForm.newClusterKey}
                         onChange={(e) => setNewStoreForm({ ...newStoreForm, newClusterKey: e.target.value })}
                         placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#240e04] border border-[#5c2e17] text-white text-xs font-mono"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs font-mono"
                       />
                     </div>
 
@@ -1793,7 +1834,7 @@ SELECT public.sync_application_data();`;
                         type="button"
                         disabled={isTestingModalCluster || !newStoreForm.newClusterUrl || !newStoreForm.newClusterKey}
                         onClick={handleTestModalCluster}
-                        className="px-3 py-1.5 rounded-lg bg-[#3a1a0b] hover:bg-[#4d230e] text-amber-200 text-[11px] font-bold border border-[#6b381d] transition-all flex items-center space-x-1"
+                        className="px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-amber-200 text-[11px] font-bold border border-slate-750 transition-all flex items-center space-x-1"
                       >
                         <Activity className="w-3 h-3 text-amber-400" />
                         <span>{isTestingModalCluster ? 'Menguji...' : 'Uji Koneksi Supabase'}</span>
@@ -1810,12 +1851,12 @@ SELECT public.sync_application_data();`;
               </div>
 
               {/* Highlight Clean Database Notice */}
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] space-y-1">
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                   <span>Database Toko Bersih Otomatis</span>
                 </div>
-                <p className="text-stone-300 leading-relaxed">
+                <p className="text-slate-300 leading-relaxed">
                   Toko baru akan langsung dimulai dengan <strong>data kosong bersih (0 Produk, 0 Transaksi)</strong>. Anda dapat menginput produk baru di Master Data atau import dari file Excel/CSV.
                 </p>
               </div>
@@ -1824,14 +1865,14 @@ SELECT public.sync_application_data();`;
                 <button
                   type="button"
                   onClick={() => setIsNewStoreModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 font-bold hover:bg-stone-700"
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-750 transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingStore}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all shadow-emerald-600/20"
                 >
                   <span>{isSubmittingStore ? 'Membuat Toko Bersih...' : 'Buat Toko Baru (Data Kosong)'}</span>
                 </button>
@@ -1843,9 +1884,9 @@ SELECT public.sync_application_data();`;
 
       {/* 6. MODAL DAFTARKAN CLUSTER SUPABASE BARU */}
       {isNewClusterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2a1307] border border-[#6b381d] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 animate-smooth-modal">
-            <div className="flex items-center justify-between pb-3 border-b border-[#4d2511]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl shadow-black/80 space-y-4 animate-smooth-modal">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="font-black text-sm text-white flex items-center gap-2">
                 <Database className="w-4 h-4 text-sky-400" />
                 <span>Daftarkan Cluster Supabase Baru</span>
@@ -1853,7 +1894,7 @@ SELECT public.sync_application_data();`;
               <button
                 type="button"
                 onClick={() => setIsNewClusterModalOpen(false)}
-                className="text-stone-400 hover:text-white font-bold"
+                className="text-slate-400 hover:text-white font-bold p-1"
               >
                 ✕
               </button>
@@ -1861,49 +1902,49 @@ SELECT public.sync_application_data();`;
 
             <form onSubmit={handleSaveNewClusterFromTab} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Nama Cluster Database:</label>
+                <label className="block font-bold text-slate-300 mb-1">Nama Cluster Database:</label>
                 <input
                   type="text"
                   required
                   value={newClusterForm.name}
                   onChange={(e) => setNewClusterForm({ ...newClusterForm, name: e.target.value })}
                   placeholder={`Contoh: Cluster ${clusters.length + 1} (Toko 21-40)`}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Project URL Supabase:</label>
+                <label className="block font-bold text-slate-300 mb-1">Project URL Supabase:</label>
                 <input
                   type="url"
                   required
                   value={newClusterForm.url}
                   onChange={(e) => setNewClusterForm({ ...newClusterForm, url: e.target.value })}
                   placeholder="https://xyzproject.supabase.co"
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white font-mono focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Anon Public API Key:</label>
+                <label className="block font-bold text-slate-300 mb-1">Anon Public API Key:</label>
                 <textarea
                   required
                   rows={2}
                   value={newClusterForm.anonKey}
                   onChange={(e) => setNewClusterForm({ ...newClusterForm, anonKey: e.target.value })}
                   placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white font-mono focus:outline-none focus:border-amber-500 text-[11px]"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-amber-500 text-[11px] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-stone-300 mb-1">Catatan Tambahan (Opsional):</label>
+                <label className="block font-bold text-slate-300 mb-1">Catatan Tambahan (Opsional):</label>
                 <input
                   type="text"
                   value={newClusterForm.notes}
                   onChange={(e) => setNewClusterForm({ ...newClusterForm, notes: e.target.value })}
                   placeholder="Contoh: Akun Supabase Kedua - Toko Samarinda Seberang"
-                  className="w-full px-3 py-2 rounded-xl bg-[#1c0b03] border border-[#5c2e17] text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
@@ -1923,7 +1964,7 @@ SELECT public.sync_application_data();`;
                       setIsTestingCluster(false);
                     }
                   }}
-                  className="px-3 py-2 rounded-xl bg-[#3d1a0b] hover:bg-[#52230e] text-amber-200 font-bold border border-[#6b381d] transition-all flex items-center space-x-1.5"
+                  className="px-3.5 py-2 rounded-xl bg-slate-850 hover:bg-slate-800 text-amber-200 font-bold border border-slate-750 transition-all flex items-center space-x-1.5 active:scale-95"
                 >
                   <Activity className="w-3.5 h-3.5 text-amber-400" />
                   <span>{isTestingCluster ? 'Menguji...' : 'Uji Koneksi Supabase'}</span>
@@ -1934,13 +1975,13 @@ SELECT public.sync_application_data();`;
                 <button
                   type="button"
                   onClick={() => setIsNewClusterModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 font-bold hover:bg-stone-700"
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-750 transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all"
+                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black shadow-md flex items-center space-x-1.5 active:scale-95 transition-all shadow-sky-600/20"
                 >
                   <span>Simpan Cluster Database</span>
                 </button>

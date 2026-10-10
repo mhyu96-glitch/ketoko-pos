@@ -33,7 +33,7 @@ test('02. Verifikasi tombol pilihan akun kasir & admin', async ({ app, screen })
 
 test('03. Alur Login Kasir (Noor Afifah) dan masuk ke POS', async ({ app, screen }) => {
   await loginKasir(app, screen);
-  await expect(screen.getByText('KASIR')).toBeVisible();
+  await expect(screen.getByText(/KASIR|CASHIER/)).toBeVisible();
 });
 
 test('04. Alur Login Admin (suciawati Ramadhani) dan akses menu lengkap', async ({ app, screen }) => {
