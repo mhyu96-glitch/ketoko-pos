@@ -347,30 +347,32 @@ export const App: React.FC = () => {
       } else {
         // 1. Fetch all products into state (Auto-seed from /data/products.json ONLY for initial store-01 and NOT clean store)
         let all = await db.products.toArray();
-        if (!isCleanStore && activeStore === 'store-01') {
-          const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
-          if (all.length === 0 || hasOldDummy) {
-            try {
-              const res = await fetch('/data/products.json');
-              if (res.ok) {
-                const defaultProds = await res.json();
-                if (defaultProds && defaultProds.length > 0) {
-                  await db.products.clear();
-                  const chunkSize = 1000;
-                  for (let i = 0; i < defaultProds.length; i += chunkSize) {
-                    await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
+        if (!isCleanStore) {
+          if (activeStore === 'store-01') {
+            const hasOldDummy = all.some(p => p.name === 'Sister Gunting Ks 818' || p.barcode === '8994292112843');
+            if (all.length === 0 || hasOldDummy) {
+              try {
+                const res = await fetch('/data/products.json');
+                if (res.ok) {
+                  const defaultProds = await res.json();
+                  if (defaultProds && defaultProds.length > 0) {
+                    await db.products.clear();
+                    const chunkSize = 1000;
+                    for (let i = 0; i < defaultProds.length; i += chunkSize) {
+                      await db.products.bulkPut(defaultProds.slice(i, i + chunkSize));
+                    }
+                    all = defaultProds;
+                    console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
                   }
-                  all = defaultProds;
-                  console.log(`[App] Berhasil memuat ${defaultProds.length} produk katalog master AC.`);
                 }
+              } catch (err) {
+                console.warn('[App] Gagal auto-load /data/products.json:', err);
               }
-            } catch (err) {
-              console.warn('[App] Gagal auto-load /data/products.json:', err);
             }
           }
           setProducts(all);
 
-          // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase
+          // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase untuk store aktif
           if (navigator.onLine) {
             syncService.pullFromSupabase().then(async (res) => {
               if (res && res.products) {
@@ -447,7 +449,6 @@ export const App: React.FC = () => {
   const loadTransactions = useCallback(async (): Promise<Transaction[]> => {
     try {
       const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true';
-      const activeStore = localStorage.getItem('ketoko_active_store_id') || 'store-01';
 
       if (lanService.isClientMode()) {
         try {
@@ -460,7 +461,7 @@ export const App: React.FC = () => {
         }
       }
 
-      if (navigator.onLine && !isCleanStore && activeStore === 'store-01') {
+      if (navigator.onLine && !isCleanStore) {
         await Promise.allSettled([
           syncService.pushLocalTransactionsToSupabase(),
           syncService.pullTransactionsFromSupabase(100)
@@ -952,6 +953,7 @@ export const App: React.FC = () => {
 
     const newTrx: Transaction = {
       id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      store_id: activeStoreId || 'store-01',
       receipt_number: receiptNumber,
       cashier_id: currentUser?.id || 'USR-001',
       cashier_name: currentUser?.name || 'Kasir',
@@ -1004,6 +1006,7 @@ export const App: React.FC = () => {
 
         const newRec: ReceivableItem = {
           id: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          store_id: activeStoreId || 'store-01',
           customer_id: memberId || `PLG-${Date.now()}`,
           customer_name: custName,
           receipt_number: receiptNumber,

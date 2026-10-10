@@ -9,6 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 2. TABEL PROFIL & PENGATURAN TOKO
 CREATE TABLE IF NOT EXISTS store_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     name TEXT NOT NULL DEFAULT 'Ketoko POS',
     branch_name TEXT DEFAULT 'Cabang Samarinda (BR-01)',
     tagline TEXT DEFAULT 'Solusi Belanja Hemat, Cepat & Terlengkap',
@@ -19,10 +20,12 @@ CREATE TABLE IF NOT EXISTS store_settings (
     logo_base64 TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_store_settings_store_id ON store_settings(store_id);
 
--- 3. TABEL MASTER PRODUK (24.500+ ITEM)
+-- 3. TABEL MASTER PRODUK (MULTI-TENANT DENGAN STORE_ID)
 CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     barcode TEXT,
     name TEXT NOT NULL,
     category TEXT DEFAULT 'Kebutuhan Umum',
@@ -38,6 +41,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 -- Indeks Pencarian Cepat Produk di Cloud
+CREATE INDEX IF NOT EXISTS idx_products_store_id ON products(store_id);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at);
@@ -45,6 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at);
 -- 4. TABEL PELANGGAN (CUSTOMERS)
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     code TEXT,
     name TEXT NOT NULL,
     phone TEXT,
@@ -55,12 +60,14 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_customers_store_id ON customers(store_id);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 
 -- 5. TABEL SUPPLIER
 CREATE TABLE IF NOT EXISTS suppliers (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     code TEXT,
     name TEXT NOT NULL,
     contact_person TEXT,
@@ -70,11 +77,13 @@ CREATE TABLE IF NOT EXISTS suppliers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_suppliers_store_id ON suppliers(store_id);
 CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers(name);
 
 -- 6. TABEL TRANSAKSI KASIR (HEADER)
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     receipt_number TEXT NOT NULL,
     branch_id TEXT DEFAULT 'BR-01',
     cashier_id TEXT,
@@ -93,6 +102,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     synced_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_transactions_store_id ON transactions(store_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_receipt_number ON transactions(receipt_number);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payment_method);
@@ -101,6 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer
 -- 7. TABEL ITEM TRANSAKSI (DETAIL PENJUALAN)
 CREATE TABLE IF NOT EXISTS transaction_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
     product_id TEXT NOT NULL,
     product_name TEXT NOT NULL,
@@ -112,12 +123,14 @@ CREATE TABLE IF NOT EXISTS transaction_items (
     subtotal NUMERIC(15, 2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_trx_items_store_id ON transaction_items(store_id);
 CREATE INDEX IF NOT EXISTS idx_trx_items_transaction_id ON transaction_items(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_trx_items_product_id ON transaction_items(product_id);
 
 -- 8. TABEL HUTANG KE SUPPLIER (DEBTS / ACCOUNTS PAYABLE)
 CREATE TABLE IF NOT EXISTS debts (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     supplier_id TEXT REFERENCES suppliers(id) ON DELETE SET NULL,
     supplier_name TEXT NOT NULL,
     invoice_number TEXT,
@@ -129,6 +142,7 @@ CREATE TABLE IF NOT EXISTS debts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_debts_store_id ON debts(store_id);
 CREATE INDEX IF NOT EXISTS idx_debts_supplier_id ON debts(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_debts_due_date ON debts(due_date);
 CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
@@ -136,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
 -- 9. TABEL PIUTANG PELANGGAN (RECEIVABLES / ACCOUNTS RECEIVABLE)
 CREATE TABLE IF NOT EXISTS receivables (
     id TEXT PRIMARY KEY,
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
     customer_name TEXT NOT NULL,
     transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL,
@@ -148,6 +163,7 @@ CREATE TABLE IF NOT EXISTS receivables (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_receivables_store_id ON receivables(store_id);
 CREATE INDEX IF NOT EXISTS idx_receivables_customer_id ON receivables(customer_id);
 CREATE INDEX IF NOT EXISTS idx_receivables_due_date ON receivables(due_date);
 CREATE INDEX IF NOT EXISTS idx_receivables_status ON receivables(status);
@@ -155,6 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_receivables_status ON receivables(status);
 -- 10. TABEL AUDIT LOG SINKRONISASI (SYNC_LOGS)
 CREATE TABLE IF NOT EXISTS sync_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    store_id TEXT NOT NULL DEFAULT 'store-01',
     branch_id TEXT DEFAULT 'BR-01',
     device_id TEXT,
     operation_type TEXT NOT NULL, -- 'PUSH_TRANSACTIONS' | 'PULL_CATALOG' | 'MANUAL_SYNC'
@@ -163,6 +180,7 @@ CREATE TABLE IF NOT EXISTS sync_logs (
     error_message TEXT,
     synced_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_sync_logs_store_id ON sync_logs(store_id);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_synced_at ON sync_logs(synced_at);
 
 -- 11. ROW LEVEL SECURITY (RLS) POLICIES

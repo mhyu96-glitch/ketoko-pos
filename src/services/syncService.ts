@@ -34,6 +34,10 @@ export class SyncService {
   private channelReadyPromise: Promise<void> | null = null;
   private realtimeCallbacks: CloudRealtimeCallbacks = {};
 
+  public getActiveStoreId(): string {
+    return localStorage.getItem('ketoko_active_store_id') || 'store-01';
+  }
+
   public initCloudLiveChannel(callbacks?: CloudRealtimeCallbacks) {
     if (callbacks) {
       this.realtimeCallbacks = { ...this.realtimeCallbacks, ...callbacks };
@@ -51,11 +55,14 @@ export class SyncService {
       resolveReady = resolve;
     });
 
-    const ch = supabase.channel('ketoko_global_live_sync', {
+    const activeStoreId = this.getActiveStoreId();
+    const ch = supabase.channel(`ketoko_live_${activeStoreId}`, {
       config: { broadcast: { self: false } }
     });
 
     ch.on('broadcast', { event: 'product_updated' }, ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       const prod = payload as Product;
       if (prod && prod.id) {
         if (this.getDeletedProductIds().has(String(prod.id))) return;
@@ -64,6 +71,8 @@ export class SyncService {
       }
     })
     .on('broadcast', { event: 'product_deleted' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       const prodId = String(payload?.id || payload?.product_id || '').trim();
       if (prodId) {
         this.markProductDeletedLocally(prodId);
@@ -72,19 +81,26 @@ export class SyncService {
       }
     })
     .on('broadcast', { event: 'catalog_refreshed' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       console.log('[SyncService] Katalog diperbarui di Cloud oleh komputer lain:', payload);
       await this.pullFromSupabase().catch(() => {});
       this.realtimeCallbacks.onCatalogRefreshed?.(payload);
     })
     .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       if (payload && payload.id) {
         await db.purchases.put(payload).catch(() => {});
         this.realtimeCallbacks.onPurchaseCreated?.(payload);
       }
     })
     .on('broadcast', { event: 'transaction_created' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       const trx = payload?.transaction || (payload?.items ? payload : null);
       if (trx && trx.id) {
+        if (trx.store_id && trx.store_id !== activeStore) return;
         await db.transactions.put(trx).catch(() => {});
       }
       if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
@@ -95,6 +111,8 @@ export class SyncService {
       this.realtimeCallbacks.onTransactionCreated?.(payload);
     })
     .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       const trxId = payload?.transaction_id || payload?.id;
       if (trxId) {
         this.markTransactionDeletedLocally(trxId);
@@ -109,18 +127,25 @@ export class SyncService {
       this.realtimeCallbacks.onTransactionDeleted?.(payload);
     })
     .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
-      if (Array.isArray(payload)) {
-        for (const s of payload) {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
+      const items = Array.isArray(payload) ? payload : payload?.stocks;
+      if (Array.isArray(items)) {
+        for (const s of items) {
           db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
         }
-        this.realtimeCallbacks.onStockUpdated?.(payload);
+        this.realtimeCallbacks.onStockUpdated?.(items);
       }
     })
-    .on('broadcast', { event: 'debt_receivable_updated' }, async () => {
+    .on('broadcast', { event: 'debt_receivable_updated' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       await this.syncDebtsAndReceivables().catch(() => {});
       this.realtimeCallbacks.onDebtReceivableUpdated?.();
     })
     .on('broadcast', { event: 'receivable_created' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
       if (payload && payload.id) {
         await db.receivables.put(payload).catch(() => {});
         this.realtimeCallbacks.onReceivableCreated?.(payload);
@@ -129,7 +154,7 @@ export class SyncService {
 
     ch.subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
-        console.log('[SyncService] Supabase Realtime Channel terhubung (SUBSCRIBED)');
+        console.log('[SyncService] Supabase Realtime Channel terhubung (SUBSCRIBED):', `ketoko_live_${activeStoreId}`);
         resolveReady();
       }
     });
@@ -167,10 +192,20 @@ export class SyncService {
         ]);
       }
 
+      const activeStoreId = this.getActiveStoreId();
+      let finalPayload = payload;
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload)) {
+          finalPayload = { stocks: payload, store_id: activeStoreId };
+        } else {
+          finalPayload = { ...payload, store_id: payload.store_id || activeStoreId };
+        }
+      }
+
       const res = await ch.send({
         type: 'broadcast',
         event,
-        payload
+        payload: finalPayload
       });
       return res === 'ok';
     } catch (err) {
@@ -186,9 +221,11 @@ export class SyncService {
     if (!customerId) return null;
     const cleanId = String(customerId).trim();
     if (!cleanId) return null;
+    const storeId = this.getActiveStoreId();
     try {
       const { data, error } = await supabase.from('customers').upsert({
         id: cleanId,
+        store_id: storeId,
         name: customerName || `Pelanggan ${cleanId}`,
         type: 'RETAIL'
       }, { onConflict: 'id' }).select('id').single();
@@ -205,9 +242,11 @@ export class SyncService {
     if (!supplierId) return null;
     const cleanId = String(supplierId).trim();
     if (!cleanId) return null;
+    const storeId = this.getActiveStoreId();
     try {
       const { data, error } = await supabase.from('suppliers').upsert({
         id: cleanId,
+        store_id: storeId,
         name: supplierName || `Supplier ${cleanId}`
       }, { onConflict: 'id' }).select('id').single();
       if (!error && data?.id) return String(data.id);
@@ -306,11 +345,16 @@ export class SyncService {
 
   async saveTransactionOffline(transaction: Transaction): Promise<void> {
     const updatedStocks: Array<{ id: string; stock: number }> = [];
+    const activeStoreId = this.getActiveStoreId();
+    const trxToSave: Transaction = {
+      ...transaction,
+      store_id: transaction.store_id || activeStoreId
+    };
 
     await db.transaction('rw', db.transactions, db.products, db.syncQueue, async () => {
-      await db.transactions.put(transaction);
+      await db.transactions.put(trxToSave);
 
-      for (const item of transaction.items) {
+      for (const item of trxToSave.items) {
         const prod = await db.products.get(item.product_id);
         if (prod) {
           const newStock = Math.max(0, prod.stock - item.qty);
@@ -322,8 +366,8 @@ export class SyncService {
       }
 
       const queueItem: PendingSyncItem = {
-        id: transaction.id,
-        payload: transaction,
+        id: trxToSave.id,
+        payload: trxToSave,
         status: 'pending',
         attempts: 0,
         created_at: new Date().toISOString()
@@ -342,6 +386,7 @@ export class SyncService {
                 .from('products')
                 .update({ stock: s.stock, updated_at: new Date().toISOString() })
                 .eq('id', s.id)
+                .eq('store_id', activeStoreId)
             ).catch(() => {});
           }
         }
@@ -356,7 +401,7 @@ export class SyncService {
         const bc = new BroadcastChannel('ketoko_product_sync');
         bc.postMessage({
           type: 'transaction_created',
-          transaction,
+          transaction: trxToSave,
           updated_stocks: updatedStocks
         });
         bc.close();
@@ -367,15 +412,16 @@ export class SyncService {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('ketoko_transaction_created', {
-          detail: { transaction, updated_stocks: updatedStocks }
+          detail: { transaction: trxToSave, updated_stocks: updatedStocks }
         })
       );
     }
 
     // 4. Siarkan broadcast ke komputer kasir/admin di cloud (antar jaringan berbeda)
     this.broadcastCloudEvent('transaction_created', {
-      transaction,
-      ...transaction,
+      transaction: trxToSave,
+      ...trxToSave,
+      store_id: activeStoreId,
       updated_stocks: updatedStocks
     });
     if (updatedStocks.length > 0) {
@@ -383,11 +429,11 @@ export class SyncService {
     }
 
     notifySaleToTelegram({
-      receipt_number: transaction.receipt_number,
-      grand_total: transaction.grand_total,
-      cashier_name: transaction.cashier_name,
-      payment_method: transaction.payment_method,
-      total_items: transaction.items?.length || 1
+      receipt_number: trxToSave.receipt_number,
+      grand_total: trxToSave.grand_total,
+      cashier_name: trxToSave.cashier_name,
+      payment_method: trxToSave.payment_method,
+      total_items: trxToSave.items?.length || 1
     }).catch(() => {});
 
     this.notifyStatusChange();
@@ -484,9 +530,11 @@ export class SyncService {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
+          const storeId = this.getActiveStoreId();
           await Promise.allSettled([
-            supabase.from('products').delete().eq('id', cleanId),
+            supabase.from('products').delete().eq('id', cleanId).eq('store_id', storeId),
             supabase.from('sync_logs').insert({
+              store_id: storeId,
               branch_id: 'BR-01',
               operation_type: 'DELETE_PRODUCT',
               error_message: cleanId,
@@ -501,7 +549,7 @@ export class SyncService {
     }
 
     // 7. Siarkan realtime broadcast ke semua terminal kasir & admin di cloud (berbeda komputer)
-    await this.broadcastCloudEvent('product_deleted', { id: cleanId, product_id: cleanId });
+    await this.broadcastCloudEvent('product_deleted', { id: cleanId, product_id: cleanId, store_id: this.getActiveStoreId() });
 
     this.notifyStatusChange();
     return true;
@@ -548,12 +596,14 @@ export class SyncService {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
+          const storeId = this.getActiveStoreId();
           const batchSize = 100;
           for (let i = 0; i < cleanIds.length; i += batchSize) {
             const batch = cleanIds.slice(i, i + batchSize);
-            await supabase.from('products').delete().in('id', batch);
+            await supabase.from('products').delete().in('id', batch).eq('store_id', storeId);
 
             const logsToInsert = batch.map((bId) => ({
+              store_id: storeId,
               branch_id: 'BR-01',
               operation_type: 'DELETE_PRODUCT',
               error_message: bId,
@@ -571,7 +621,8 @@ export class SyncService {
     // 7. Siarkan realtime broadcast ke seluruh terminal kasir & admin di Cloud
     await this.broadcastCloudEvent('catalog_refreshed', {
       timestamp: new Date().toISOString(),
-      deletedCount: cleanIds.length
+      deletedCount: cleanIds.length,
+      store_id: this.getActiveStoreId()
     });
 
     this.notifyStatusChange();
@@ -586,6 +637,8 @@ export class SyncService {
     if (!supabase || !navigator.onLine) return { pushedCount: 0 };
 
     try {
+      const storeId = this.getActiveStoreId();
+
       // 1. Ambil daftar transaksi yang sudah dihapus dari tombstone lokal & Cloud
       const deletedIds = this.getDeletedTransactionIds();
 
@@ -595,6 +648,7 @@ export class SyncService {
           .from('sync_logs')
           .select('error_message')
           .eq('operation_type', 'DELETE_TRANSACTION')
+          .eq('store_id', storeId)
           .order('synced_at', { ascending: false })
           .limit(100);
 
@@ -621,8 +675,11 @@ export class SyncService {
       const validLocal = allLocal.filter((t) => !deletedIds.has(String(t.id)));
       if (validLocal.length === 0) return { pushedCount: 0 };
 
-      // Cek ID transaksi yang sudah ada di Supabase Cloud
-      const { data: cloudIdsData } = await supabase.from('transactions').select('id');
+      // Cek ID transaksi yang sudah ada di Supabase Cloud untuk store ini
+      const { data: cloudIdsData } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('store_id', storeId);
       const cloudIdSet = new Set((cloudIdsData || []).map((t: any) => String(t.id)));
 
       // Ambil transaksi yang belum ada di Cloud atau ditandai belum synced
@@ -639,6 +696,7 @@ export class SyncService {
 
           const trxPayload: any = {
             id: String(trx.id),
+            store_id: storeId,
             receipt_number: trx.receipt_number,
             branch_id: trx.branch_id || 'BR-01',
             cashier_id: trx.cashier_id || 'KASIR-01',
@@ -670,6 +728,7 @@ export class SyncService {
               await supabase.from('transaction_items').delete().eq('transaction_id', trx.id);
               const itemsPayload = trx.items.map((it) => ({
                 transaction_id: trx.id,
+                store_id: storeId,
                 product_id: String(it.product_id),
                 product_name: it.product_name,
                 qty: Number(it.qty) || 1,
@@ -695,7 +754,7 @@ export class SyncService {
       }
 
       if (pushed > 0) {
-        this.broadcastCloudEvent('transaction_created', { count: pushed, timestamp: new Date().toISOString() });
+        this.broadcastCloudEvent('transaction_created', { count: pushed, timestamp: new Date().toISOString(), store_id: storeId });
       }
 
       return { pushedCount: pushed };
@@ -713,6 +772,7 @@ export class SyncService {
     this.notifyStatusChange();
 
     try {
+      const storeId = this.getActiveStoreId();
       const pendingItems = await db.syncQueue
         .where('status')
         .equals('pending')
@@ -769,6 +829,7 @@ export class SyncService {
 
             const trxPayload: any = {
               id: String(trx.id),
+              store_id: storeId,
               receipt_number: trx.receipt_number,
               branch_id: trx.branch_id || branchId,
               cashier_id: trx.cashier_id || 'KASIR-01',
@@ -803,6 +864,7 @@ export class SyncService {
               await supabase.from('transaction_items').delete().eq('transaction_id', trx.id);
               const itemsPayload = trx.items.map((it) => ({
                 transaction_id: trx.id,
+                store_id: storeId,
                 product_id: String(it.product_id),
                 product_name: it.product_name,
                 qty: Number(it.qty) || 1,
@@ -826,6 +888,7 @@ export class SyncService {
 
         try {
           await supabase.from('sync_logs').insert({
+            store_id: storeId,
             branch_id: branchId,
             operation_type: 'PUSH_TRANSACTIONS',
             synced_records_count: syncedIds.length,
@@ -947,11 +1010,13 @@ export class SyncService {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
+          const storeId = this.getActiveStoreId();
           Promise.allSettled([
             supabase.from('transaction_items').delete().eq('transaction_id', trxId),
-            supabase.from('receivables').delete().eq('transaction_id', trxId),
-            supabase.from('transactions').delete().eq('id', trxId),
+            supabase.from('receivables').delete().eq('transaction_id', trxId).eq('store_id', storeId),
+            supabase.from('transactions').delete().eq('id', trxId).eq('store_id', storeId),
             supabase.from('sync_logs').insert({
+              store_id: storeId,
               branch_id: trx?.branch_id || 'BR-01',
               operation_type: 'DELETE_TRANSACTION',
               error_message: trxId,
@@ -968,6 +1033,7 @@ export class SyncService {
     // 9. Siarkan realtime broadcast ke semua terminal kasir di cloud (berbeda jaringan)
     this.broadcastCloudEvent('transaction_deleted', {
       transaction_id: trxId,
+      store_id: this.getActiveStoreId(),
       updated_stocks: updatedStocks
     });
     if (updatedStocks.length > 0) {
@@ -986,8 +1052,10 @@ export class SyncService {
    * 4. Kirim ke Supabase Cloud (agar kasir online menerima pembaruan secara real-time)
    */
   async syncProductChange(product: Product): Promise<void> {
+    const storeId = this.getActiveStoreId();
     const updatedProd: Product = {
       ...product,
+      store_id: product.store_id || storeId,
       updated_at: new Date().toISOString()
     };
 
@@ -1014,6 +1082,7 @@ export class SyncService {
           // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
           const cloudPayload = {
             id: String(updatedProd.id),
+            store_id: storeId,
             barcode: updatedProd.barcode || '',
             name: updatedProd.name,
             category: updatedProd.category || 'Kebutuhan Umum',
@@ -1036,7 +1105,7 @@ export class SyncService {
           }
 
           // Siarkan langsung event real-time ke seluruh komputer kasir di jaringan mana saja
-          this.broadcastCloudEvent('product_updated', updatedProd);
+          this.broadcastCloudEvent('product_updated', { ...updatedProd, store_id: storeId });
         }
       } catch (e) {
         console.warn('[Sync] Gagal push produk ke Supabase:', e);
@@ -1053,8 +1122,9 @@ export class SyncService {
     try {
       this.isSyncing = true;
       this.notifyStatusChange();
+      const storeId = this.getActiveStoreId();
 
-      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone) dengan pagination penuh
+      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone) untuk store ini
       const deletedProductIds = this.getDeletedProductIds();
       try {
         let fromLog = 0;
@@ -1064,6 +1134,7 @@ export class SyncService {
             .from('sync_logs')
             .select('error_message')
             .eq('operation_type', 'DELETE_PRODUCT')
+            .eq('store_id', storeId)
             .order('synced_at', { ascending: false })
             .range(fromLog, fromLog + stepLog - 1);
 
@@ -1090,7 +1161,7 @@ export class SyncService {
         await db.products.delete(delId).catch(() => {});
       }
 
-      // 2. Tarik SELURUH produk aktif dari Supabase dengan pagination lengkap
+      // 2. Tarik SELURUH produk aktif dari Supabase untuk store aktif ini
       let allCloudProducts: Product[] = [];
       let fromProd = 0;
       const stepProd = 1000;
@@ -1098,6 +1169,7 @@ export class SyncService {
         const { data: cloudBatch, error: prodErr } = await supabase
           .from('products')
           .select('*')
+          .eq('store_id', storeId)
           .order('name', { ascending: true })
           .range(fromProd, fromProd + stepProd - 1);
 
@@ -1162,6 +1234,7 @@ export class SyncService {
     try {
       this.isSyncing = true;
       this.notifyStatusChange();
+      const storeId = this.getActiveStoreId();
 
       // 1. Ambil seluruh produk aktif di IndexedDB lokal komputer ini
       const allProducts = await db.products.toArray();
@@ -1173,6 +1246,7 @@ export class SyncService {
       for (let i = 0; i < total; i += chunkSize) {
         const chunk = allProducts.slice(i, i + chunkSize).map((p) => ({
           id: String(p.id),
+          store_id: storeId,
           barcode: p.barcode || '',
           name: p.name,
           category: p.category || 'Umum',
@@ -1197,7 +1271,7 @@ export class SyncService {
         });
       }
 
-      // 3. Rekonsiliasi Ground Truth: Cari produk di Supabase yang SUDAH DIHAPUS di komputer ini
+      // 3. Rekonsiliasi Ground Truth: Cari produk di Supabase store ini yang SUDAH DIHAPUS di komputer ini
       const localIdSet = new Set(allProducts.map((p) => String(p.id).trim()));
       const remoteIdsToDelete: string[] = [];
       let from = 0;
@@ -1206,6 +1280,7 @@ export class SyncService {
         const { data: cloudBatch, error: listErr } = await supabase
           .from('products')
           .select('id')
+          .eq('store_id', storeId)
           .range(from, from + step - 1);
 
         if (listErr || !cloudBatch || cloudBatch.length === 0) break;
@@ -1227,9 +1302,10 @@ export class SyncService {
         const delBatchSize = 100;
         for (let i = 0; i < remoteIdsToDelete.length; i += delBatchSize) {
           const batch = remoteIdsToDelete.slice(i, i + delBatchSize);
-          await supabase.from('products').delete().in('id', batch);
+          await supabase.from('products').delete().in('id', batch).eq('store_id', storeId);
 
           const logsToInsert = batch.map((bId) => ({
+            store_id: storeId,
             branch_id: 'BR-01',
             operation_type: 'DELETE_PRODUCT',
             error_message: bId,
@@ -1245,7 +1321,8 @@ export class SyncService {
       await this.broadcastCloudEvent('catalog_refreshed', {
         timestamp: new Date().toISOString(),
         totalProducts: total,
-        deletedProducts: deletedCount
+        deletedProducts: deletedCount,
+        store_id: storeId
       });
 
       this.lastSyncTime = new Date().toISOString();
@@ -1276,22 +1353,25 @@ export class SyncService {
     if (!supabase) return { count: 0, error: 'Supabase tidak aktif' };
 
     try {
+      const storeId = this.getActiveStoreId();
       const { data: cloudTrx, error: trxErr } = await supabase
         .from('transactions')
         .select('*')
+        .eq('store_id', storeId)
         .order('created_at', { ascending: false })
         .limit(limit);
 
       if (trxErr) throw trxErr;
       if (!cloudTrx || cloudTrx.length === 0) return { count: 0 };
 
-      // 1. Ambil daftar transaksi yang sudah dihapus (Tombstone)
+      // 1. Ambil daftar transaksi yang sudah dihapus (Tombstone) untuk store ini
       const deletedIds = this.getDeletedTransactionIds();
       try {
         const { data: remoteDeleted } = await supabase
           .from('sync_logs')
           .select('error_message')
           .eq('operation_type', 'DELETE_TRANSACTION')
+          .eq('store_id', storeId)
           .order('synced_at', { ascending: false })
           .limit(100);
 
@@ -1349,6 +1429,7 @@ export class SyncService {
 
         formatted.push({
           id: String(t.id),
+          store_id: storeId,
           receipt_number: t.receipt_number || `TRX-${t.id}`,
           branch_id: t.branch_id || 'BR-01',
           cashier_id: t.cashier_id || 'KASIR-01',
@@ -1386,29 +1467,36 @@ export class SyncService {
    * Upload faktur pembelian barang ke Cloud Supabase
    */
   async pushPurchaseToSupabase(purchase: any): Promise<boolean> {
+    const storeId = this.getActiveStoreId();
+    const purchaseWithStore = {
+      ...purchase,
+      store_id: purchase.store_id || storeId
+    };
+
     // Siarkan event ke seluruh komputer kasir/admin di jaringan berbeda
-    this.broadcastCloudEvent('purchase_created', purchase);
+    this.broadcastCloudEvent('purchase_created', purchaseWithStore);
 
     const supabase = getSupabaseClient();
     if (!supabase) return false;
 
     try {
       const { error } = await supabase.from('purchases').upsert({
-        id: purchase.id,
-        invoice_number: purchase.invoice_number,
-        supplier_id: purchase.supplier_id,
-        supplier_name: purchase.supplier_name,
-        date: purchase.date,
-        payment_type: purchase.payment_type || 'CASH',
-        due_date: purchase.due_date || null,
-        subtotal: purchase.subtotal || purchase.total,
-        discount: purchase.discount || 0,
-        total: purchase.total,
-        status: purchase.status || 'RECEIVED',
-        cashier_name: purchase.cashier_name || 'Admin',
-        notes: purchase.notes || null,
-        items: purchase.items || [],
-        created_at: purchase.created_at || new Date().toISOString()
+        id: purchaseWithStore.id,
+        store_id: storeId,
+        invoice_number: purchaseWithStore.invoice_number,
+        supplier_id: purchaseWithStore.supplier_id,
+        supplier_name: purchaseWithStore.supplier_name,
+        date: purchaseWithStore.date,
+        payment_type: purchaseWithStore.payment_type || 'CASH',
+        due_date: purchaseWithStore.due_date || null,
+        subtotal: purchaseWithStore.subtotal || purchaseWithStore.total,
+        discount: purchaseWithStore.discount || 0,
+        total: purchaseWithStore.total,
+        status: purchaseWithStore.status || 'RECEIVED',
+        cashier_name: purchaseWithStore.cashier_name || 'Admin',
+        notes: purchaseWithStore.notes || null,
+        items: purchaseWithStore.items || [],
+        created_at: purchaseWithStore.created_at || new Date().toISOString()
       });
 
       if (error) {
@@ -1429,9 +1517,11 @@ export class SyncService {
     if (!supabase) return { count: 0 };
 
     try {
+      const storeId = this.getActiveStoreId();
       const { data, error } = await supabase
         .from('purchases')
         .select('*')
+        .eq('store_id', storeId)
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -1439,6 +1529,7 @@ export class SyncService {
 
       const parsedPurchases = data.map((p: any) => ({
         id: p.id,
+        store_id: storeId,
         invoice_number: p.invoice_number,
         supplier_id: p.supplier_id,
         supplier_name: p.supplier_name,
@@ -1470,6 +1561,8 @@ export class SyncService {
     if (!supabase) return;
 
     try {
+      const storeId = this.getActiveStoreId();
+
       // 1. Push local debts
       const localDebts = await db.debts.toArray();
       if (localDebts.length > 0) {
@@ -1481,6 +1574,7 @@ export class SyncService {
 
         const debtsPayload = localDebts.map(d => ({
           id: d.id,
+          store_id: storeId,
           supplier_id: d.supplier_id || null,
           supplier_name: d.supplier_name || 'Supplier Umum',
           invoice_number: d.invoice_number,
@@ -1500,11 +1594,12 @@ export class SyncService {
         }
       }
 
-      // 2. Pull cloud debts
-      const { data: cloudDebts } = await supabase.from('debts').select('*');
+      // 2. Pull cloud debts for this store
+      const { data: cloudDebts } = await supabase.from('debts').select('*').eq('store_id', storeId);
       if (cloudDebts && cloudDebts.length > 0) {
         await db.debts.bulkPut(cloudDebts.map((d: any) => ({
           id: d.id,
+          store_id: storeId,
           supplier_id: d.supplier_id || undefined,
           supplier_name: d.supplier_name,
           invoice_number: d.invoice_number,
@@ -1529,6 +1624,7 @@ export class SyncService {
 
         const recsPayload = localRecs.map(r => ({
           id: r.id,
+          store_id: storeId,
           customer_id: r.customer_id || null,
           customer_name: r.customer_name || 'Pelanggan Umum',
           transaction_id: r.transaction_id || null,
@@ -1549,11 +1645,12 @@ export class SyncService {
         }
       }
 
-      // 4. Pull cloud receivables
-      const { data: cloudRecs } = await supabase.from('receivables').select('*');
+      // 4. Pull cloud receivables for this store
+      const { data: cloudRecs } = await supabase.from('receivables').select('*').eq('store_id', storeId);
       if (cloudRecs && cloudRecs.length > 0) {
         await db.receivables.bulkPut(cloudRecs.map((r: any) => ({
           id: r.id,
+          store_id: storeId,
           customer_id: r.customer_id || undefined,
           customer_name: r.customer_name,
           transaction_id: r.transaction_id || undefined,
@@ -1571,7 +1668,7 @@ export class SyncService {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('ketoko_debt_receivable_updated'));
       }
-      this.broadcastCloudEvent('debt_receivable_updated', { timestamp: new Date().toISOString() });
+      this.broadcastCloudEvent('debt_receivable_updated', { timestamp: new Date().toISOString(), store_id: storeId });
     } catch (err: any) {
       console.warn('[SyncService] Gagal sinkron hutang piutang:', err.message);
     }

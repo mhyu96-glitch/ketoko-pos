@@ -16,6 +16,7 @@ export interface Product {
   discount_percent?: number;
   weight_label?: string;
   rating?: number;
+  store_id?: string;
   updated_at?: string;
 }
 
@@ -52,6 +53,7 @@ export interface Transaction {
   receipt_number: string;
   cashier_id: string;
   cashier_name?: string;
+  store_id?: string;
   branch_id?: string;
   member_id?: string;
   items: TransactionItem[];
@@ -131,6 +133,7 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
+  store_id?: string;
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
@@ -145,6 +148,7 @@ export interface Supplier {
   sales_contact: string;
   phone: string;
   address: string;
+  store_id?: string;
   payment_term_days?: number; // e.g. 14 or 30 days
   current_debt?: number;
   notes?: string;
@@ -154,6 +158,7 @@ export interface Supplier {
 // 2. Hutang & Piutang
 export interface DebtItem {
   id: string;
+  store_id?: string;
   supplier_id: string;
   supplier_code?: string;
   supplier_name: string;
@@ -173,6 +178,7 @@ export type DebtRecord = DebtItem;
 
 export interface ReceivableItem {
   id: string;
+  store_id?: string;
   customer_id: string;
   customer_code?: string;
   customer_name: string;
@@ -203,6 +209,7 @@ export interface PurchaseItem {
 
 export interface PurchaseRecord {
   id: string;
+  store_id?: string;
   invoice_number: string;
   supplier_id: string;
   supplier_name: string;
