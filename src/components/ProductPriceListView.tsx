@@ -33,6 +33,43 @@ import { convertImageFileToWebP, type ImageConversionResult } from '../utils/ima
 import { CustomSelect } from './CustomSelect';
 import { syncService } from '../services/syncService';
 
+// Format angka ke string titik ribuan Indonesia (contoh: 10950 -> "10.950")
+export const formatRupiahInput = (val: string | number | undefined | null): string => {
+  if (val === undefined || val === null) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return '';
+  return parseInt(digits, 10).toLocaleString('id-ID');
+};
+
+// Parse string titik ribuan ke angka murni (contoh: "10.950" -> 10950)
+export const parseRupiahInput = (val: string | number | undefined | null): number => {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return 0;
+  return parseInt(digits, 10) || 0;
+};
+
+// Parser cerdas untuk CSV/Excel impor angka Indonesia
+export const parseIndonesianNumber = (raw: string | undefined | null): number => {
+  if (!raw) return 0;
+  const s = String(raw).trim();
+  if (s.includes('.')) {
+    if (s.includes(',')) {
+      const clean = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+      return Math.round(Number(clean)) || 0;
+    }
+    const parts = s.split('.');
+    const isThousand = parts.length > 2 || (parts.length === 2 && parts[1].length === 3);
+    if (isThousand) {
+      const clean = s.replace(/\./g, '').replace(/[^\d-]/g, '');
+      return Number(clean) || 0;
+    }
+  }
+  const clean = s.replace(/,/g, '.').replace(/[^\d.-]/g, '');
+  return Math.round(Number(clean)) || 0;
+};
+
 interface ProductPriceListViewProps {
   products: Product[];
   onGoToPOS: () => void;
@@ -75,9 +112,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
   // Edit form state
   const [editName, setEditName] = useState('');
-  const [editBuyPrice, setEditBuyPrice] = useState<number>(0);
-  const [editRetailPrice, setEditRetailPrice] = useState<number>(0);
-  const [editWholesalePrice, setEditWholesalePrice] = useState<number>(0);
+  const [editBuyPrice, setEditBuyPrice] = useState<string>('0');
+  const [editRetailPrice, setEditRetailPrice] = useState<string>('0');
+  const [editWholesalePrice, setEditWholesalePrice] = useState<string>('0');
   const [editMinWholesaleQty, setEditMinWholesaleQty] = useState<number>(1);
   const [editStock, setEditStock] = useState<number>(0);
   const [editRackLocation, setEditRackLocation] = useState('');
@@ -171,9 +208,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
   const handleStartEdit = (prod: Product) => {
     setEditingProduct(prod);
     setEditName(prod.name);
-    setEditBuyPrice(prod.buy_price);
-    setEditRetailPrice(prod.retail_price);
-    setEditWholesalePrice(prod.wholesale_price);
+    setEditBuyPrice(prod.buy_price != null ? formatRupiahInput(prod.buy_price) : '0');
+    setEditRetailPrice(prod.retail_price != null ? formatRupiahInput(prod.retail_price) : '0');
+    setEditWholesalePrice(prod.wholesale_price != null ? formatRupiahInput(prod.wholesale_price) : '0');
     setEditMinWholesaleQty(prod.min_wholesale_qty);
     setEditStock(prod.stock);
     setEditRackLocation(prod.rack_location);
@@ -219,9 +256,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         name: editName.trim(),
         category: editCategory,
         unit: editUnit,
-        buy_price: editBuyPrice,
-        retail_price: editRetailPrice,
-        wholesale_price: editWholesalePrice,
+        buy_price: parseRupiahInput(editBuyPrice),
+        retail_price: parseRupiahInput(editRetailPrice),
+        wholesale_price: parseRupiahInput(editWholesalePrice),
         min_wholesale_qty: editMinWholesaleQty,
         stock: editStock,
         rack_location: editRackLocation.trim(),
@@ -380,14 +417,14 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
         const barcode = barcodeIdx !== -1 ? row[barcodeIdx] : row[0] || "";
         const category = catIdx !== -1 ? row[catIdx] : "Sembako";
-        const buy_price = buyPriceIdx !== -1 ? Number(row[buyPriceIdx].replace(/[^\d.-]/g, "")) || 0 : 0;
-        const retail_price = retailPriceIdx !== -1 ? Number(row[retailPriceIdx].replace(/[^\d.-]/g, "")) || 0 : 0;
-        const wholesale_price = wholesaleIdx !== -1 ? Number(row[wholesaleIdx].replace(/[^\d.-]/g, "")) || 0 : retail_price;
-        const min_wholesale_qty = minWholesaleQtyIdx !== -1 ? Number(row[minWholesaleQtyIdx].replace(/[^\d.-]/g, "")) || 1 : 1;
-        const stock = stockIdx !== -1 ? Number(row[stockIdx].replace(/[^\d.-]/g, "")) || 0 : 0;
+        const buy_price = buyPriceIdx !== -1 ? parseIndonesianNumber(row[buyPriceIdx]) : 0;
+        const retail_price = retailPriceIdx !== -1 ? parseIndonesianNumber(row[retailPriceIdx]) : 0;
+        const wholesale_price = wholesaleIdx !== -1 ? parseIndonesianNumber(row[wholesaleIdx]) : retail_price;
+        const min_wholesale_qty = minWholesaleQtyIdx !== -1 ? parseIndonesianNumber(row[minWholesaleQtyIdx]) || 1 : 1;
+        const stock = stockIdx !== -1 ? parseIndonesianNumber(row[stockIdx]) : 0;
         const unit = unitIdx !== -1 ? row[unitIdx] || "Pcs" : "Pcs";
         const rack_location = rackIdx !== -1 ? row[rackIdx] || "Gudang Utama" : "Gudang Utama";
-        const min_stock_alert = minStockAlertIdx !== -1 ? Number(row[minStockAlertIdx].replace(/[^\d.-]/g, "")) || 5 : 5;
+        const min_stock_alert = minStockAlertIdx !== -1 ? parseIndonesianNumber(row[minStockAlertIdx]) || 5 : 5;
 
         parsed.push({
           id: barcode || `PRD-${Date.now()}-${i}`,
@@ -1096,36 +1133,36 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                 <div>
                   <label className="text-[#8a6b53] mb-1 block font-medium">Harga Modal Beli (Rp)</label>
                   <input
-                    type="number"
-                    min="0"
-                    step="100"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
                     value={editBuyPrice}
-                    onChange={(e) => setEditBuyPrice(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#3d2617] font-mono font-semibold rounded-lg border border-[#ddc3aa]"
+                    onChange={(e) => setEditBuyPrice(formatRupiahInput(e.target.value))}
+                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#3d2617] font-mono font-semibold rounded-lg border border-[#ddc3aa] focus:bg-white focus:border-[#96633b] focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="text-[#8a6b53] mb-1 block font-medium">Harga Jual Eceran (Rp)</label>
                   <input
-                    type="number"
-                    min="0"
-                    step="100"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
                     value={editRetailPrice}
-                    onChange={(e) => setEditRetailPrice(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#166534] font-mono font-bold rounded-lg border border-[#ddc3aa]"
+                    onChange={(e) => setEditRetailPrice(formatRupiahInput(e.target.value))}
+                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#166534] font-mono font-bold rounded-lg border border-[#ddc3aa] focus:bg-white focus:border-[#96633b] focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="text-[#8a6b53] mb-1 block font-medium">Harga Grosir (Rp)</label>
                   <input
-                    type="number"
-                    min="0"
-                    step="100"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
                     value={editWholesalePrice}
-                    onChange={(e) => setEditWholesalePrice(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#96633b] font-mono font-bold rounded-lg border border-[#ddc3aa]"
+                    onChange={(e) => setEditWholesalePrice(formatRupiahInput(e.target.value))}
+                    className="w-full px-3 py-1.5 bg-[#fcf9f5] text-[#96633b] font-mono font-bold rounded-lg border border-[#ddc3aa] focus:bg-white focus:border-[#96633b] focus:outline-none"
                   />
                 </div>
 
@@ -1140,6 +1177,21 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                   />
                 </div>
               </div>
+
+              {/* Profit & Margin Live Preview */}
+              {parseRupiahInput(editRetailPrice) > 0 && (
+                <div className="flex items-center justify-between px-3.5 py-2 bg-[#fcf9f5] rounded-xl border border-[#eed7c4] text-xs">
+                  <span className="text-[#8a6b53] font-medium">Estimasi Keuntungan Eceran:</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono font-bold text-[#166534]">
+                      Rp {(parseRupiahInput(editRetailPrice) - parseRupiahInput(editBuyPrice)).toLocaleString('id-ID')}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#edf5ee] text-[#166534] font-mono font-bold text-[11px] border border-[#cce2cf]">
+                      Margin +{(((parseRupiahInput(editRetailPrice) - parseRupiahInput(editBuyPrice)) / parseRupiahInput(editRetailPrice)) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Stock & Location */}
               <div className="grid grid-cols-2 gap-3">

@@ -369,7 +369,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         ref={inputRef}
                         type="number"
                         min="0"
-                        step="1000"
+                        step="1"
                         value={cashGiven || ''}
                         onChange={(e) => setCashGiven(Number(e.target.value) || 0)}
                         placeholder="0"
@@ -474,7 +474,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     type="number"
                     min="0"
                     max={grandTotal}
-                    step="1000"
+                    step="1"
                     value={dpGiven || ''}
                     onChange={(e) => setDpGiven(Math.min(grandTotal, Math.max(0, Number(e.target.value) || 0)))}
                     placeholder="0 (jika belum bayar sama sekali)"

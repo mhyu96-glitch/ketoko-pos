@@ -15,6 +15,22 @@ import { formatRupiah, printShiftReport } from '../services/escposService';
 import { exportReportToPDF } from '../services/pdfReportService';
 import { db } from '../db';
 
+// Helper: format angka ke string titik ribuan (contoh: 10950 -> "10.950")
+const formatRupiahInput = (val: string | number | undefined | null): string => {
+  if (val === undefined || val === null) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return '';
+  return parseInt(digits, 10).toLocaleString('id-ID');
+};
+
+const parseRupiahInput = (val: string | number | undefined | null): number => {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return 0;
+  return parseInt(digits, 10) || 0;
+};
+
 interface ShiftReportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -35,9 +51,10 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
   const [printStatus, setPrintStatus] = useState<string | null>(null);
 
   // Shift Cash Balancing States
-  const [openingCash, setOpeningCash] = useState<number>(() => {
+  const [openingCashInput, setOpeningCashInput] = useState<string>(() => {
     const saved = localStorage.getItem('ketoko_shift_opening_cash');
-    return saved ? Number(saved) : 100000;
+    const val = saved ? Number(saved) : 100000;
+    return val ? val.toLocaleString('id-ID') : '100.000';
   });
   const [actualCashInput, setActualCashInput] = useState<string>('');
 
@@ -107,9 +124,12 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
     .filter((t) => t.payment_method === 'TRANSFER')
     .reduce((sum, t) => sum + t.grand_total, 0);
 
+  // Opening Float parsed from formatted input
+  const openingCash = parseRupiahInput(openingCashInput);
+
   // Expected Cash in Drawer = Opening Float + Cash Sales
   const expectedCash = openingCash + cashTotal;
-  const actualCash = actualCashInput ? Number(actualCashInput.replace(/\D/g, '')) : expectedCash;
+  const actualCash = actualCashInput ? parseRupiahInput(actualCashInput) : expectedCash;
   const variance = actualCash - expectedCash;
 
   const handleExportShiftPDF = () => {
@@ -278,11 +298,14 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
                   Modal Awal Kasir (Rp):
                 </label>
                 <input
-                  type="number"
-                  value={openingCash}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={openingCashInput}
                   onChange={(e) => {
-                    const val = Number(e.target.value) || 0;
-                    setOpeningCash(val);
+                    const formatted = formatRupiahInput(e.target.value);
+                    setOpeningCashInput(formatted);
+                    const val = parseRupiahInput(formatted);
                     localStorage.setItem('ketoko_shift_opening_cash', String(val));
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[#fdfaf7] border border-[#ddc3aa] text-xs font-mono font-bold text-[#3d2617] focus:outline-none focus:ring-2 focus:ring-[#96633b]"
@@ -295,10 +318,11 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
                   Uang Fisik Dihitung (Rp):
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={actualCashInput}
-                  onChange={(e) => setActualCashInput(e.target.value)}
-                  placeholder={String(expectedCash)}
+                  onChange={(e) => setActualCashInput(formatRupiahInput(e.target.value))}
+                  placeholder={expectedCash.toLocaleString('id-ID')}
                   className="w-full px-3 py-2 rounded-xl bg-[#fdfaf7] border border-[#ddc3aa] text-xs font-mono font-bold text-[#3d2617] focus:outline-none focus:ring-2 focus:ring-[#96633b]"
                 />
               </div>
