@@ -13,10 +13,10 @@ import type { PrinterConfig } from './PrinterSettingsModal';
 import { 
   formatRupiah, 
   ESCPOSBuilder, 
-  printReceiptUniversal,
   printToWebUSB,
   printToWebSerial,
   printToWebBluetooth,
+  printThermalReceiptSpooler,
   printEpsonLX310Invoice
 } from '../services/escposService';
 
@@ -27,8 +27,10 @@ interface ReceiptModalProps {
   cashierName?: string;
 }
 
+const IS_WINDOWS_OS = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
+
 const DEFAULT_CONFIG: PrinterConfig = {
-  driverType: 'USB',
+  driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
   paperWidth: '58mm',
   autoCut: true,
   headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
@@ -100,7 +102,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       } else if (config.driverType === 'BLUETOOTH') {
         res = await printToWebBluetooth(rawBytes);
       } else {
-        res = await printReceiptUniversal(rawBytes, 'BROWSER');
+        res = await printThermalReceiptSpooler(transaction, config);
       }
 
       setPrintStatus(res);
@@ -130,8 +132,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   };
 
-  const handleBrowserPrint = () => {
-    window.print();
+  const handleBrowserPrint = async () => {
+    const res = await printThermalReceiptSpooler(transaction, config);
+    setPrintStatus(res);
   };
 
   const handleSelectPaperSize = (size: any) => {

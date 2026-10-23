@@ -266,21 +266,35 @@ export function formatRupiah(num: number): string {
   return 'Rp ' + (num || 0).toLocaleString('id-ID');
 }
 
+let cachedUsbDevice: any = null;
+
 /**
- * Direct WebUSB Printer Driver (Linux / Chromium / Edge)
- * Supports Xprinter, Epson, POS-58, POS-80, Panda, Sunmi, VSC, Panda, Eppos
+ * Direct WebUSB Printer Driver (Windows WinUSB / Linux / Chromium / Edge)
+ * Supports Xprinter, Epson, POS-58, POS-80, Panda, Sunmi, VSC, Eppos, Iware
+ * Otomatis fallback ke Windows Thermal Spooler jika port USB dikunci oleh driver Windows (usbprint.sys)
  */
-export async function printToWebUSB(data: Uint8Array): Promise<{ success: boolean; message: string }> {
+export async function printToWebUSB(data: Uint8Array, forceNewDevice = false): Promise<{ success: boolean; message: string }> {
   try {
     if (!('usb' in navigator)) {
-      return { 
-        success: false, 
-        message: 'WebUSB API tidak didukung browser ini. Gunakan Google Chrome atau Edge di Linux.' 
-      };
+      return await printRawBufferViaSpooler(data);
     }
 
-    // @ts-ignore
-    const device: USBDevice = await navigator.usb.requestDevice({ filters: [] });
+    let device: any = !forceNewDevice ? cachedUsbDevice : null;
+    if (!device && !forceNewDevice && typeof (navigator as any).usb.getDevices === 'function') {
+      try {
+        const permitted = await (navigator as any).usb.getDevices();
+        if (permitted && permitted.length > 0) {
+          device = permitted[0];
+        }
+      } catch {}
+    }
+
+    if (!device) {
+      // @ts-ignore
+      device = await navigator.usb.requestDevice({ filters: [] });
+    }
+
+    cachedUsbDevice = device;
     await device.open();
 
     if (device.configuration === null) {
@@ -319,11 +333,17 @@ export async function printToWebUSB(data: Uint8Array): Promise<{ success: boolea
     if (err.name === 'NotFoundError') {
       return { success: false, message: 'Pemilihan printer USB dibatalkan oleh pengguna.' };
     }
-    if (err.name === 'SecurityError' || err.message?.includes('access denied')) {
-      return { 
-        success: false, 
-        message: 'Izin USB Linux ditolak. Jalankan di terminal Linux: sudo chmod 666 /dev/bus/usb/*/* atau tambahkan user ke group dialout/lp.' 
-      };
+    const msg = String(err.message || '').toLowerCase();
+    // Di Windows 10/11, driver bawaan Windows (POS-58 / POS-80 / usbprint.sys) mengunci interface USB.
+    // Otomatis alihkan ke Windows Thermal Spooler (58mm/80mm) agar struk tetap langsung tercetak!
+    if (
+      err.name === 'NetworkError' ||
+      err.name === 'SecurityError' ||
+      msg.includes('claim interface') ||
+      msg.includes('access denied') ||
+      msg.includes('unable to claim')
+    ) {
+      return await printRawBufferViaSpooler(data);
     }
     return { 
       success: false, 
@@ -613,19 +633,330 @@ export async function printToWebBluetooth(data: Uint8Array): Promise<{ success: 
 }
 
 /**
- * Universal Print Dispatcher (Dispatches to WebUSB, WebSerial, Bluetooth, or Browser Print)
+ * Cetak HTML terisolasi lewat Hidden Iframe (untuk Windows Spooler POS-58 / POS-80 / CUPS)
+ * Hanya mencetak struk thermal 58mm/80mm tanpa ikut mencetak tampilan layar kasir web
+ */
+function printHtmlInIsolatedFrame(html: string): void {
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (doc) {
+    doc.open();
+    doc.write(html);
+    doc.close();
+  }
+  setTimeout(() => {
+    try {
+      iframe.remove();
+    } catch {}
+  }, 25000);
+}
+
+/**
+ * Konversi raw byte ESC/POS menjadi cetakan Windows Thermal Spooler (58mm/80mm)
+ */
+export async function printRawBufferViaSpooler(
+  data: Uint8Array,
+  paperWidth: '58mm' | '80mm' = '58mm'
+): Promise<{ success: boolean; message: string }> {
+  try {
+    let savedWidth: '58mm' | '80mm' = paperWidth;
+    try {
+      const saved = localStorage.getItem('ketoko_printer_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.paperWidth === '80mm') savedWidth = '80mm';
+      }
+    } catch {}
+
+    // Bersihkan byte kontrol ESC/POS menjadi teks murni baris-per-baris
+    const cleanBytes: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const b = data[i];
+      if (b === 0x1B) {
+        const next = data[i + 1];
+        if (next === 0x40) { i += 1; continue; }
+        if (next === 0x61 || next === 0x45) { i += 2; continue; }
+        if (next === 0x70) { i += 4; continue; }
+        i += 1;
+        continue;
+      }
+      if (b === 0x1D) {
+        const next = data[i + 1];
+        if (next === 0x21) { i += 2; continue; }
+        if (next === 0x56) { i += (data[i + 2] === 0x42 ? 3 : 2); continue; }
+        i += 1;
+        continue;
+      }
+      if (b === 0x0A || b === 0x0D || (b >= 32 && b <= 126) || b >= 160) {
+        cleanBytes.push(b);
+      }
+    }
+
+    const text = new TextDecoder().decode(new Uint8Array(cleanBytes)).trim();
+    const is80 = savedWidth === '80mm';
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Struk Thermal POS</title>
+  <style>
+    @page {
+      size: ${is80 ? '80mm' : '58mm'} auto;
+      margin: 0mm;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: ${is80 ? '72mm' : '48mm'};
+      margin: 0 auto;
+      padding: 2mm 1mm 6mm 1mm;
+      font-family: 'Courier New', Consolas, monospace;
+      font-size: ${is80 ? '11.5px' : '10px'};
+      line-height: 1.28;
+      color: #000;
+      background: #fff;
+      font-weight: 600;
+    }
+    pre {
+      font-family: inherit;
+      font-size: inherit;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <pre>${escaped}</pre>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 150);
+    };
+  </script>
+</body>
+</html>`;
+
+    printHtmlInIsolatedFrame(html);
+    return {
+      success: true,
+      message: `Mencetak struk thermal (${savedWidth}) melalui Driver Printer Windows / OS Spooler!`
+    };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal mencetak ke Windows Thermal Spooler' };
+  }
+}
+
+/**
+ * Cetak Struk Kasir Thermal 58mm/80mm terformat penuh via Driver Printer Windows (POS-58 / POS-80 / Epson / Xprinter)
+ */
+export async function printThermalReceiptSpooler(
+  transaction: Transaction,
+  config: PrinterConfig
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const is80 = config.paperWidth === '80mm';
+    const headerLines = (config.headerText || 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu').split('\n');
+    const storeTitle = headerLines[0] || 'KETOKO POS';
+    const storeSubLines = headerLines.slice(1);
+    const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n');
+    const cashGiven = transaction.cash_given || transaction.grand_total;
+    const changeDue = Math.max(0, cashGiven - transaction.grand_total);
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Struk ${transaction.receipt_number}</title>
+  <style>
+    @page {
+      size: ${is80 ? '80mm' : '58mm'} auto;
+      margin: 0mm;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: ${is80 ? '72mm' : '48mm'};
+      margin: 0 auto;
+      padding: 2mm 1mm 6mm 1mm;
+      font-family: 'Courier New', Consolas, 'Lucida Console', monospace;
+      font-size: ${is80 ? '11.5px' : '10px'};
+      line-height: 1.25;
+      color: #000000;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: 800; }
+    .title { font-size: ${is80 ? '14px' : '12px'}; font-weight: 900; margin-bottom: 2px; }
+    .sub { font-size: ${is80 ? '10.5px' : '9px'}; line-height: 1.2; }
+    .divider { border-top: 1px dashed #000; margin: 4px 0; }
+    .divider-double { border-top: 2px solid #000; margin: 4px 0; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; margin: 1.5px 0; }
+    .item-title { font-weight: 700; margin-top: 2px; word-break: break-word; }
+    .total-row { font-size: ${is80 ? '13px' : '11.5px'}; font-weight: 900; padding: 2px 0; }
+    .logo { max-width: ${is80 ? '36mm' : '26mm'}; max-height: 18mm; object-fit: contain; margin: 0 auto 3px auto; display: block; filter: grayscale(100%) contrast(150%); }
+    .badge { border: 1px solid #000; padding: 1px 4px; font-weight: 800; display: inline-block; margin: 2px 0; font-size: ${is80 ? '10.5px' : '9px'}; }
+  </style>
+</head>
+<body>
+  <div class="center">
+    ${config.showLogo && config.logoUrl ? `<img src="${config.logoUrl}" class="logo" alt="Logo" />` : ''}
+    <div class="title">${storeTitle}</div>
+    ${storeSubLines.map((l) => `<div class="sub">${l}</div>`).join('')}
+    ${config.showQueueNumber ? `<div class="badge">ANTRIAN #${transaction.receipt_number.slice(-3)}</div>` : ''}
+  </div>
+
+  <div class="divider-double"></div>
+
+  <div class="row">
+    <span>No: <b>${transaction.receipt_number}</b></span>
+    <span>${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+  </div>
+  <div class="row">
+    <span>Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}</span>
+    ${config.showCashier ? `<span>Ksr: ${transaction.cashier_name || 'Kasir'}</span>` : ''}
+  </div>
+  ${transaction.customer_name || transaction.member_id ? `<div class="row"><span>Plg: <b>${transaction.customer_name || `Member #${transaction.member_id}`}</b></span></div>` : ''}
+
+  <div class="divider"></div>
+
+  ${transaction.items.map((item, idx) => `
+    <div>
+      <div class="item-title">${idx + 1}. ${item.product_name}</div>
+      <div class="row">
+        <span style="padding-left:8px;">${item.qty} x ${formatRupiah(item.price_applied)}</span>
+        <span class="bold">${formatRupiah(item.subtotal_item)}</span>
+      </div>
+    </div>
+  `).join('')}
+
+  <div class="divider"></div>
+
+  <div class="row">
+    <span>Subtotal</span>
+    <span>${formatRupiah(transaction.subtotal)}</span>
+  </div>
+  ${transaction.discount_amount > 0 ? `
+  <div class="row">
+    <span>Diskon</span>
+    <span>-${formatRupiah(transaction.discount_amount)}</span>
+  </div>` : ''}
+  ${transaction.tax_amount > 0 ? `
+  <div class="row">
+    <span>PPN</span>
+    <span>${formatRupiah(transaction.tax_amount)}</span>
+  </div>` : ''}
+
+  <div class="divider-double"></div>
+
+  <div class="row total-row">
+    <span>TOTAL</span>
+    <span>${formatRupiah(transaction.grand_total)}</span>
+  </div>
+  <div class="row">
+    <span>Bayar (${transaction.payment_method})</span>
+    <span>${formatRupiah(cashGiven)}</span>
+  </div>
+  <div class="row bold">
+    <span>${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span>
+    <span>${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="center" style="margin-top:4px;">
+    ${footerLines.map((l) => `<div class="sub">${l}</div>`).join('')}
+    ${config.showBarcodeFooter ? `<div style="margin-top:4px;font-weight:800;letter-spacing:1px;">*${transaction.receipt_number}*</div>` : ''}
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 180);
+    };
+  </script>
+</body>
+</html>`;
+
+    printHtmlInIsolatedFrame(html);
+    return {
+      success: true,
+      message: `Struk thermal (${config.paperWidth}) berhasil dikirim ke Driver Printer Windows / OS!`
+    };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal mencetak struk thermal Windows' };
+  }
+}
+
+/**
+ * Uji Cetak (Test Print) untuk Driver Printer Thermal Windows (POS-58 / POS-80)
+ */
+export async function printThermalTestSpooler(config: PrinterConfig): Promise<{ success: boolean; message: string }> {
+  const sampleTrx: Transaction = {
+    id: 'TEST-THERMAL-WIN',
+    receipt_number: 'TRX-TEST-001',
+    cashier_id: 'USR-01',
+    cashier_name: 'Kasir Utama',
+    branch_id: 'BR-01',
+    items: [
+      {
+        product_id: '101962',
+        product_name: 'PIPA AC EMERXON 1/4-3/8',
+        qty: 1,
+        unit: 'Roll',
+        buy_price: 2500000,
+        price_applied: 2750000,
+        is_wholesale: false,
+        subtotal_item: 2750000
+      },
+      {
+        product_id: '102855',
+        product_name: 'CAPASITOR IMA 15UF',
+        qty: 2,
+        unit: 'Pcs',
+        buy_price: 27500,
+        price_applied: 33000,
+        is_wholesale: false,
+        subtotal_item: 66000
+      }
+    ],
+    subtotal: 2816000,
+    discount_amount: 16000,
+    tax_amount: 0,
+    grand_total: 2800000,
+    payment_method: 'CASH',
+    cash_given: 2800000,
+    change_returned: 0,
+    synced: true,
+    created_at: new Date().toISOString()
+  };
+  return await printThermalReceiptSpooler(sampleTrx, config);
+}
+
+/**
+ * Universal Print Dispatcher (Dispatches to WebUSB, WebSerial, Bluetooth, or Windows/OS Thermal Spooler)
  */
 export async function printReceiptUniversal(
   data: Uint8Array,
   driverType: 'USB' | 'SERIAL' | 'BLUETOOTH' | 'BROWSER' = 'USB'
 ): Promise<{ success: boolean; message: string }> {
   if (driverType === 'USB') {
-    // Try WebUSB first; if not supported or fallback requested, try WebSerial
     if ('usb' in navigator) {
       return await printToWebUSB(data);
     } else if ('serial' in navigator) {
       return await printToWebSerial(data);
     }
+    return await printRawBufferViaSpooler(data);
   }
 
   if (driverType === 'SERIAL') {
@@ -636,9 +967,8 @@ export async function printReceiptUniversal(
     return await printToWebBluetooth(data);
   }
 
-  // Browser Print Fallback
-  window.print();
-  return { success: true, message: 'Membuka dialog cetak browser (CUPS / Thermal Printer)' };
+  // Windows / OS Thermal Spooler (POS-58 / POS-80 / CUPS)
+  return await printRawBufferViaSpooler(data);
 }
 
 export function generateReceiptESCPOS(transaction: Transaction, storeName = 'KETOKO POS TOKO', branchId = 'BR-01'): Uint8Array {

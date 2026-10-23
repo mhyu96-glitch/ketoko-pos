@@ -35,6 +35,7 @@ import {
   getBluetoothPrinterStatus,
   disconnectBluetoothPrinter,
   printReceiptUniversal, 
+  printThermalTestSpooler,
   formatRupiah,
   printEpsonLX310Invoice,
   numberToWordsID
@@ -67,10 +68,12 @@ export interface PrinterConfig {
   baudRate?: number;
 }
 
+const IS_WINDOWS_OS = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
+
 const DEFAULT_CONFIG: PrinterConfig = {
   printerType: 'THERMAL',
   dotMatrixPaperSize: 'A4_HALF',
-  driverType: 'USB',
+  driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
   paperWidth: '58mm',
   autoCut: true,
   headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
@@ -221,22 +224,32 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       return;
     }
 
-    setTestResult({ success: true, message: 'Menghubungkan & mengirim raw byte ESC/POS ke printer...' });
+    setTestResult({
+      success: true,
+      message:
+        config.driverType === 'BROWSER'
+          ? `Menyiapkan struk thermal ${config.paperWidth} via Driver Printer Windows / OS...`
+          : 'Menghubungkan & mengirim raw byte ESC/POS ke printer...'
+    });
     
     try {
-      const builder = new ESCPOSBuilder({ paperWidth: config.paperWidth === '58mm' ? 58 : 80 });
-      const raw = builder.buildTestPrint(config);
-      
       let res;
-      if (config.driverType === 'USB') {
-        res = await printToWebUSB(raw);
-      } else if (config.driverType === 'SERIAL') {
-        res = await printToWebSerial(raw, config.baudRate || 9600);
-      } else if (config.driverType === 'BLUETOOTH') {
-        res = await printToWebBluetooth(raw);
-        setBtStatus(getBluetoothPrinterStatus());
+      if (config.driverType === 'BROWSER') {
+        res = await printThermalTestSpooler(config);
       } else {
-        res = await printReceiptUniversal(raw, 'BROWSER');
+        const builder = new ESCPOSBuilder({ paperWidth: config.paperWidth === '58mm' ? 58 : 80 });
+        const raw = builder.buildTestPrint(config);
+        
+        if (config.driverType === 'USB') {
+          res = await printToWebUSB(raw);
+        } else if (config.driverType === 'SERIAL') {
+          res = await printToWebSerial(raw, config.baudRate || 9600);
+        } else if (config.driverType === 'BLUETOOTH') {
+          res = await printToWebBluetooth(raw);
+          setBtStatus(getBluetoothPrinterStatus());
+        } else {
+          res = await printReceiptUniversal(raw, 'BROWSER');
+        }
       }
 
       setTestResult(res);
@@ -312,13 +325,13 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   Pengaturan Hardware & Format Cetak Kasir
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#543017] text-amber-100 uppercase border border-[#9b663b]/50 tracking-wider shadow-2xs">
-                  {config.printerType === 'DOT_MATRIX' ? 'Epson LX-310 (ESC/P)' : 'Thermal POS & Linux Ready'}
+                  {config.printerType === 'DOT_MATRIX' ? 'Epson LX-310 (ESC/P)' : 'Thermal POS • Windows & Linux Ready'}
                 </span>
               </div>
               <p className="text-xs text-[#fcefe3]/90 font-medium mt-0.5">
                 {config.printerType === 'DOT_MATRIX' 
                   ? 'Konfigurasi cetak faktur continuous form rangkap 2-ply/3-ply kertas wartel Epson LX-310'
-                  : 'Kustomisasi koneksi WebUSB/Serial, logo toko rata tengah, opsi tampilan, dan live thermal preview'}
+                  : 'Mendukung Driver Printer Thermal Windows (POS-58/POS-80), Bluetooth POS, Port COM/Serial, & WebUSB'}
               </p>
             </div>
           </div>
@@ -570,12 +583,12 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
               </div>
             ) : (
               <>
-            {/* Connection Driver Selection (WebUSB, WebSerial, Bluetooth, Browser Print) */}
+            {/* Connection Driver Selection (Windows Driver Spooler, Bluetooth, Serial COM, WebUSB) */}
             <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-[#332219] font-bold text-xs flex items-center space-x-1.5">
                   <Sliders className="w-3.5 h-3.5 text-[#7c4e2f]" />
-                  <span>Metode Koneksi / Driver Hardware</span>
+                  <span>Metode Koneksi / Driver Hardware (Windows & Linux)</span>
                 </label>
                 <button
                   type="button"
@@ -583,60 +596,57 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   className="text-[11px] font-bold text-[#7c4e2f] hover:underline flex items-center space-x-1"
                 >
                   <Terminal className="w-3 h-3" />
-                  <span>Panduan Linux USB</span>
+                  <span>Panduan Windows & Linux</span>
                   {showLinuxGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
               </div>
 
-              {/* Linux WebUSB / USB Permissions Guide Banner */}
+              {/* Windows & Linux Guide Banner */}
               {showLinuxGuide && (
-                <div className="p-3 bg-[#fcf5ed] rounded-xl border border-[#eed7c4] text-[11px] text-[#5c3c26] space-y-2 animate-fadeIn">
-                  <div className="flex items-center space-x-1.5 font-bold text-[#7c4e2f]">
-                    <Info className="w-4 h-4" />
-                    <span>Petunjuk WebUSB di Linux (Ubuntu / Debian / Arch / Fedora):</span>
+                <div className="p-3 bg-[#fcf5ed] rounded-xl border border-[#eed7c4] text-[11px] text-[#5c3c26] space-y-2.5 animate-fadeIn">
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-1.5 font-bold text-[#7c4e2f]">
+                      <Info className="w-4 h-4" />
+                      <span>1. Petunjuk Printer Thermal di Windows 10 / 11 (USB, Bluetooth & LAN):</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 pl-1 text-[10px]">
+                      <li>Jika sudah install driver bawaan printer di Windows (<b>POS-58</b>, <b>POS-80</b>, <b>Xprinter</b>, <b>Epson TM-T82</b>, <b>VSC</b>, <b>Eppos</b>, <b>Iware</b>), pilih mode <b>Driver Windows / OS (POS-58/80)</b>.</li>
+                      <li>Agar cetak langsung keluar <b>tanpa pop-up dialog print</b> di Windows (Silent Print), klik kanan shortcut <b>Google Chrome / Microsoft Edge</b> → <b>Properties</b> → tambahkan <code className="px-1 py-0.5 bg-stone-200 rounded font-mono text-[9px]">--kiosk-printing</code> di ujung <b>Target</b>, dan set printer thermal sebagai <b>Default Printer</b> di Windows.</li>
+                      <li>Jika printer thermal menggunakan kabel USB-Serial / Bluetooth SPP (muncul sebagai <b>COM3 / COM4</b> di <i>Device Manager</i> Windows), pilih mode <b>Port COM / Serial</b>.</li>
+                    </ol>
                   </div>
-                  <ol className="list-decimal list-inside space-y-1 pl-1 text-[10px]">
-                    <li>Gunakan browser <b>Google Chrome</b> atau <b>Chromium / Brave / Edge</b>.</li>
-                    <li>Jika muncul <i>"Access Denied"</i>, berikan izin USB di terminal Linux:
-                      <pre className="mt-1 p-1.5 bg-stone-900 text-emerald-400 rounded-lg font-mono text-[9px] overflow-x-auto">sudo usermod -a -G dialout,lp $USER && sudo chmod 666 /dev/bus/usb/*/*</pre>
-                    </li>
-                    <li>Sambungkan kabel USB printer dan klik <b>Uji Cetak (Test Print)</b> di bawah.</li>
-                  </ol>
+                  <div className="pt-2 border-t border-[#eed7c4] space-y-1">
+                    <div className="flex items-center space-x-1.5 font-bold text-[#7c4e2f]">
+                      <Terminal className="w-3.5 h-3.5" />
+                      <span>2. Petunjuk WebUSB di Linux (Ubuntu / Debian / Arch / Fedora):</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 pl-1 text-[10px]">
+                      <li>Pilih mode <b>WebUSB (Direct)</b> di Chrome / Chromium / Edge.</li>
+                      <li>Jika muncul <i>"Access Denied"</i>, jalankan di terminal Linux:
+                        <pre className="mt-1 p-1.5 bg-stone-900 text-emerald-400 rounded-lg font-mono text-[9px] overflow-x-auto">sudo usermod -a -G dialout,lp $USER && sudo chmod 666 /dev/bus/usb/*/*</pre>
+                      </li>
+                    </ol>
+                  </div>
                 </div>
               )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {/* 1. WebUSB Direct */}
+                {/* 1. Driver Windows / OS Spooler (POS-58 / POS-80) */}
                 <button
                   type="button"
-                  onClick={() => setConfig({ ...config, driverType: 'USB' })}
+                  onClick={() => setConfig({ ...config, driverType: 'BROWSER' })}
                   className={`p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                    config.driverType === 'USB'
+                    config.driverType === 'BROWSER'
                       ? 'bg-[#faebd7] text-[#7c4e2f] border-[#ddc3aa] ring-2 ring-[#7c4e2f]/20 font-bold shadow-2xs'
                       : 'bg-[#fdfaf7] text-[#543c2e] border-[#e4d5c7] hover:bg-[#faebd7]'
                   }`}
                 >
-                  <Usb className="w-5 h-5 mb-1 text-[#7c4e2f]" />
-                  <span className="text-xs font-bold">WebUSB (Direct)</span>
-                  <span className="text-[8px] text-[#8a6b53] mt-0.5">Disarankan (Linux)</span>
+                  <Printer className="w-5 h-5 mb-1 text-emerald-700" />
+                  <span className="text-xs font-bold">Driver Windows / OS</span>
+                  <span className="text-[8px] text-emerald-700 font-bold mt-0.5">POS-58 / POS-80 (Windows)</span>
                 </button>
 
-                {/* 2. Web Serial */}
-                <button
-                  type="button"
-                  onClick={() => setConfig({ ...config, driverType: 'SERIAL' })}
-                  className={`p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                    config.driverType === 'SERIAL'
-                      ? 'bg-[#faebd7] text-[#7c4e2f] border-[#ddc3aa] ring-2 ring-[#7c4e2f]/20 font-bold shadow-2xs'
-                      : 'bg-[#fdfaf7] text-[#543c2e] border-[#e4d5c7] hover:bg-[#faebd7]'
-                  }`}
-                >
-                  <Cpu className="w-5 h-5 mb-1 text-amber-700" />
-                  <span className="text-xs font-bold">Web Serial</span>
-                  <span className="text-[8px] text-[#8a6b53] mt-0.5">/dev/ttyUSB0</span>
-                </button>
-
-                {/* 3. Bluetooth */}
+                {/* 2. Bluetooth POS */}
                 <button
                   type="button"
                   onClick={() => setConfig({ ...config, driverType: 'BLUETOOTH' })}
@@ -648,24 +658,93 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 >
                   <Bluetooth className="w-5 h-5 mb-1 text-sky-600" />
                   <span className="text-xs font-bold">Bluetooth POS</span>
-                  <span className="text-[8px] text-[#8a6b53] mt-0.5">Wireless Mini</span>
+                  <span className="text-[8px] text-[#8a6b53] mt-0.5">BLE & Wireless Mini</span>
                 </button>
 
-                {/* 4. Browser Print */}
+                {/* 3. Port COM / Serial Windows */}
                 <button
                   type="button"
-                  onClick={() => setConfig({ ...config, driverType: 'BROWSER' })}
+                  onClick={() => setConfig({ ...config, driverType: 'SERIAL' })}
                   className={`p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                    config.driverType === 'BROWSER'
+                    config.driverType === 'SERIAL'
                       ? 'bg-[#faebd7] text-[#7c4e2f] border-[#ddc3aa] ring-2 ring-[#7c4e2f]/20 font-bold shadow-2xs'
                       : 'bg-[#fdfaf7] text-[#543c2e] border-[#e4d5c7] hover:bg-[#faebd7]'
                   }`}
                 >
-                  <FileText className="w-5 h-5 mb-1 text-[#85532f]" />
-                  <span className="text-xs font-bold">Browser Print</span>
-                  <span className="text-[8px] text-[#8a6b53] mt-0.5">CUPS / PDF</span>
+                  <Cpu className="w-5 h-5 mb-1 text-amber-700" />
+                  <span className="text-xs font-bold">Port COM / Serial</span>
+                  <span className="text-[8px] text-[#8a6b53] mt-0.5">COM1-COM9 (Windows)</span>
+                </button>
+
+                {/* 4. WebUSB Direct */}
+                <button
+                  type="button"
+                  onClick={() => setConfig({ ...config, driverType: 'USB' })}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all ${
+                    config.driverType === 'USB'
+                      ? 'bg-[#faebd7] text-[#7c4e2f] border-[#ddc3aa] ring-2 ring-[#7c4e2f]/20 font-bold shadow-2xs'
+                      : 'bg-[#fdfaf7] text-[#543c2e] border-[#e4d5c7] hover:bg-[#faebd7]'
+                  }`}
+                >
+                  <Usb className="w-5 h-5 mb-1 text-[#7c4e2f]" />
+                  <span className="text-xs font-bold">WebUSB (Direct)</span>
+                  <span className="text-[8px] text-[#8a6b53] mt-0.5">Direct USB / Linux</span>
                 </button>
               </div>
+
+              {/* Panel Driver Printer Thermal Windows (POS-58 / POS-80 Spooler) */}
+              {config.driverType === 'BROWSER' && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-xs font-extrabold text-emerald-950">
+                        Mode Driver Printer Thermal Windows & OS Spooler ({config.paperWidth}) Aktif
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Direkomendasikan di Windows
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-900/90 leading-relaxed">
+                    ✅ Kompatibel penuh dengan semua printer kasir thermal di <b>Windows 10 / 11</b> (<b>POS-58</b>, <b>POS-80</b>, <b>Xprinter XP-58/XP-80</b>, <b>Epson TM-T82</b>, <b>VSC</b>, <b>Codeshop</b>, <b>Eppos</b>, <b>Iware</b>, <b>BellaV</b>) baik koneksi <b>USB</b>, <b>Bluetooth Windows</b>, maupun <b>LAN/Ethernet</b>. Mencetak struk presisi ukuran <b>{config.paperWidth}</b> (bukan halaman web).
+                  </p>
+                </div>
+              )}
+
+              {/* Panel Port COM / Serial Windows (COM1 - COM9) */}
+              {config.driverType === 'SERIAL' && (
+                <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2.5 animate-fadeIn">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2">
+                      <Cpu className="w-4 h-4 text-amber-800" />
+                      <span className="text-xs font-extrabold text-amber-950">
+                        Mode Port COM / Serial Windows (USB-Serial & Bluetooth SPP)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-[10px] font-bold text-amber-900">Baud Rate:</span>
+                      {[9600, 19200, 38400, 115200].map((rate) => (
+                        <button
+                          key={rate}
+                          type="button"
+                          onClick={() => setConfig({ ...config, baudRate: rate })}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                            (config.baudRate || 9600) === rate
+                              ? 'bg-amber-800 text-white border-amber-900'
+                              : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          {rate}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-amber-900/90 leading-relaxed">
+                    💡 Gunakan mode ini jika printer thermal muncul sebagai <b>Port COM (COM3, COM4, dst)</b> di <i>Device Manager Windows</i> (misalnya kabel USB-Serial CH340/PL2303 atau Bluetooth Classic SPP yang sudah di-pair di Windows). Standar pabrik mayoritas printer 58mm adalah <b>9600</b> (atau <b>115200</b> untuk printer 80mm).
+                  </p>
+                </div>
+              )}
 
               {/* Panel Koneksi & Pairing Printer Bluetooth POS */}
               {config.driverType === 'BLUETOOTH' && (
