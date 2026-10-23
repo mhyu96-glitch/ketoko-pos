@@ -507,6 +507,25 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Tagihan bon & reminder jatuh tempo</div>
                   </div>
                 </button>
+
+                <div className="my-1 border-t border-[#f0e4d7]" />
+
+                {/* Setting Printer Kasir (Bisa diakses langsung oleh Kasir & Admin) */}
+                <button
+                  onClick={() => {
+                    onOpenPrinterSettings();
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#f5ece3] text-[#543c2e] flex items-center justify-center shrink-0">
+                    <Printer className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Setting Printer Kasir</div>
+                    <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Windows POS-58/80, Bluetooth & USB</div>
+                  </div>
+                </button>
               </div>
             )}
           </div>
@@ -1041,8 +1060,17 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
 
         </div>
 
-        {/* Right Info Badges */}
+        {/* Right Info Badges & Direct Cashier Printer Button */}
         <div className="flex items-center space-x-2 text-xs text-[#856b59] shrink-0">
+          <button
+            type="button"
+            onClick={onOpenPrinterSettings}
+            className="hidden md:inline-flex items-center space-x-1.5 bg-[#fcf8f4] hover:bg-[#faebd7] text-[#543c2e] px-2.5 py-1.5 rounded-xl border border-[#e4d5c7] font-bold text-xs transition-all cursor-pointer shadow-2xs"
+            title="Pengaturan Printer Thermal Kasir (Windows POS-58/80, Bluetooth, Port COM, USB)"
+          >
+            <Printer className="w-3.5 h-3.5 text-[#7c4e2f]" />
+            <span>Printer</span>
+          </button>
           <div className="hidden sm:flex items-center space-x-1.5 bg-[#fbf7f2] px-2.5 py-1 rounded-lg border border-[#e4d5c7]">
             <Store className="w-3.5 h-3.5 text-[#7c4e2f]" />
             <span className="font-semibold text-[#332219] truncate max-w-[160px]">{currentStoreInfo.name || 'Toko Samarinda'}</span>

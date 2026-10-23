@@ -25,6 +25,7 @@ interface ReceiptModalProps {
   onClose: () => void;
   transaction: Transaction | null;
   cashierName?: string;
+  onOpenPrinterSettings?: () => void;
 }
 
 const IS_WINDOWS_OS = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
@@ -48,7 +49,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   transaction,
-  cashierName = 'Kasir Toko'
+  cashierName = 'Kasir Toko',
+  onOpenPrinterSettings
 }) => {
   const [config, setConfig] = useState<PrinterConfig>(DEFAULT_CONFIG);
   const [printStatus, setPrintStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -172,12 +174,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#543017] transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-1.5">
+            {onOpenPrinterSettings && (
+              <button
+                type="button"
+                onClick={onOpenPrinterSettings}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-amber-100 bg-[#543017] hover:bg-[#3d2210] border border-[#9b663b]/50 flex items-center space-x-1.5 transition-colors"
+                title="Atur Printer Kasir (Windows POS-58/80, Bluetooth, Port COM)"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-200" />
+                <span>Atur Printer</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#543017] transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* 2. Content Body - Fast Cashier Settlement Info */}

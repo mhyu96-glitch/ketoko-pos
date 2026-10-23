@@ -1802,6 +1802,7 @@ export const App: React.FC = () => {
           isOpen={isReceiptOpen}
           onClose={() => setIsReceiptOpen(false)}
           transaction={activeReceipt}
+          onOpenPrinterSettings={() => setIsPrinterSettingsOpen(true)}
         />
       )}
 
