@@ -112,47 +112,48 @@ export function resolveStoreFromCurrentHost(): RegisteredStoreInfo {
   const hostname = window.location.hostname.toLowerCase();
   const allStores = getStoredStores();
 
-  // 1. Direct Subdomain Matching (e.g. borneoetam.ketokopos.online)
-  if (hostname.includes('ketokopos.online') || hostname.includes('pages.dev')) {
+  // 1. Direct Subdomain Matching on ketokopos.online (e.g. borneoetam.ketokopos.online)
+  if (hostname.endsWith('.ketokopos.online')) {
     const parts = hostname.split('.');
     if (parts.length >= 3) {
       const sub = parts[0];
-      const matched = allStores.find(s => 
-        s.subdomain?.toLowerCase() === sub || 
-        s.id.toLowerCase() === `store-${sub}` ||
-        s.onlineDomain?.toLowerCase().includes(`//${sub}.`)
-      );
-      if (matched) return matched;
+      if (sub && sub !== 'www' && sub !== 'tumbuhmakmur') {
+        const matched = allStores.find(s => 
+          s.subdomain?.toLowerCase() === sub || 
+          s.id.toLowerCase() === `store-${sub}` ||
+          s.onlineDomain?.toLowerCase().includes(`//${sub}.`)
+        );
+        if (matched) return matched;
 
-      // Handle well-known subdomains
-      if (sub === 'borneoetam') {
-        return DEFAULT_REGISTERED_STORES[1];
+        if (sub === 'borneoetam') {
+          return DEFAULT_REGISTERED_STORES[1];
+        }
+
+        // Dynamic sub-tenant fallback
+        const cleanName = sub.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return {
+          id: `store-${sub}`,
+          name: cleanName,
+          branch: `${cleanName} (BR-02)`,
+          branchId: 'BR-02',
+          ownerName: 'Admin ' + cleanName,
+          phone: '',
+          subdomain: sub,
+          onlineDomain: `https://${sub}.ketokopos.online`,
+          localServer: 'http://localhost:5858',
+          licensePlan: 'PRO LIFETIME (Aktif)',
+          adminUser: 'admin (Owner)',
+          cashierUser: `kasir (Kasir ${cleanName})`,
+          productsCount: '0 Produk (Toko Bersih Baru)',
+          status: 'ONLINE',
+          isClean: true,
+          clusterId: 'cluster-default',
+          clusterName: 'Cluster 1 (Default Cloud)'
+        };
       }
       if (sub === 'tumbuhmakmur') {
         return DEFAULT_REGISTERED_STORES[0];
       }
-
-      // Dynamic sub-tenant fallback
-      const cleanName = sub.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      return {
-        id: `store-${sub}`,
-        name: cleanName,
-        branch: `${cleanName} (BR-02)`,
-        branchId: 'BR-02',
-        ownerName: 'Admin ' + cleanName,
-        phone: '',
-        subdomain: sub,
-        onlineDomain: `https://${sub}.ketokopos.online`,
-        localServer: 'http://localhost:5858',
-        licensePlan: 'PRO LIFETIME (Aktif)',
-        adminUser: 'admin (Owner)',
-        cashierUser: `kasir (Kasir ${cleanName})`,
-        productsCount: '0 Produk (Toko Bersih Baru)',
-        status: 'ONLINE',
-        isClean: true,
-        clusterId: 'cluster-default',
-        clusterName: 'Cluster 1 (Default Cloud)'
-      };
     }
   }
 

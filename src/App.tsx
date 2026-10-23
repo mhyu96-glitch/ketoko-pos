@@ -164,6 +164,10 @@ export const App: React.FC = () => {
     phone?: string;
   }>(() => {
     const store = resolveStoreFromCurrentHost();
+    try {
+      localStorage.setItem('ketoko_active_store_id', store.id);
+      localStorage.setItem('ketoko_is_clean_store', store.isClean ? 'true' : 'false');
+    } catch {}
     const saved = localStorage.getItem('ketoko_store_profile');
     if (saved) {
       try {
@@ -187,8 +191,6 @@ export const App: React.FC = () => {
       phone: store.phone || ''
     };
     try {
-      localStorage.setItem('ketoko_active_store_id', store.id);
-      localStorage.setItem('ketoko_is_clean_store', store.isClean ? 'true' : 'false');
       localStorage.setItem('ketoko_store_profile', JSON.stringify(profile));
     } catch {}
     return profile;
@@ -335,6 +337,25 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  const sortProductsForDisplay = useCallback((list: Product[], storeFilter?: string): Product[] => {
+    const filtered = storeFilter
+      ? list.filter((p: any) => storeFilter === 'store-01' ? (!p.store_id || p.store_id === 'store-01') : p.store_id === storeFilter)
+      : list;
+
+    return [...filtered].sort((a, b) => {
+      const aIsCustom = !/^\d+$/.test(String(a.id).trim());
+      const bIsCustom = !/^\d+$/.test(String(b.id).trim());
+      if (aIsCustom !== bIsCustom) return aIsCustom ? -1 : 1;
+      if (aIsCustom && bIsCustom) {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        if (bTime !== aTime) return bTime - aTime;
+        return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
+      }
+      return 0;
+    });
+  }, []);
+
   // Load products & count overdue debts/receivables once on startup
   const loadLocalProducts = useCallback(async () => {
     try {
@@ -344,9 +365,17 @@ export const App: React.FC = () => {
 
       // Mode Toko Bersih Baru: JANGAN auto-seed produk katalog CV Tumbuh Makmur!
       if (isCleanStore && activeStore !== 'store-01') {
-        const storeProds = (await db.products.toArray()).filter((p: any) => p.store_id === activeStore);
-        setProducts(storeProds);
+        const storeProds = await db.products.toArray();
+        setProducts(sortProductsForDisplay(storeProds, activeStore));
         setOverdueCount(0);
+        if (navigator.onLine) {
+          syncService.pullFromSupabase().then(async (res) => {
+            if (res && res.products) {
+              const fresh = await db.products.toArray();
+              setProducts(sortProductsForDisplay(fresh, activeStore));
+            }
+          }).catch(() => {});
+        }
         return;
       }
 
@@ -358,14 +387,14 @@ export const App: React.FC = () => {
             for (let i = 0; i < serverProds.length; i += chunkSize) {
               await db.products.bulkPut(serverProds.slice(i, i + chunkSize));
             }
-            setProducts(serverProds);
+            setProducts(sortProductsForDisplay(serverProds, activeStore));
           } else {
             const all = await db.products.toArray();
-            setProducts(all);
+            setProducts(sortProductsForDisplay(all, activeStore));
           }
         } catch {
           const all = await db.products.toArray();
-          setProducts(all);
+          setProducts(sortProductsForDisplay(all, activeStore));
         }
       } else {
         // 1. Fetch all products into state (Auto-seed from /data/products.json ONLY for initial store-01 and NOT clean store)
@@ -391,20 +420,20 @@ export const App: React.FC = () => {
               console.warn('[App] Gagal auto-load /data/products.json:', err);
             }
           }
-          setProducts(all);
+          setProducts(sortProductsForDisplay(all, 'store-01'));
 
           // 2. Tarik pembaruan produk & tombstones terbaru dari Cloud Supabase untuk store-01
           if (navigator.onLine) {
             syncService.pullFromSupabase().then(async (res) => {
               if (res && res.products) {
                 const fresh = await db.products.toArray();
-                setProducts(fresh.filter((p: any) => !p.store_id || p.store_id === 'store-01'));
+                setProducts(sortProductsForDisplay(fresh, 'store-01'));
               }
             }).catch(() => {});
           }
         } else {
           // Toko lain: filter produk berdasarkan activeStore saja
-          setProducts(all.filter((p: any) => p.store_id === activeStore));
+          setProducts(sortProductsForDisplay(all, activeStore));
         }
       }
 
@@ -729,8 +758,9 @@ export const App: React.FC = () => {
           window.dispatchEvent(new CustomEvent('ketoko_product_deleted', { detail: { id: prodId } }));
         },
         onCatalogRefreshed: async () => {
+          const activeStore = localStorage.getItem('ketoko_active_store_id') || resolveStoreFromCurrentHost().id;
           const fresh = await db.products.toArray();
-          setProducts(fresh);
+          setProducts(sortProductsForDisplay(fresh, activeStore));
         },
         onStockUpdated: (stocks) => {
           const map = new Map(stocks.map((s: any) => [String(s.id), Number(s.stock) || 0]));
@@ -815,10 +845,39 @@ export const App: React.FC = () => {
     }
 
     const handleCatalogSynced = async () => {
+      const activeStore = localStorage.getItem('ketoko_active_store_id') || resolveStoreFromCurrentHost().id;
       const fresh = await db.products.toArray();
-      setProducts(fresh);
+      setProducts(sortProductsForDisplay(fresh, activeStore));
     };
+
+    const handleLocalProductUpdated = (e: any) => {
+      const prod = e.detail?.product as Product | undefined;
+      if (!prod || !prod.id) return;
+      setProducts((prev) => {
+        const idx = prev.findIndex((p) => String(p.id) === String(prod.id));
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], ...prod };
+          return copy;
+        }
+        return [prod, ...prev];
+      });
+    };
+
+    const handleLocalProductDeleted = (e: any) => {
+      const singleId = e.detail?.id;
+      const batchIds = e.detail?.ids;
+      if (singleId) {
+        setProducts((prev) => prev.filter((p) => String(p.id) !== String(singleId)));
+      } else if (Array.isArray(batchIds) && batchIds.length > 0) {
+        const delSet = new Set(batchIds.map(String));
+        setProducts((prev) => prev.filter((p) => !delSet.has(String(p.id))));
+      }
+    };
+
     window.addEventListener('ketoko_catalog_synced', handleCatalogSynced);
+    window.addEventListener('ketoko_product_updated', handleLocalProductUpdated);
+    window.addEventListener('ketoko_product_deleted', handleLocalProductDeleted);
 
     return () => {
       clearTimeout(updateTimer);
@@ -827,10 +886,12 @@ export const App: React.FC = () => {
         try { bc.close(); } catch {}
       }
       window.removeEventListener('ketoko_catalog_synced', handleCatalogSynced);
+      window.removeEventListener('ketoko_product_updated', handleLocalProductUpdated);
+      window.removeEventListener('ketoko_product_deleted', handleLocalProductDeleted);
       window.removeEventListener('ketoko_open_shift_report', handleOpenShift);
       window.removeEventListener('ketoko_open_cash_drawer', handleOpenDrawer);
     };
-  }, [loadLocalProducts, loadTransactions]);
+  }, [loadLocalProducts, loadTransactions, sortProductsForDisplay]);
 
   // Auto-refresh transactions whenever admin navigates to dashboard
   useEffect(() => {
@@ -1813,7 +1874,12 @@ export const App: React.FC = () => {
         <NewProductModal
           isOpen={isNewProductOpen}
           onClose={() => setIsNewProductOpen(false)}
-          onProductCreated={loadLocalProducts}
+          onProductCreated={async (newProd) => {
+            if (newProd) {
+              setProducts((prev) => [newProd, ...prev.filter((p) => String(p.id) !== String(newProd.id))]);
+            }
+            await loadLocalProducts();
+          }}
         />
       )}
 

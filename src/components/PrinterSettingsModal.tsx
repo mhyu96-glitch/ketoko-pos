@@ -31,6 +31,9 @@ import {
   printToWebUSB, 
   printToWebSerial, 
   printToWebBluetooth, 
+  connectBluetoothPrinter,
+  getBluetoothPrinterStatus,
+  disconnectBluetoothPrinter,
   printReceiptUniversal, 
   formatRupiah,
   printEpsonLX310Invoice,
@@ -101,6 +104,10 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
   const [showLinuxGuide, setShowLinuxGuide] = useState(false);
+  const [isConnectingBt, setIsConnectingBt] = useState(false);
+  const [btStatus, setBtStatus] = useState<{ connected: boolean; deviceName: string | null }>(() =>
+    getBluetoothPrinterStatus()
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -108,12 +115,35 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       if (saved) {
         setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) });
       }
+      setBtStatus(getBluetoothPrinterStatus());
       setTestResult(null);
       setSaveToast(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handlePairBluetooth = async (forceNew = true) => {
+    setIsConnectingBt(true);
+    setTestResult({ success: true, message: 'Memindai perangkat Printer Bluetooth POS di sekitar...' });
+    try {
+      const res = await connectBluetoothPrinter(forceNew);
+      setBtStatus(getBluetoothPrinterStatus());
+      setTestResult({ success: res.success, message: res.message });
+      if (res.success) {
+        const updated = { ...config, driverType: 'BLUETOOTH' as const };
+        setConfig(updated);
+        localStorage.setItem('ketoko_printer_settings', JSON.stringify(updated));
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err.message || 'Gagal menghubungkan ke Printer Bluetooth'
+      });
+    } finally {
+      setIsConnectingBt(false);
+    }
+  };
 
   const handleSaveSettings = () => {
     localStorage.setItem('ketoko_printer_settings', JSON.stringify(config));
@@ -204,6 +234,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
         res = await printToWebSerial(raw, config.baudRate || 9600);
       } else if (config.driverType === 'BLUETOOTH') {
         res = await printToWebBluetooth(raw);
+        setBtStatus(getBluetoothPrinterStatus());
       } else {
         res = await printReceiptUniversal(raw, 'BROWSER');
       }
@@ -635,6 +666,78 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   <span className="text-[8px] text-[#8a6b53] mt-0.5">CUPS / PDF</span>
                 </button>
               </div>
+
+              {/* Panel Koneksi & Pairing Printer Bluetooth POS */}
+              {config.driverType === 'BLUETOOTH' && (
+                <div className="p-3.5 rounded-2xl bg-[#f0f7fb] border border-sky-200 space-y-2.5 animate-fadeIn">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${btStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                      <span className="text-xs font-extrabold text-sky-950">
+                        {btStatus.connected
+                          ? `Terhubung: ${btStatus.deviceName}`
+                          : btStatus.deviceName
+                          ? `Perangkat Tersimpan: ${btStatus.deviceName} (Siap Reconnect)`
+                          : 'Printer Bluetooth Belum Dipasangkan'}
+                      </span>
+                    </div>
+                    {btStatus.connected && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          disconnectBluetoothPrinter();
+                          setBtStatus(getBluetoothPrinterStatus());
+                        }}
+                        className="text-[10px] font-bold text-rose-600 hover:underline"
+                      >
+                        Putuskan Koneksi
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isConnectingBt}
+                      onClick={() => handlePairBluetooth(true)}
+                      className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-bold text-xs flex items-center space-x-1.5 shadow-xs transition-all active:scale-95"
+                    >
+                      <Bluetooth className="w-3.5 h-3.5" />
+                      <span>
+                        {isConnectingBt
+                          ? 'Memindai Bluetooth...'
+                          : btStatus.connected
+                          ? 'Ganti / Scan Ulang Printer Bluetooth'
+                          : 'Cari & Hubungkan Printer Bluetooth'}
+                      </span>
+                    </button>
+
+                    {btStatus.deviceName && !btStatus.connected && (
+                      <button
+                        type="button"
+                        disabled={isConnectingBt}
+                        onClick={() => handlePairBluetooth(false)}
+                        className="px-3 py-2 rounded-xl bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 font-bold text-xs transition-all"
+                      >
+                        Hubungkan Ulang ({btStatus.deviceName})
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, driverType: 'SERIAL' })}
+                      className="px-3 py-2 rounded-xl bg-white hover:bg-amber-50 text-[#5c3c26] border border-[#ddc3aa] font-bold text-[11px] transition-all"
+                      title="Gunakan mode ini jika printer Bluetooth sudah di-pair di Windows/Linux sebagai Virtual COM / RFCOMM port"
+                    >
+                      Mode Bluetooth SPP / COM PC
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-sky-900/80 leading-relaxed">
+                    💡 <b>Tips Koneksi:</b> Pastikan printer menyala dan tidak sedang terhubung ke HP lain. Klik <b>Cari & Hubungkan Printer Bluetooth</b> untuk memunculkan daftar printer di Chrome/Edge. Jika printer Bluetooth PC menggunakan <i>Virtual COM Port (SPP)</i>, gunakan tombol <b>Mode Bluetooth SPP / COM PC</b>.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Receipt Style Presets */}

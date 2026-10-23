@@ -5,6 +5,7 @@ import { INITIAL_PRODUCTS } from '../api/mockData';
 import type { Transaction, Product } from '../types';
 import { lanService } from './lanService';
 import { notifySaleToTelegram } from './telegramService';
+import { resolveStoreFromCurrentHost } from './storeRegistry';
 
 export interface SyncStatusInfo {
   isConfigured: boolean;
@@ -35,7 +36,7 @@ export class SyncService {
   private realtimeCallbacks: CloudRealtimeCallbacks = {};
 
   public getActiveStoreId(): string {
-    return localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    return localStorage.getItem('ketoko_active_store_id') || resolveStoreFromCurrentHost().id || 'store-01';
   }
 
   public initCloudLiveChannel(callbacks?: CloudRealtimeCallbacks) {
@@ -495,6 +496,18 @@ export class SyncService {
     } catch {}
   }
 
+  unmarkProductDeletedLocally(productId: string) {
+    try {
+      const cleanId = String(productId).trim();
+      if (!cleanId) return;
+      const set = this.getDeletedProductIds();
+      if (set.has(cleanId)) {
+        set.delete(cleanId);
+        localStorage.setItem('ketoko_deleted_product_ids', JSON.stringify(Array.from(set)));
+      }
+    } catch {}
+  }
+
   /**
    * Menghapus produk/item secara real-time ke seluruh terminal (Lokal, Tab lain, LAN, dan Cloud Supabase)
    */
@@ -534,7 +547,6 @@ export class SyncService {
           await Promise.allSettled([
             supabase.from('products').delete().eq('id', cleanId).eq('store_id', storeId),
             supabase.from('sync_logs').insert({
-              store_id: storeId,
               branch_id: 'BR-01',
               operation_type: 'DELETE_PRODUCT',
               error_message: cleanId,
@@ -603,7 +615,6 @@ export class SyncService {
             await supabase.from('products').delete().in('id', batch).eq('store_id', storeId);
 
             const logsToInsert = batch.map((bId) => ({
-              store_id: storeId,
               branch_id: 'BR-01',
               operation_type: 'DELETE_PRODUCT',
               error_message: bId,
@@ -648,7 +659,6 @@ export class SyncService {
           .from('sync_logs')
           .select('error_message')
           .eq('operation_type', 'DELETE_TRANSACTION')
-          .eq('store_id', storeId)
           .order('synced_at', { ascending: false })
           .limit(100);
 
@@ -888,7 +898,6 @@ export class SyncService {
 
         try {
           await supabase.from('sync_logs').insert({
-            store_id: storeId,
             branch_id: branchId,
             operation_type: 'PUSH_TRANSACTIONS',
             synced_records_count: syncedIds.length,
@@ -1013,10 +1022,9 @@ export class SyncService {
           const storeId = this.getActiveStoreId();
           Promise.allSettled([
             supabase.from('transaction_items').delete().eq('transaction_id', trxId),
-            supabase.from('receivables').delete().eq('transaction_id', trxId).eq('store_id', storeId),
+            supabase.from('receivables').delete().eq('transaction_id', trxId),
             supabase.from('transactions').delete().eq('id', trxId).eq('store_id', storeId),
             supabase.from('sync_logs').insert({
-              store_id: storeId,
               branch_id: trx?.branch_id || 'BR-01',
               operation_type: 'DELETE_TRANSACTION',
               error_message: trxId,
@@ -1053,14 +1061,25 @@ export class SyncService {
    */
   async syncProductChange(product: Product): Promise<void> {
     const storeId = this.getActiveStoreId();
+    const cleanId = String(product.id).trim();
+    this.unmarkProductDeletedLocally(cleanId);
+
     const updatedProd: Product = {
       ...product,
+      id: cleanId,
       store_id: product.store_id || storeId,
+      min_wholesale_qty: Number(product.min_wholesale_qty) || 1,
+      min_stock_alert: product.min_stock_alert !== undefined ? Number(product.min_stock_alert) : 5,
       updated_at: new Date().toISOString()
     };
 
     // 1. Simpan langsung ke IndexedDB lokal (Dexie)
     await db.products.put(updatedProd);
+
+    // 1.b Dispatch DOM event lokal seketika (0ms delay) agar UI langsung menampilkan produk baru/diubah
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_product_updated', { detail: { product: updatedProd } }));
+    }
 
     // 2. Broadcast ke tab/jendela lain di mesin yang sama
     try {
@@ -1072,7 +1091,7 @@ export class SyncService {
     } catch {}
 
     // 3. Kirim ke LAN Server terpusat (jika aktif)
-    lanService.submitProduct(updatedProd).catch(() => {});
+    await lanService.submitProduct(updatedProd).catch(() => {});
 
     // 4. Kirim ke Supabase Cloud & Broadcast ke seluruh komputer kasir/admin (berbeda jaringan)
     if (navigator.onLine) {
@@ -1082,8 +1101,8 @@ export class SyncService {
           // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
           const cloudPayload = {
             id: String(updatedProd.id),
-            store_id: storeId,
-            barcode: updatedProd.barcode || '',
+            store_id: updatedProd.store_id || storeId,
+            barcode: updatedProd.barcode || String(updatedProd.id),
             name: updatedProd.name,
             category: updatedProd.category || 'Kebutuhan Umum',
             buy_price: Number(updatedProd.buy_price) || 0,
@@ -1096,16 +1115,23 @@ export class SyncService {
             updated_at: updatedProd.updated_at
           };
 
-          const { error: upsertErr } = await supabase
+          let { error: upsertErr } = await supabase
             .from('products')
             .upsert(cloudPayload, { onConflict: 'id' });
+
+          if (upsertErr && cloudPayload.image_url) {
+            const retryRes = await supabase
+              .from('products')
+              .upsert({ ...cloudPayload, image_url: '' }, { onConflict: 'id' });
+            upsertErr = retryRes.error;
+          }
 
           if (upsertErr) {
             console.warn('[Sync] Gagal upsert produk ke Supabase:', upsertErr.message);
           }
 
           // Siarkan langsung event real-time ke seluruh komputer kasir di jaringan mana saja
-          this.broadcastCloudEvent('product_updated', { ...updatedProd, store_id: storeId });
+          this.broadcastCloudEvent('product_updated', { ...updatedProd, store_id: updatedProd.store_id || storeId });
         }
       } catch (e) {
         console.warn('[Sync] Gagal push produk ke Supabase:', e);
@@ -1124,36 +1150,37 @@ export class SyncService {
       this.notifyStatusChange();
       const storeId = this.getActiveStoreId();
 
-      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone) untuk store ini
+      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone)
       const deletedProductIds = this.getDeletedProductIds();
-      try {
-        let fromLog = 0;
-        const stepLog = 1000;
-        while (true) {
-          const { data: remoteDeleted, error: logErr } = await supabase
-            .from('sync_logs')
-            .select('error_message')
-            .eq('operation_type', 'DELETE_PRODUCT')
-            .eq('store_id', storeId)
-            .order('synced_at', { ascending: false })
-            .range(fromLog, fromLog + stepLog - 1);
+      if (storeId === 'store-01') {
+        try {
+          let fromLog = 0;
+          const stepLog = 1000;
+          while (true) {
+            const { data: remoteDeleted, error: logErr } = await supabase
+              .from('sync_logs')
+              .select('error_message')
+              .eq('operation_type', 'DELETE_PRODUCT')
+              .order('synced_at', { ascending: false })
+              .range(fromLog, fromLog + stepLog - 1);
 
-          if (logErr || !remoteDeleted || remoteDeleted.length === 0) break;
+            if (logErr || !remoteDeleted || remoteDeleted.length === 0) break;
 
-          for (const item of remoteDeleted) {
-            if (item.error_message) {
-              const pId = String(item.error_message).trim();
-              deletedProductIds.add(pId);
-              this.markProductDeletedLocally(pId);
-              await db.products.delete(pId).catch(() => {});
+            for (const item of remoteDeleted) {
+              if (item.error_message) {
+                const pId = String(item.error_message).trim();
+                deletedProductIds.add(pId);
+                this.markProductDeletedLocally(pId);
+                await db.products.delete(pId).catch(() => {});
+              }
             }
-          }
 
-          fromLog += stepLog;
-          if (remoteDeleted.length < stepLog) break;
+            fromLog += stepLog;
+            if (remoteDeleted.length < stepLog) break;
+          }
+        } catch (err) {
+          console.warn('[Sync] Gagal tarik tombstone sync_logs:', err);
         }
-      } catch (err) {
-        console.warn('[Sync] Gagal tarik tombstone sync_logs:', err);
       }
 
       // Bersihkan produk lokal yang tercatat sudah terhapus
@@ -1188,20 +1215,37 @@ export class SyncService {
         );
 
         if (activeProducts.length > 0) {
-          // Bersihkan produk lokal yang tidak ada di Cloud (karena sudah dihapus di cloud)
-          const cloudIdSet = new Set(activeProducts.map((p) => String(p.id).trim()));
+          // Gabungkan dengan data lokal (pertahankan min_wholesale_qty, min_stock_alert, image_url, dan item lokal yang lebih baru)
           const currentLocalProds = await db.products.toArray();
+          const localMap = new Map<string, Product>();
           for (const lp of currentLocalProds) {
-            const cleanLpId = String(lp.id).trim();
-            if (!cloudIdSet.has(cleanLpId)) {
-              await db.products.delete(cleanLpId).catch(() => {});
-            }
+            localMap.set(String(lp.id).trim(), lp);
           }
 
-          // Simpan produk aktif terbaru ke IndexedDB dalam batch
+          const mergedProducts: Product[] = activeProducts.map((cp) => {
+            const cId = String(cp.id).trim();
+            const local = localMap.get(cId);
+            if (local && local.updated_at && cp.updated_at) {
+              const localTime = new Date(local.updated_at).getTime();
+              const cloudTime = new Date(cp.updated_at).getTime();
+              if (localTime > cloudTime) {
+                return local;
+              }
+            }
+            return {
+              ...cp,
+              id: cId,
+              store_id: cp.store_id || storeId,
+              min_wholesale_qty: Number(cp.min_wholesale_qty ?? local?.min_wholesale_qty) || 1,
+              min_stock_alert: Number(cp.min_stock_alert ?? local?.min_stock_alert) || 5,
+              image_url: cp.image_url || local?.image_url || ''
+            };
+          });
+
+          // Simpan produk aktif terbaru ke IndexedDB dalam batch (TANPA menghapus item baru lokal yang sedang disinkronkan)
           const chunkSize = 1000;
-          for (let i = 0; i < activeProducts.length; i += chunkSize) {
-            await db.products.bulkPut(activeProducts.slice(i, i + chunkSize));
+          for (let i = 0; i < mergedProducts.length; i += chunkSize) {
+            await db.products.bulkPut(mergedProducts.slice(i, i + chunkSize));
           }
         }
 
@@ -1305,7 +1349,6 @@ export class SyncService {
           await supabase.from('products').delete().in('id', batch).eq('store_id', storeId);
 
           const logsToInsert = batch.map((bId) => ({
-            store_id: storeId,
             branch_id: 'BR-01',
             operation_type: 'DELETE_PRODUCT',
             error_message: bId,
@@ -1371,7 +1414,6 @@ export class SyncService {
           .from('sync_logs')
           .select('error_message')
           .eq('operation_type', 'DELETE_TRANSACTION')
-          .eq('store_id', storeId)
           .order('synced_at', { ascending: false })
           .limit(100);
 
@@ -1574,7 +1616,6 @@ export class SyncService {
 
         const debtsPayload = localDebts.map(d => ({
           id: d.id,
-          store_id: storeId,
           supplier_id: d.supplier_id || null,
           supplier_name: d.supplier_name || 'Supplier Umum',
           invoice_number: d.invoice_number,
@@ -1595,22 +1636,24 @@ export class SyncService {
       }
 
       // 2. Pull cloud debts for this store
-      const { data: cloudDebts } = await supabase.from('debts').select('*').eq('store_id', storeId);
-      if (cloudDebts && cloudDebts.length > 0) {
-        await db.debts.bulkPut(cloudDebts.map((d: any) => ({
-          id: d.id,
-          store_id: storeId,
-          supplier_id: d.supplier_id || undefined,
-          supplier_name: d.supplier_name,
-          invoice_number: d.invoice_number,
-          total_amount: Number(d.amount) || 0,
-          paid_amount: Number(d.paid_amount) || 0,
-          remaining_amount: Math.max(0, (Number(d.amount) || 0) - (Number(d.paid_amount) || 0)),
-          due_date: d.due_date,
-          status: d.status,
-          notes: d.notes,
-          created_at: d.created_at
-        })));
+      if (storeId === 'store-01') {
+        const { data: cloudDebts } = await supabase.from('debts').select('*');
+        if (cloudDebts && cloudDebts.length > 0) {
+          await db.debts.bulkPut(cloudDebts.map((d: any) => ({
+            id: d.id,
+            store_id: storeId,
+            supplier_id: d.supplier_id || undefined,
+            supplier_name: d.supplier_name,
+            invoice_number: d.invoice_number,
+            total_amount: Number(d.amount) || 0,
+            paid_amount: Number(d.paid_amount) || 0,
+            remaining_amount: Math.max(0, (Number(d.amount) || 0) - (Number(d.paid_amount) || 0)),
+            due_date: d.due_date,
+            status: d.status,
+            notes: d.notes,
+            created_at: d.created_at
+          })));
+        }
       }
 
       // 3. Push local receivables
@@ -1624,7 +1667,6 @@ export class SyncService {
 
         const recsPayload = localRecs.map(r => ({
           id: r.id,
-          store_id: storeId,
           customer_id: r.customer_id || null,
           customer_name: r.customer_name || 'Pelanggan Umum',
           transaction_id: r.transaction_id || null,
@@ -1646,23 +1688,25 @@ export class SyncService {
       }
 
       // 4. Pull cloud receivables for this store
-      const { data: cloudRecs } = await supabase.from('receivables').select('*').eq('store_id', storeId);
-      if (cloudRecs && cloudRecs.length > 0) {
-        await db.receivables.bulkPut(cloudRecs.map((r: any) => ({
-          id: r.id,
-          store_id: storeId,
-          customer_id: r.customer_id || undefined,
-          customer_name: r.customer_name,
-          transaction_id: r.transaction_id || undefined,
-          receipt_number: r.receipt_number,
-          total_amount: Number(r.amount) || 0,
-          paid_amount: Number(r.paid_amount) || 0,
-          remaining_amount: Math.max(0, (Number(r.amount) || 0) - (Number(r.paid_amount) || 0)),
-          due_date: r.due_date,
-          status: r.status,
-          notes: r.notes,
-          created_at: r.created_at
-        })));
+      if (storeId === 'store-01') {
+        const { data: cloudRecs } = await supabase.from('receivables').select('*');
+        if (cloudRecs && cloudRecs.length > 0) {
+          await db.receivables.bulkPut(cloudRecs.map((r: any) => ({
+            id: r.id,
+            store_id: storeId,
+            customer_id: r.customer_id || undefined,
+            customer_name: r.customer_name,
+            transaction_id: r.transaction_id || undefined,
+            receipt_number: r.receipt_number,
+            total_amount: Number(r.amount) || 0,
+            paid_amount: Number(r.paid_amount) || 0,
+            remaining_amount: Math.max(0, (Number(r.amount) || 0) - (Number(r.paid_amount) || 0)),
+            due_date: r.due_date,
+            status: r.status,
+            notes: r.notes,
+            created_at: r.created_at
+          })));
+        }
       }
 
       if (typeof window !== 'undefined') {

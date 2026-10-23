@@ -333,9 +333,9 @@ export async function printToWebUSB(data: Uint8Array): Promise<{ success: boolea
 }
 
 /**
- * Web Serial API Driver (Linux /dev/ttyUSB0, /dev/ttyACM0, Windows COM)
+ * Web Serial API Driver (Linux /dev/ttyUSB0, /dev/rfcomm0, Windows COM Bluetooth SPP)
  */
-export async function printToWebSerial(data: Uint8Array, baudRate = 9600): Promise<{ success: boolean; message: string }> {
+export async function printToWebSerial(data: Uint8Array, baudRate = 9600, forceNewPort = false): Promise<{ success: boolean; message: string }> {
   try {
     if (!('serial' in navigator)) {
       return { 
@@ -343,14 +343,26 @@ export async function printToWebSerial(data: Uint8Array, baudRate = 9600): Promi
         message: 'Web Serial API tidak didukung di browser ini. Gunakan Google Chrome atau Edge.' 
       };
     }
-    // @ts-ignore
-    const port = await navigator.serial.requestPort();
-    await port.open({ baudRate });
+    let port: any = null;
+    if (!forceNewPort && typeof (navigator as any).serial.getPorts === 'function') {
+      const ports = await (navigator as any).serial.getPorts();
+      if (ports && ports.length > 0) {
+        port = ports[0];
+      }
+    }
+    if (!port) {
+      // @ts-ignore
+      port = await navigator.serial.requestPort();
+    }
+    if (!port.readable && !port.writable) {
+      await port.open({ baudRate });
+    }
     const writer = port.writable.getWriter();
     await writer.write(data);
     writer.releaseLock();
-    await port.close();
-    return { success: true, message: 'Berhasil mencetak via Web Serial!' };
+    await new Promise((r) => setTimeout(r, 100));
+    await port.close().catch(() => {});
+    return { success: true, message: 'Berhasil mencetak via Port Serial / Bluetooth SPP!' };
   } catch (err: any) {
     if (err.name === 'NotFoundError') {
       return { success: false, message: 'Pemilihan port serial dibatalkan.' };
@@ -360,59 +372,239 @@ export async function printToWebSerial(data: Uint8Array, baudRate = 9600): Promi
 }
 
 /**
+ * Daftar Lengkap UUID Service Printer Bluetooth POS (BLE / ESC-POS)
+ * Mencakup Eppos, VSC, Panda, Iware, Xprinter, RPP02N, BellaV, Goojprt, Zjiang, Cashino, Sunmi, MPT-II
+ */
+export const BLUETOOTH_PRINTER_SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE POS Printer (0x18F0)
+  '0000ff00-0000-1000-8000-00805f9b34fb', // Eppos / VSC / Panda / Zjiang / Iware (0xFF00)
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC / Microchip Transparent UART
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Xprinter / Star / Custom BLE
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / Transparent UART (0xFFE0)
+  '0000ffe5-0000-1000-8000-00805f9b34fb', // BLE UART Printer (0xFFE5)
+  '0000fee7-0000-1000-8000-00805f9b34fb', // WeChat / Chinese BLE Printer (0xFEE7)
+  '0000ae30-0000-1000-8000-00805f9b34fb', // JieLi BLE Thermal Printer (0xAE30)
+  '0000ae00-0000-1000-8000-00805f9b34fb', // JieLi BLE Series (0xAE00)
+  '0000fff0-0000-1000-8000-00805f9b34fb', // Custom BLE Thermal Printer (0xFFF0)
+  '00001101-0000-1000-8000-00805f9b34fb', // SPP over GATT (0x1101)
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS)
+  '00001800-0000-1000-8000-00805f9b34fb',
+  '00001801-0000-1000-8000-00805f9b34fb',
+  '0000180a-0000-1000-8000-00805f9b34fb'
+];
+
+let cachedBluetoothDevice: any = null;
+let cachedBluetoothWriteChar: any = null;
+
+export function getBluetoothPrinterStatus(): { connected: boolean; deviceName: string | null } {
+  const savedName = typeof localStorage !== 'undefined' ? localStorage.getItem('ketoko_bt_printer_name') : null;
+  const isConnected = Boolean(cachedBluetoothDevice && cachedBluetoothDevice.gatt?.connected && cachedBluetoothWriteChar);
+  return {
+    connected: isConnected,
+    deviceName: cachedBluetoothDevice?.name || savedName || null
+  };
+}
+
+export function disconnectBluetoothPrinter(): void {
+  try {
+    if (cachedBluetoothDevice?.gatt?.connected) {
+      cachedBluetoothDevice.gatt.disconnect();
+    }
+  } catch {}
+  cachedBluetoothDevice = null;
+  cachedBluetoothWriteChar = null;
+}
+
+async function resolveWriteCharacteristic(server: any): Promise<any> {
+  const IgnoredGenericServices = new Set([
+    '00001800-0000-1000-8000-00805f9b34fb',
+    '00001801-0000-1000-8000-00805f9b34fb',
+    '0000180a-0000-1000-8000-00805f9b34fb'
+  ]);
+
+  let services: any[] = [];
+  try {
+    services = await server.getPrimaryServices();
+  } catch {
+    services = [];
+  }
+
+  // Jika getPrimaryServices() kosong, coba satu per satu dari daftar UUID printer
+  if (!services || services.length === 0) {
+    for (const uuid of BLUETOOTH_PRINTER_SERVICES) {
+      try {
+        const s = await server.getPrimaryService(uuid);
+        if (s) services.push(s);
+      } catch {}
+    }
+  }
+
+  let fallbackChar: any = null;
+
+  for (const service of services) {
+    const serviceUuid = String(service.uuid || '').toLowerCase();
+    const isGeneric = IgnoredGenericServices.has(serviceUuid);
+    try {
+      const chars = await service.getCharacteristics();
+      for (const c of chars) {
+        if (c.properties?.writeWithoutResponse || c.properties?.write) {
+          if (!isGeneric) {
+            return c;
+          }
+          if (!fallbackChar) {
+            fallbackChar = c;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return fallbackChar;
+}
+
+/**
+ * Cari & Hubungkan Printer Bluetooth (Bisa dipanggil langsung dari Pengaturan Printer atau saat Cetak)
+ */
+export async function connectBluetoothPrinter(forceNewDevice = true): Promise<{
+  success: boolean;
+  deviceName?: string;
+  message: string;
+}> {
+  try {
+    if (!('bluetooth' in navigator)) {
+      return {
+        success: false,
+        message: 'Web Bluetooth tidak didukung di browser ini. Gunakan Google Chrome / Edge (pastikan HTTPS atau localhost & Bluetooth menyala).'
+      };
+    }
+
+    // 1. Gunakan koneksi aktif jika sudah terhubung dan tidak diminta ganti perangkat
+    if (!forceNewDevice && cachedBluetoothDevice?.gatt?.connected && cachedBluetoothWriteChar) {
+      const name = cachedBluetoothDevice.name || 'Printer Bluetooth POS';
+      return {
+        success: true,
+        deviceName: name,
+        message: `Terhubung ke ${name}`
+      };
+    }
+
+    let device = !forceNewDevice ? cachedBluetoothDevice : null;
+
+    // 2. Coba ambil dari daftar perangkat yang sudah diizinkan sebelumnya di browser
+    if (!device && !forceNewDevice && typeof (navigator as any).bluetooth.getDevices === 'function') {
+      try {
+        const permitted = await (navigator as any).bluetooth.getDevices();
+        if (permitted && permitted.length > 0) {
+          const savedName = localStorage.getItem('ketoko_bt_printer_name');
+          device = (savedName && permitted.find((d: any) => d.name === savedName)) || permitted[0];
+        }
+      } catch {}
+    }
+
+    // 3. Jika belum ada perangkat, buka dialog pemilihan Bluetooth
+    if (!device) {
+      // @ts-ignore
+      device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: BLUETOOTH_PRINTER_SERVICES
+      });
+    }
+
+    if (!device) {
+      return { success: false, message: 'Perangkat Bluetooth tidak dipilih.' };
+    }
+
+    device.addEventListener?.('gattserverdisconnected', () => {
+      cachedBluetoothWriteChar = null;
+    });
+
+    const server = await device.gatt?.connect();
+    if (!server) {
+      throw new Error('Gagal menghubungkan ke Bluetooth GATT Server. Pastikan printer menyala & tidak sedang terhubung ke HP/komputer lain.');
+    }
+
+    const writeChar = await resolveWriteCharacteristic(server);
+    if (!writeChar) {
+      throw new Error(
+        'Karakteristik cetak BLE tidak ditemukan pada perangkat ini. Jika printer menggunakan Bluetooth Classic (SPP/COM), gunakan tombol "Konek via Bluetooth SPP / Serial" di bawah.'
+      );
+    }
+
+    cachedBluetoothDevice = device;
+    cachedBluetoothWriteChar = writeChar;
+    const devName = device.name || 'Printer Bluetooth POS';
+    try {
+      localStorage.setItem('ketoko_bt_printer_name', devName);
+    } catch {}
+
+    return {
+      success: true,
+      deviceName: devName,
+      message: `Berhasil terhubung ke printer "${devName}"!`
+    };
+  } catch (err: any) {
+    if (err.name === 'NotFoundError') {
+      return { success: false, message: 'Pencarian printer Bluetooth dibatalkan.' };
+    }
+    return {
+      success: false,
+      message: err.message || 'Gagal menghubungkan ke printer Bluetooth.'
+    };
+  }
+}
+
+async function writeBleChunkSafe(writeChar: any, chunk: Uint8Array): Promise<void> {
+  if (writeChar.properties?.writeWithoutResponse && typeof writeChar.writeValueWithoutResponse === 'function') {
+    await writeChar.writeValueWithoutResponse(chunk);
+  } else if (typeof writeChar.writeValueWithResponse === 'function') {
+    await writeChar.writeValueWithResponse(chunk);
+  } else {
+    await writeChar.writeValue(chunk);
+  }
+}
+
+/**
  * Web Bluetooth POS Printer Driver (BLE / ESCPOS)
  */
 export async function printToWebBluetooth(data: Uint8Array): Promise<{ success: boolean; message: string }> {
   try {
-    if (!('bluetooth' in navigator)) {
-      return { 
-        success: false, 
-        message: 'Web Bluetooth API tidak didukung pada browser ini. Pastikan Bluetooth aktif di Linux.' 
-      };
-    }
-
-    // @ts-ignore
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [
-        '000018f0-0000-1000-8000-00805f9b34fb', // Standard POS Printer Service
-        '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent
-        'e7810a71-73ae-499d-8c15-faa9aef0c3f2'
-      ]
-    });
-
-    const server = await device.gatt?.connect();
-    if (!server) throw new Error('Gagal menghubungkan ke Bluetooth GATT Server');
-
-    // Attempt to discover standard serial / printer characteristic
-    const services = await server.getPrimaryServices();
-    let writeChar: any = null;
-
-    for (const service of services) {
-      const chars = await service.getCharacteristics();
-      for (const c of chars) {
-        if (c.properties.write || c.properties.writeWithoutResponse) {
-          writeChar = c;
-          break;
-        }
+    // Pastikan terhubung (gunakan koneksi tersimpan atau minta pairing jika belum)
+    if (!cachedBluetoothDevice?.gatt?.connected || !cachedBluetoothWriteChar) {
+      const conn = await connectBluetoothPrinter(false);
+      if (!conn.success || !cachedBluetoothWriteChar) {
+        return { success: false, message: conn.message };
       }
-      if (writeChar) break;
     }
 
-    if (!writeChar) {
-      throw new Error('Karakteristik Write Bluetooth tidak ditemukan pada printer ini');
-    }
+    const writeChar = cachedBluetoothWriteChar;
+    const deviceName = cachedBluetoothDevice?.name || localStorage.getItem('ketoko_bt_printer_name') || 'Bluetooth Printer';
 
-    // Send chunks (max 512 bytes per BLE packet)
-    const chunkSize = 512;
+    // Kirim per 100 byte dengan jeda 15ms agar buffer UART printer thermal 58mm/80mm tidak penuh/putus
+    const chunkSize = 100;
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
-      await writeChar.writeValue(chunk);
+      try {
+        await writeBleChunkSafe(writeChar, chunk);
+      } catch {
+        // Fallback otomatis ke paket 20 byte untuk printer BLE generasi lama (MTU 23)
+        for (let j = 0; j < chunk.length; j += 20) {
+          const miniChunk = chunk.slice(j, j + 20);
+          await writeBleChunkSafe(writeChar, miniChunk);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
+      if (i + chunkSize < data.length) {
+        await new Promise((r) => setTimeout(r, 15));
+      }
     }
 
-    device.gatt?.disconnect();
-    return { success: true, message: `Berhasil mencetak ke ${device.name || 'Bluetooth Printer'}!` };
+    // Beri waktu buffer printer menyelesaikan cetak baris terakhir (jangan langsung disconnect)
+    await new Promise((r) => setTimeout(r, 120));
+
+    return { success: true, message: `Berhasil mencetak ke ${deviceName}!` };
   } catch (err: any) {
+    // Jika koneksi terputus di tengah jalan, reset karakteristik agar percobaan berikutnya auto-reconnect
+    cachedBluetoothWriteChar = null;
     if (err.name === 'NotFoundError') {
       return { success: false, message: 'Pemilihan Bluetooth dibatalkan.' };
     }
@@ -537,7 +729,15 @@ export async function printShiftReport(reportData: {
       .cut(true);
 
     const raw = builder.getUint8Array();
-    return await printReceiptUniversal(raw, 'USB');
+    let activeDriver: 'USB' | 'SERIAL' | 'BLUETOOTH' | 'BROWSER' = 'USB';
+    try {
+      const saved = localStorage.getItem('ketoko_printer_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.driverType) activeDriver = parsed.driverType;
+      }
+    } catch {}
+    return await printReceiptUniversal(raw, activeDriver);
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal cetak shift report' };
   }

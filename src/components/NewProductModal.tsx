@@ -32,8 +32,50 @@ const parseRupiah = (val: string): number => {
 interface NewProductModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onProductCreated: () => Promise<void>;
+  onProductCreated: (newProduct?: Product) => Promise<void> | void;
 }
+
+const generateNextUniqueSku = async (): Promise<string> => {
+  try {
+    const allProds = await db.products.toArray();
+    const deletedIds = syncService.getDeletedProductIds();
+    const existingIds = new Set<string>();
+    let maxBrgNum = allProds.length;
+
+    for (const p of allProds) {
+      const idStr = String(p.id).trim();
+      existingIds.add(idStr.toUpperCase());
+      const match = idStr.match(/^BRG-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxBrgNum) {
+          maxBrgNum = num;
+        }
+      }
+    }
+
+    for (const delId of deletedIds) {
+      existingIds.add(String(delId).trim().toUpperCase());
+      const match = String(delId).trim().match(/^BRG-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxBrgNum) {
+          maxBrgNum = num;
+        }
+      }
+    }
+
+    let nextNum = maxBrgNum + 1;
+    let candidate = `BRG-${String(nextNum).padStart(3, '0')}`;
+    while (existingIds.has(candidate.toUpperCase())) {
+      nextNum++;
+      candidate = `BRG-${String(nextNum).padStart(3, '0')}`;
+    }
+    return candidate;
+  } catch {
+    return `BRG-${Date.now().toString().slice(-5)}`;
+  }
+};
 
 export const NewProductModal: React.FC<NewProductModalProps> = ({
   isOpen,
@@ -83,12 +125,8 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
   // Reset form cleanly to 0 / empty values
   const resetFormCleanly = async () => {
-    try {
-      const count = await db.products.count();
-      setSkuId(`BRG-${String(count + 1).padStart(3, '0')}`);
-    } catch {
-      setSkuId('BRG-001');
-    }
+    const nextSku = await generateNextUniqueSku();
+    setSkuId(nextSku);
     setBarcode('');
     setName('');
     setImageUrl('');
@@ -179,9 +217,28 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       const parsedStock = Number(stock) || 0;
       const parsedMinAlert = Number(minStockAlert) || 5;
 
+      let finalSkuId = skuId.trim() || (await generateNextUniqueSku());
+      const existingProduct = await db.products.get(finalSkuId);
+      if (existingProduct) {
+        if (/^BRG-\d+$/i.test(finalSkuId)) {
+          finalSkuId = await generateNextUniqueSku();
+        } else {
+          const confirmOverwrite = window.confirm(
+            `Kode SKU "${finalSkuId}" sudah digunakan oleh produk "${existingProduct.name}".\n\nKlik OK untuk membuat Kode SKU unik otomatis, atau Cancel untuk membatalkan.`
+          );
+          if (!confirmOverwrite) {
+            setIsSubmitting(false);
+            return;
+          }
+          finalSkuId = await generateNextUniqueSku();
+        }
+        setSkuId(finalSkuId);
+      }
+
       const newProduct: Product = {
-        id: skuId.trim() || `BRG-${Date.now()}`,
-        barcode: barcode.trim() || skuId.trim(),
+        id: finalSkuId,
+        store_id: syncService.getActiveStoreId(),
+        barcode: barcode.trim() || finalSkuId,
         name: name.trim(),
         category: finalCategory,
         unit: finalUnit,
@@ -197,14 +254,14 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       };
 
       await syncService.syncProductChange(newProduct);
-      setSuccessMsg(`Produk "${name}" berhasil ditambahkan ke katalog.`);
-      await onProductCreated();
+      setSuccessMsg(`Produk "${name}" (${finalSkuId}) berhasil ditambahkan ke katalog.`);
+      await onProductCreated(newProduct);
 
       setTimeout(() => {
         setSuccessMsg(null);
         resetFormCleanly();
         onClose();
-      }, 800);
+      }, 600);
     } catch (err: any) {
       alert('Gagal menambah produk: ' + err.message);
     } finally {
