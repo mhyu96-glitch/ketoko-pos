@@ -1098,6 +1098,15 @@ export class SyncService {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
+          // Bersihkan tombstone dari sync_logs jika produk ini pernah dihapus sebelumnya
+          Promise.resolve(
+            supabase
+              .from('sync_logs')
+              .delete()
+              .eq('operation_type', 'DELETE_PRODUCT')
+              .eq('error_message', cleanId)
+          ).catch(() => {});
+
           // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
           const cloudPayload = {
             id: String(updatedProd.id),
@@ -1169,6 +1178,11 @@ export class SyncService {
             for (const item of remoteDeleted) {
               if (item.error_message) {
                 const pId = String(item.error_message).trim();
+                // Jika produk ini sudah di-unmark/diaktifkan ulang di lokal, lewati (jangan hapus)
+                const localDeleted = this.getDeletedProductIds();
+                if (!localDeleted.has(pId)) {
+                  continue;
+                }
                 deletedProductIds.add(pId);
                 this.markProductDeletedLocally(pId);
                 await db.products.delete(pId).catch(() => {});

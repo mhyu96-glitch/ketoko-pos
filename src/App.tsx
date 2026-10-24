@@ -343,16 +343,14 @@ export const App: React.FC = () => {
       : list;
 
     return [...filtered].sort((a, b) => {
+      const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      if (bTime !== aTime) return bTime - aTime;
+
       const aIsCustom = !/^\d+$/.test(String(a.id).trim());
       const bIsCustom = !/^\d+$/.test(String(b.id).trim());
       if (aIsCustom !== bIsCustom) return aIsCustom ? -1 : 1;
-      if (aIsCustom && bIsCustom) {
-        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-        if (bTime !== aTime) return bTime - aTime;
-        return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
-      }
-      return 0;
+      return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
     });
   }, []);
 

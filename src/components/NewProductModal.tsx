@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Package, 
@@ -9,7 +9,8 @@ import {
   ImageIcon, 
   Trash2, 
   Sparkles, 
-  Loader2 
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { db } from '../db';
 import type { Product } from '../types';
@@ -86,6 +87,11 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   const [barcode, setBarcode] = useState('');
   const [name, setName] = useState('');
   
+  // Real-time Duplicate Detection States
+  const [allProductsCache, setAllProductsCache] = useState<Product[]>([]);
+  const [skuDuplicate, setSkuDuplicate] = useState<Product | null>(null);
+  const [barcodeDuplicate, setBarcodeDuplicate] = useState<Product | null>(null);
+
   // Category state
   const [category, setCategory] = useState('Sembako');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -122,6 +128,25 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Load fresh products cache from local database
+  const refreshProductCache = useCallback(async () => {
+    try {
+      const allProds = await db.products.toArray();
+      setAllProductsCache(allProds);
+      return allProds;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Generate next guaranteed unique SKU and clear duplicate warning
+  const handleAutoGenerateSku = useCallback(async () => {
+    const nextSku = await generateNextUniqueSku();
+    setSkuId(nextSku);
+    setSkuDuplicate(null);
+  }, []);
 
   // Reset form cleanly to 0 / empty values
   const resetFormCleanly = async () => {
@@ -132,6 +157,9 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
     setImageUrl('');
     setImageMeta(null);
     setImageError(null);
+    setSubmitError(null);
+    setSkuDuplicate(null);
+    setBarcodeDuplicate(null);
     setIsCustomCategory(false);
     setCustomCategoryInput('');
     setIsCustomUnit(false);
@@ -151,7 +179,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       resetFormCleanly();
-      db.products.toArray().then((allProds) => {
+      refreshProductCache().then((allProds) => {
         const cats = Array.from(new Set(allProds.map((p) => p.category).filter(Boolean)));
         if (cats.length > 0) {
           const merged = Array.from(new Set([
@@ -168,7 +196,44 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         }
       }).catch(console.error);
     }
-  }, [isOpen]);
+  }, [isOpen, refreshProductCache]);
+
+  // Real-time instant duplicate detection for SKU (Kode Produk)
+  useEffect(() => {
+    const cleanSku = skuId.trim().toLowerCase();
+    if (!cleanSku || allProductsCache.length === 0) {
+      setSkuDuplicate(null);
+      return;
+    }
+
+    const match = allProductsCache.find((p) => {
+      const pId = String(p.id).trim().toLowerCase();
+      const pBarcode = String(p.barcode || '').trim().toLowerCase();
+      return pId === cleanSku || (pBarcode && pBarcode === cleanSku);
+    });
+
+    setSkuDuplicate(match || null);
+  }, [skuId, allProductsCache]);
+
+  // Real-time instant duplicate detection for Barcode Scanner
+  useEffect(() => {
+    const cleanBarcode = barcode.trim().toLowerCase();
+    if (!cleanBarcode || allProductsCache.length === 0) {
+      setBarcodeDuplicate(null);
+      return;
+    }
+
+    const currentSku = skuId.trim().toLowerCase();
+    const match = allProductsCache.find((p) => {
+      const pId = String(p.id).trim().toLowerCase();
+      const pBarcode = String(p.barcode || '').trim().toLowerCase();
+      // Jangan flag jika sama persis dengan SKU yang sedang dibuat saat ini
+      if (pId === currentSku && !skuDuplicate) return false;
+      return pBarcode === cleanBarcode || pId === cleanBarcode;
+    });
+
+    setBarcodeDuplicate(match || null);
+  }, [barcode, skuId, allProductsCache, skuDuplicate]);
 
   if (!isOpen) return null;
 
@@ -198,7 +263,26 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || isSubmitting) return;
+    setSubmitError(null);
+
+    if (!name.trim()) {
+      setSubmitError('Nama produk wajib diisi.');
+      return;
+    }
+
+    if (isSubmitting) return;
+
+    // 1. Guard Duplikasi Real-time: Tolak jika SKU sudah terpakai
+    if (skuDuplicate) {
+      setSubmitError(`Kode Produk "${skuId}" sudah terpakai oleh "${skuDuplicate.name}". Ganti kode lain agar tidak double input!`);
+      return;
+    }
+
+    // 2. Guard Duplikasi Real-time: Tolak jika Barcode sudah terpakai
+    if (barcodeDuplicate) {
+      setSubmitError(`Barcode "${barcode}" sudah terpakai oleh "${barcodeDuplicate.name}". Ganti barcode lain agar tidak double input!`);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -217,22 +301,25 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       const parsedStock = Number(stock) || 0;
       const parsedMinAlert = Number(minStockAlert) || 5;
 
-      let finalSkuId = skuId.trim() || (await generateNextUniqueSku());
+      const finalSkuId = skuId.trim() || (await generateNextUniqueSku());
+
+      // Verifikasi langsung ke database IndexedDB (keamanan ganda)
       const existingProduct = await db.products.get(finalSkuId);
       if (existingProduct) {
-        if (/^BRG-\d+$/i.test(finalSkuId)) {
-          finalSkuId = await generateNextUniqueSku();
-        } else {
-          const confirmOverwrite = window.confirm(
-            `Kode SKU "${finalSkuId}" sudah digunakan oleh produk "${existingProduct.name}".\n\nKlik OK untuk membuat Kode SKU unik otomatis, atau Cancel untuk membatalkan.`
-          );
-          if (!confirmOverwrite) {
-            setIsSubmitting(false);
-            return;
-          }
-          finalSkuId = await generateNextUniqueSku();
+        setSkuDuplicate(existingProduct);
+        setSubmitError(`Kode SKU "${finalSkuId}" sudah terdaftar pada produk "${existingProduct.name}". Silakan gunakan tombol "Buat Kode Baru Otomatis".`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (barcode.trim()) {
+        const existingBarcode = await db.products.where('barcode').equals(barcode.trim()).first();
+        if (existingBarcode && existingBarcode.id !== finalSkuId) {
+          setBarcodeDuplicate(existingBarcode);
+          setSubmitError(`Barcode "${barcode.trim()}" sudah digunakan oleh produk "${existingBarcode.name}". Masukkan barcode lain yang unik.`);
+          setIsSubmitting(false);
+          return;
         }
-        setSkuId(finalSkuId);
       }
 
       const newProduct: Product = {
@@ -253,9 +340,13 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         updated_at: new Date().toISOString()
       };
 
+      // Pastikan tombstone dibersihkan dan produk tersimpan langsung ke Dexie & Cloud
       await syncService.syncProductChange(newProduct);
       setSuccessMsg(`Produk "${name}" (${finalSkuId}) berhasil ditambahkan ke katalog.`);
+      
+      // Update state di komponen induk (App.tsx / ProductPriceListView)
       await onProductCreated(newProduct);
+      await refreshProductCache();
 
       setTimeout(() => {
         setSuccessMsg(null);
@@ -263,7 +354,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         onClose();
       }, 600);
     } catch (err: any) {
-      alert('Gagal menambah produk: ' + err.message);
+      setSubmitError('Gagal menambah produk: ' + (err.message || 'Terjadi kesalahan sistem'));
     } finally {
       setIsSubmitting(false);
     }
@@ -393,27 +484,119 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
           </div>
 
           {/* Row 1: Kode SKU & Barcode */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[#5c3c26] font-semibold mb-1 block">Kode Produk (SKU ID)</label>
-              <input
-                type="text"
-                value={skuId}
-                onChange={(e) => setSkuId(e.target.value)}
-                placeholder="BRG-001"
-                required
-                className="w-full px-3 py-2 bg-white text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f]"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[#5c3c26] font-semibold text-xs flex items-center space-x-1">
+                  <span>Kode Produk (SKU ID)</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateSku}
+                  className="text-[10px] font-bold text-[#7c4e2f] hover:underline flex items-center space-x-0.5"
+                  title="Generate kode unik otomatis berikutnya"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-600" />
+                  <span>Auto SKU</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  value={skuId}
+                  onChange={(e) => setSkuId(e.target.value.toUpperCase())}
+                  placeholder="e.g. BRG-001, AC-101"
+                  required
+                  className={`w-full px-3 py-2 rounded-xl border text-xs font-mono transition-all ${
+                    skuDuplicate
+                      ? 'bg-rose-50/70 border-rose-500 text-rose-950 ring-2 ring-rose-500/20'
+                      : 'bg-white text-[#3d2617] border-[#ddc3aa] focus:bg-white focus:border-[#7c4e2f]'
+                  }`}
+                />
+                {skuDuplicate && (
+                  <div className="absolute right-2.5 top-2.5 pointer-events-none text-rose-600">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+
+              {/* Notifikasi Real-time Jika Kode Item Sudah Terpakai */}
+              {skuDuplicate && (
+                <div className="mt-1.5 p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs animate-fadeIn shadow-2xs space-y-1">
+                  <div className="flex items-center space-x-1.5 font-black text-rose-700">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>⚠️ KODE SUDAH TERPAKAI!</span>
+                    <span className="text-[10px] px-1.5 py-0.2 bg-rose-200 rounded font-mono font-bold text-rose-950">
+                      {skuDuplicate.id}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-800 leading-snug">
+                    Kode ini sudah terdaftar pada: <b>{skuDuplicate.name}</b>
+                    {skuDuplicate.category ? ` (${skuDuplicate.category})` : ''}
+                    {skuDuplicate.stock != null ? ` • Stok: ${skuDuplicate.stock} ${skuDuplicate.unit || 'Pcs'}` : ''}
+                  </p>
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAutoGenerateSku}
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold shadow-2xs flex items-center space-x-1 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-200" />
+                      <span>Ganti Kode Unik Otomatis</span>
+                    </button>
+                    <span className="text-[10px] text-rose-600 italic">
+                      Harap ganti kode agar tidak double input!
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
+
             <div>
-              <label className="text-[#5c3c26] font-semibold mb-1 block">Barcode Scanner (11-13 Digit)</label>
-              <input
-                type="text"
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-                placeholder="Scan barcode atau ketik (opsional)..."
-                className="w-full px-3 py-2 bg-white text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f]"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[#5c3c26] font-semibold text-xs">Barcode Scanner (11-13 Digit)</label>
+                <span className="text-[10px] text-[#8a6b53] font-medium">Opsional</span>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value.trim())}
+                  placeholder="Scan barcode fisik produk..."
+                  className={`w-full px-3 py-2 rounded-xl border text-xs font-mono transition-all ${
+                    barcodeDuplicate
+                      ? 'bg-rose-50/70 border-rose-500 text-rose-950 ring-2 ring-rose-500/20'
+                      : 'bg-white text-[#3d2617] border-[#ddc3aa] focus:bg-white focus:border-[#7c4e2f]'
+                  }`}
+                />
+                {barcodeDuplicate && (
+                  <div className="absolute right-2.5 top-2.5 pointer-events-none text-rose-600">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+
+              {/* Notifikasi Real-time Jika Barcode Sudah Terpakai */}
+              {barcodeDuplicate && (
+                <div className="mt-1.5 p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs animate-fadeIn shadow-2xs space-y-1">
+                  <div className="flex items-center space-x-1.5 font-black text-rose-700">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>⚠️ BARCODE SUDAH TERPAKAI!</span>
+                    <span className="text-[10px] px-1.5 py-0.2 bg-rose-200 rounded font-mono font-bold text-rose-950">
+                      {barcodeDuplicate.barcode}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-800 leading-snug">
+                    Barcode ini sudah terdaftar pada: <b>{barcodeDuplicate.name}</b> (SKU: {barcodeDuplicate.id}).
+                  </p>
+                  <span className="text-[10px] text-rose-600 font-medium block">
+                    Gunakan barcode fisik lain yang unik agar kasir tidak salah scan produk.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -638,6 +821,27 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
             </div>
           </div>
 
+          {/* Error & Duplicate Blocking Warning */}
+          {submitError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center space-x-2 animate-fadeIn shadow-2xs">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          {(skuDuplicate || barcodeDuplicate) && !submitError && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold flex items-center space-x-2 animate-fadeIn shadow-2xs">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                {skuDuplicate && barcodeDuplicate
+                  ? 'Kode Produk dan Barcode sudah digunakan! Harap perbaiki sebelum menyimpan agar tidak double input.'
+                  : skuDuplicate
+                  ? `Kode Produk "${skuId}" sudah terdaftar pada produk lain. Gunakan kode unik agar tidak double input.`
+                  : `Barcode "${barcode}" sudah terdaftar pada produk lain. Gunakan barcode unik agar tidak double input.`}
+              </span>
+            </div>
+          )}
+
           {successMsg && (
             <div className="p-3 rounded-xl bg-[#edf5ee] border border-[#cce2cf] text-[#166534] text-xs text-center font-semibold flex items-center justify-center space-x-1.5 animate-fadeIn">
               <CheckCircle2 className="w-4 h-4 text-[#166534]" />
@@ -649,11 +853,21 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 bg-[#7c4e2f] hover:bg-[#633e26] disabled:opacity-40 text-white font-bold rounded-xl shadow-md shadow-[#7c4e2f]/20 flex items-center justify-center space-x-2 text-xs transition-all active:scale-[0.99]"
+              disabled={isSubmitting || !!skuDuplicate || !!barcodeDuplicate}
+              className={`w-full py-3.5 font-bold rounded-xl shadow-md flex items-center justify-center space-x-2 text-xs transition-all active:scale-[0.99] ${
+                skuDuplicate || barcodeDuplicate
+                  ? 'bg-stone-300 text-stone-500 cursor-not-allowed border border-stone-300 shadow-none'
+                  : 'bg-[#7c4e2f] hover:bg-[#633e26] disabled:opacity-40 text-white shadow-[#7c4e2f]/20'
+              }`}
             >
               <Save className="w-4 h-4" />
-              <span>{isSubmitting ? 'Menyimpan ke IndexedDB...' : 'Simpan Produk Baru ke Master Data'}</span>
+              <span>
+                {isSubmitting
+                  ? 'Menyimpan ke IndexedDB...'
+                  : skuDuplicate || barcodeDuplicate
+                  ? 'Perbaiki Kode / Barcode Duplikat Sebelum Menyimpan'
+                  : 'Simpan Produk Baru ke Master Data'}
+              </span>
             </button>
           </div>
 
