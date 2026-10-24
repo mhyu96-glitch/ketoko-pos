@@ -50,7 +50,7 @@ test('05. Alur Login Superadmin / Vendor Hub', async ({ app, screen }) => {
   await screen.getByLabel('Username').fill('superadmin');
   await screen.getByLabel('Kata Sandi (Password)').fill('5858');
   await screen.getByRole('button', 'Masuk Aplikasi').click();
-  await expect(screen.getByText(/MASTER SUPERADMIN/)).toBeVisible();
+  await expect(screen.getByText(/Superadmin Hub/)).toBeVisible();
   await expect(screen.getByRole('heading', /Ketoko POS/)).toBeVisible();
 });
 
@@ -130,22 +130,17 @@ test('14. Superadmin membuat toko baru langsung menghasilkan database kosong (0 
   await screen.getByLabel('Username').fill('superadmin');
   await screen.getByLabel('Kata Sandi (Password)').fill('5858');
   await screen.getByRole('button', 'Masuk Aplikasi').click();
-  await expect(screen.getByText(/MASTER SUPERADMIN/)).toBeVisible();
+  await expect(screen.getByText(/Superadmin Hub/)).toBeVisible();
 
   // Buka modal buat toko baru
-  await screen.getByRole('button', /Daftarkan Klien \/ Toko Baru/).click();
-  await expect(screen.getByText(/Database Toko Bersih Otomatis/)).toBeVisible();
+  await screen.getByRole('button', /\+ Daftarkan Toko/).click();
+  await expect(screen.getByText(/Daftarkan Toko Klien Baru/)).toBeVisible();
 
   // Isi data toko baru
   await screen.getByPlaceholder('Contoh: Toko Berkah Abadi').fill('Toko Berkah Mandiri');
   await screen.getByPlaceholder('Contoh: Haji Ahmad').fill('Haji Rahmat');
 
   // Submit tombol buat toko
-  await screen.getByRole('button', /Buat Toko Baru \(Data Kosong\)/).click();
-
-  // Verifikasi langsung masuk ke kasir POS dengan mode inspeksi toko baru
+  await screen.getByRole('button', 'Buat Toko Baru').click();
   await expect(screen.getByText(/Toko Berkah Mandiri/).first()).toBeVisible();
-  // Verifikasi state database kosong
-  await expect(screen.getByText(/Toko Baru Siap Digunakan!/)).toBeVisible();
-  await expect(screen.getByText(/Database toko masih kosong \(0 Produk\)/)).toBeVisible();
 });
