@@ -1122,21 +1122,21 @@ export function generateDotMatrixHTML(
   const isContinuousHalf = paperSize === 'CONTINUOUS_HALF';
   const isContinuousFull = paperSize === 'CONTINUOUS_FULL' || paperSize === 'FULL_CONTINUOUS';
 
-  let pageSizeCss = '210mm 148.5mm';
-  let pageMarginCss = '5mm 8mm';
-  let minRows = 6;
+  let pageSizeCss = '210mm 148mm';
+  let pageMarginCss = '3mm 5mm';
+  let minRows = 5;
 
   if (isA4Full) {
     pageSizeCss = 'A4 portrait';
-    pageMarginCss = '10mm 12mm';
+    pageMarginCss = '8mm 10mm';
     minRows = 11;
   } else if (isContinuousHalf) {
     pageSizeCss = '216mm 140mm';
-    pageMarginCss = '4mm 6mm';
+    pageMarginCss = '3mm 5mm';
     minRows = 5;
   } else if (isContinuousFull) {
     pageSizeCss = '216mm 280mm';
-    pageMarginCss = '6mm 8mm';
+    pageMarginCss = '5mm 6mm';
     minRows = 12;
   }
 
@@ -1165,87 +1165,104 @@ export function generateDotMatrixHTML(
       margin: 0;
       padding: 0;
     }
-    body {
-      font-family: 'Courier New', Courier, monospace, 'Lucida Console';
-      font-size: ${isA4Full ? '12px' : '10.5px'};
-      line-height: ${isA4Full ? '1.3' : '1.2'};
-      color: #000000;
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0 !important;
+      padding: 0 !important;
       background: #ffffff;
       -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      font-family: 'Courier New', Courier, monospace, 'Lucida Console';
+      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      line-height: ${isA4Full ? '1.25' : '1.2'};
+      color: #000000;
     }
     .faktur-container {
       width: 100%;
-      max-width: 100%;
+      max-width: ${isA4Full ? '190mm' : isA4Half ? '196mm' : '204mm'};
       margin: 0 auto;
-      padding: ${isA4Full ? '4px 0' : '2px 0'};
+      padding: ${isA4Full ? '4px 0' : '1px 0'};
+      box-sizing: border-box;
     }
     .header-table, .info-table, .footer-table, .sig-table, .item-table, .summary-table {
       width: 100%;
       border-collapse: collapse;
+      table-layout: fixed;
+      box-sizing: border-box;
+    }
+    .header-table td, .info-table td, .footer-table td, .sig-table td, .item-table td, .item-table th, .summary-table td {
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      overflow: hidden;
     }
     .store-title {
-      font-size: ${isA4Full ? '18px' : '14.5px'};
+      font-size: ${isA4Full ? '17px' : '13.5px'};
       font-weight: 900;
       letter-spacing: 0.5px;
       line-height: 1.15;
     }
     .store-sub {
-      font-size: ${isA4Full ? '11px' : '9px'};
+      font-size: ${isA4Full ? '10px' : '8.5px'};
       font-weight: bold;
       color: #222;
       margin-top: 1px;
     }
     .store-addr {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       color: #333;
     }
     .faktur-title {
-      font-size: ${isA4Full ? '18px' : '14.5px'};
+      font-size: ${isA4Full ? '17px' : '14px'};
       font-weight: 900;
       letter-spacing: 1px;
       line-height: 1.15;
     }
     .trx-info {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
     }
     .sep-line {
       border: none;
       border-top: 1px dashed #000000;
-      margin: ${isA4Full ? '5px 0' : '3px 0'};
+      margin: ${isA4Full ? '4px 0' : '2.5px 0'};
     }
     .info-table td {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       padding: ${isA4Full ? '2px 0' : '1px 0'};
     }
     .cust-highlight {
-      font-size: ${isA4Full ? '12px' : '10px'};
+      font-size: ${isA4Full ? '11px' : '9.5px'};
     }
     .status-box {
       font-weight: 800;
       border-bottom: 1px dotted #000;
     }
     .item-table {
-      margin: ${isA4Full ? '6px 0' : '3px 0'};
+      margin: ${isA4Full ? '5px 0' : '2px 0'};
     }
     .item-table th {
       text-align: left;
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
-      padding: ${isA4Full ? '5px 3px' : '2.5px 2px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
+      padding: ${isA4Full ? '4px 3px' : '2.5px 2px'};
       border-top: 1.5px solid #000000;
       border-bottom: 1.5px solid #000000;
       font-weight: 900;
-      background: #f7f7f7;
+      background: #f4f4f4;
     }
     .item-table td {
-      padding: ${isA4Full ? '5px 3px' : '2.5px 2px'};
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      padding: ${isA4Full ? '4px 3px' : '2px 2px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       border-bottom: 1px dotted #ddd;
     }
     .item-name {
       font-weight: 700;
+      line-height: 1.15;
     }
     .empty-row td {
-      height: ${isA4Full ? '24px' : '16px'};
+      height: ${isA4Full ? '20px' : '14px'};
       border-bottom: 1px dotted #e5e5e5;
     }
     .text-muted {
@@ -1257,57 +1274,75 @@ export function generateDotMatrixHTML(
     .font-bold { font-weight: bold; }
     .terbilang-box {
       border: 1px dashed #000000;
-      padding: ${isA4Full ? '6px 8px' : '3px 6px'};
+      padding: ${isA4Full ? '5px 7px' : '3px 5px'};
       background: #fafafa;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
     .terbilang-label {
-      font-size: ${isA4Full ? '9px' : '8px'};
+      font-size: ${isA4Full ? '8.5px' : '7.5px'};
       font-weight: 900;
       letter-spacing: 0.5px;
     }
     .terbilang-text {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '8.5px'};
       font-style: italic;
       font-weight: 700;
-      line-height: 1.25;
+      line-height: 1.2;
     }
     .notice-box {
-      font-size: ${isA4Full ? '10.5px' : '8.5px'};
+      font-size: ${isA4Full ? '9.5px' : '8px'};
       color: #333;
-      line-height: 1.3;
-      margin-top: 4px;
+      line-height: 1.25;
+      margin-top: 2px;
     }
     .summary-table td {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       padding: ${isA4Full ? '2px 0' : '1px 0'};
     }
     .grand-total-row td {
       font-weight: 900;
       border-top: 1.5px solid #000000;
       border-bottom: 1.5px solid #000000;
-      padding: ${isA4Full ? '4px 0' : '2.5px 0'} !important;
+      padding: ${isA4Full ? '3px 0' : '2px 0'} !important;
     }
     .grand-val {
-      font-size: ${isA4Full ? '15px' : '12px'};
+      font-size: ${isA4Full ? '13.5px' : '11.5px'};
     }
     .sig-table {
-      margin-top: ${isA4Full ? '16px' : '6px'};
+      margin-top: ${isA4Full ? '12px' : '5px'};
       text-align: center;
     }
     .sig-role {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       font-weight: bold;
     }
     .sig-space {
-      height: ${isA4Full ? '55px' : '32px'};
+      height: ${isA4Full ? '45px' : '26px'};
     }
     .sig-line {
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9px'};
       font-weight: bold;
     }
     @media print {
-      body { background: transparent; }
+      @page {
+        size: ${pageSizeCss};
+        margin: ${pageMarginCss};
+      }
+      html, body {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .faktur-container {
+        width: 100% !important;
+        max-width: ${isA4Full ? '190mm' : isA4Half ? '196mm' : '204mm'} !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+      }
       .no-print { display: none !important; }
       tr { page-break-inside: avoid; }
       .footer-table, .sig-table { page-break-inside: avoid; }
@@ -1340,7 +1375,7 @@ export function generateDotMatrixHTML(
     <table class="info-table">
       <tr>
         <td style="width: 55%;">
-          <div>Kepada Yth : <b class="cust-highlight">${transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM'}</b></div>
+          <div>Kepada Yth : <b class="cust-highlight">${transaction.customer_name ? transaction.customer_name.toUpperCase() : (transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM')}</b></div>
           <div>Status     : <span class="status-box">${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</span></div>
         </td>
         <td style="width: 45%; text-align: right;">
@@ -1355,11 +1390,11 @@ export function generateDotMatrixHTML(
       <thead>
         <tr>
           <th style="width: 5%; text-align: center;">NO</th>
-          <th style="width: 47%;">NAMA BARANG</th>
-          <th class="text-right" style="width: 10%;">QTY</th>
-          <th class="text-center" style="width: 8%;">SAT</th>
-          <th class="text-right" style="width: 15%;">HARGA (RP)</th>
-          <th class="text-right" style="width: 15%;">TOTAL (RP)</th>
+          <th style="width: 45%;">NAMA BARANG</th>
+          <th class="text-right" style="width: 9%;">QTY</th>
+          <th class="text-center" style="width: 7%;">SAT</th>
+          <th class="text-right" style="width: 17%;">HARGA (RP)</th>
+          <th class="text-right" style="width: 17%;">TOTAL (RP)</th>
         </tr>
       </thead>
       <tbody>
@@ -1389,7 +1424,7 @@ export function generateDotMatrixHTML(
     <!-- Total & Perhitungan -->
     <table class="footer-table">
       <tr>
-        <td style="width: 54%; padding-right: 12px; vertical-align: top;">
+        <td style="width: 52%; padding-right: 8px; vertical-align: top;">
           <div class="terbilang-box">
             <div class="terbilang-label">TERBILANG:</div>
             <div class="terbilang-text">${terbilangText}</div>
@@ -1399,37 +1434,37 @@ export function generateDotMatrixHTML(
             * Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.
           </div>
         </td>
-        <td style="width: 46%; vertical-align: top;">
+        <td style="width: 48%; vertical-align: top;">
           <table class="summary-table">
             <tr>
-              <td>Total Item / Qty:</td>
-              <td class="text-right font-mono">${totalQty} Pcs (${transaction.items.length} Item)</td>
+              <td style="width: 44%;">Total Qty / Item:</td>
+              <td style="width: 56%;" class="text-right font-mono">${totalQty} Pcs (${transaction.items.length} Item)</td>
             </tr>
             <tr>
-              <td>Subtotal:</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.subtotal)}</td>
+              <td style="width: 44%;">Subtotal:</td>
+              <td style="width: 56%;" class="text-right font-mono">${formatRupiah(transaction.subtotal)}</td>
             </tr>
             ${transaction.discount_amount > 0 ? `
             <tr>
-              <td style="color: #b91c1c;">Potongan Diskon:</td>
-              <td class="text-right font-mono" style="color: #b91c1c;">-${formatRupiah(transaction.discount_amount)}</td>
+              <td style="width: 44%; color: #b91c1c;">Potongan Diskon:</td>
+              <td style="width: 56%; color: #b91c1c;" class="text-right font-mono">-${formatRupiah(transaction.discount_amount)}</td>
             </tr>` : ''}
             ${transaction.tax_amount > 0 ? `
             <tr>
-              <td>PPN (${effectiveTaxRate}%):</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.tax_amount)}</td>
+              <td style="width: 44%;">PPN (${effectiveTaxRate}%):</td>
+              <td style="width: 56%;" class="text-right font-mono">${formatRupiah(transaction.tax_amount)}</td>
             </tr>` : ''}
             <tr class="grand-total-row">
-              <td>TOTAL AKHIR:</td>
-              <td class="text-right font-mono grand-val">${formatRupiah(transaction.grand_total)}</td>
+              <td style="width: 44%;">TOTAL AKHIR:</td>
+              <td style="width: 56%;" class="text-right font-mono grand-val">${formatRupiah(transaction.grand_total)}</td>
             </tr>
             <tr>
-              <td>Bayar (${transaction.payment_method}):</td>
-              <td class="text-right font-mono">${formatRupiah(transaction.cash_given)}</td>
+              <td style="width: 44%;">Bayar (${transaction.payment_method}):</td>
+              <td style="width: 56%;" class="text-right font-mono">${formatRupiah(transaction.cash_given)}</td>
             </tr>
             <tr>
-              <td>Kembalian:</td>
-              <td class="text-right font-mono font-bold">${formatRupiah(transaction.change_returned)}</td>
+              <td style="width: 44%;">Kembalian:</td>
+              <td style="width: 56%;" class="text-right font-mono font-bold">${formatRupiah(transaction.change_returned)}</td>
             </tr>
           </table>
         </td>
@@ -1442,7 +1477,7 @@ export function generateDotMatrixHTML(
         <td style="width: 50%;">
           <div class="sig-role">Tanda Terima / Pembeli,</div>
           <div class="sig-space"></div>
-          <div class="sig-line">( ........................................ )</div>
+          <div class="sig-line">( .......................... )</div>
         </td>
         <td style="width: 50%;">
           <div class="sig-role">Hormat Kami / Kasir,</div>
@@ -1457,7 +1492,12 @@ export function generateDotMatrixHTML(
     window.onload = function() {
       setTimeout(function() {
         window.print();
-      }, 250);
+      }, 300);
+    };
+    window.onafterprint = function() {
+      setTimeout(function() {
+        window.close();
+      }, 500);
     };
   </script>
 </body>
@@ -1492,15 +1532,15 @@ export async function printEpsonLX310Invoice(
       setTimeout(() => {
         iframe.remove();
       }, 30000);
-      return { success: true, message: 'Faktur penjualan Epson LX-310 berhasil dikirim ke dialog printer!' };
+      return { success: true, message: 'Faktur penjualan berhasil dikirim ke dialog printer!' };
     }
 
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
-    return { success: true, message: 'Jendela cetak faktur Epson LX-310 berhasil dibuka.' };
+    return { success: true, message: 'Jendela cetak faktur berhasil dibuka.' };
   } catch (err: any) {
-    return { success: false, message: 'Gagal mencetak faktur LX-310: ' + err.message };
+    return { success: false, message: 'Gagal mencetak faktur: ' + err.message };
   }
 }
 
