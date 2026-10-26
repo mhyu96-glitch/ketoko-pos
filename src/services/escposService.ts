@@ -1122,9 +1122,9 @@ export function generateDotMatrixHTML(
   const isContinuousHalf = paperSize === 'CONTINUOUS_HALF';
   const isContinuousFull = paperSize === 'CONTINUOUS_FULL' || paperSize === 'FULL_CONTINUOUS';
 
-  let pageSizeCss = '210mm 148mm';
-  let pageMarginCss = '3mm 5mm';
-  let minRows = 5;
+  let pageSizeCss = '210mm 140mm';
+  let pageMarginCss = '3mm 4mm';
+  let minRows = 6;
 
   if (isA4Full) {
     pageSizeCss = 'A4 portrait';
@@ -1132,8 +1132,8 @@ export function generateDotMatrixHTML(
     minRows = 11;
   } else if (isContinuousHalf) {
     pageSizeCss = '216mm 140mm';
-    pageMarginCss = '3mm 5mm';
-    minRows = 5;
+    pageMarginCss = '3mm 4mm';
+    minRows = 6;
   } else if (isContinuousFull) {
     pageSizeCss = '216mm 280mm';
     pageMarginCss = '5mm 6mm';
@@ -1176,15 +1176,15 @@ export function generateDotMatrixHTML(
     }
     body {
       font-family: 'Courier New', Courier, monospace, 'Lucida Console';
-      font-size: ${isA4Full ? '11.5px' : '9.5px'};
-      line-height: ${isA4Full ? '1.25' : '1.2'};
+      font-size: ${isA4Full ? '12px' : '11px'};
+      line-height: ${isA4Full ? '1.3' : '1.25'};
       color: #000000;
     }
     .faktur-container {
       width: 100%;
-      max-width: ${isA4Full ? '190mm' : isA4Half ? '196mm' : '204mm'};
+      max-width: ${isA4Full ? '185mm' : '178mm'};
       margin: 0 auto;
-      padding: ${isA4Full ? '4px 0' : '1px 0'};
+      padding: 2px 0;
       box-sizing: border-box;
     }
     .header-table, .info-table, .footer-table, .sig-table, .item-table, .summary-table {
@@ -1200,69 +1200,71 @@ export function generateDotMatrixHTML(
       overflow: hidden;
     }
     .store-title {
-      font-size: ${isA4Full ? '17px' : '13.5px'};
+      font-size: ${isA4Full ? '17px' : '15px'};
       font-weight: 900;
       letter-spacing: 0.5px;
       line-height: 1.15;
     }
     .store-sub {
-      font-size: ${isA4Full ? '10px' : '8.5px'};
+      font-size: ${isA4Full ? '10px' : '9.5px'};
       font-weight: bold;
       color: #222;
       margin-top: 1px;
     }
     .store-addr {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
+      font-size: ${isA4Full ? '10.5px' : '10px'};
       color: #333;
+      line-height: 1.2;
     }
     .faktur-title {
-      font-size: ${isA4Full ? '17px' : '14px'};
+      font-size: ${isA4Full ? '17px' : '16px'};
       font-weight: 900;
       letter-spacing: 1px;
       line-height: 1.15;
     }
     .trx-info {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
+      line-height: 1.25;
     }
     .sep-line {
       border: none;
-      border-top: 1px dashed #000000;
-      margin: ${isA4Full ? '4px 0' : '2.5px 0'};
+      border-top: 1.5px dashed #000000;
+      margin: ${isA4Full ? '4px 0' : '3.5px 0'};
     }
     .info-table td {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
-      padding: ${isA4Full ? '2px 0' : '1px 0'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
+      padding: ${isA4Full ? '2px 0' : '2px 0'};
     }
     .cust-highlight {
-      font-size: ${isA4Full ? '11px' : '9.5px'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
     }
     .status-box {
       font-weight: 800;
       border-bottom: 1px dotted #000;
     }
     .item-table {
-      margin: ${isA4Full ? '5px 0' : '2px 0'};
+      margin: ${isA4Full ? '5px 0' : '3px 0'};
     }
     .item-table th {
       text-align: left;
-      font-size: ${isA4Full ? '10.5px' : '9px'};
-      padding: ${isA4Full ? '4px 3px' : '2.5px 2px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
+      padding: ${isA4Full ? '5px 3px' : '5px 3px'};
       border-top: 1.5px solid #000000;
       border-bottom: 1.5px solid #000000;
       font-weight: 900;
-      background: #f4f4f4;
+      background: #f2f2f2;
     }
     .item-table td {
-      padding: ${isA4Full ? '4px 3px' : '2px 2px'};
-      font-size: ${isA4Full ? '10.5px' : '9px'};
+      padding: ${isA4Full ? '4px 3px' : '4px 3px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
       border-bottom: 1px dotted #ddd;
     }
     .item-name {
       font-weight: 700;
-      line-height: 1.15;
+      line-height: 1.2;
     }
     .empty-row td {
-      height: ${isA4Full ? '20px' : '14px'};
+      height: ${isA4Full ? '24px' : '22px'};
       border-bottom: 1px dotted #e5e5e5;
     }
     .text-muted {
@@ -1274,53 +1276,53 @@ export function generateDotMatrixHTML(
     .font-bold { font-weight: bold; }
     .terbilang-box {
       border: 1px dashed #000000;
-      padding: ${isA4Full ? '5px 7px' : '3px 5px'};
+      padding: ${isA4Full ? '5px 7px' : '4px 6px'};
       background: #fafafa;
       margin-bottom: 3px;
     }
     .terbilang-label {
-      font-size: ${isA4Full ? '8.5px' : '7.5px'};
+      font-size: ${isA4Full ? '9px' : '8.5px'};
       font-weight: 900;
       letter-spacing: 0.5px;
     }
     .terbilang-text {
-      font-size: ${isA4Full ? '10.5px' : '8.5px'};
+      font-size: ${isA4Full ? '10.5px' : '9.5px'};
       font-style: italic;
       font-weight: 700;
-      line-height: 1.2;
+      line-height: 1.25;
     }
     .notice-box {
-      font-size: ${isA4Full ? '9.5px' : '8px'};
+      font-size: ${isA4Full ? '9.5px' : '9px'};
       color: #333;
-      line-height: 1.25;
+      line-height: 1.3;
       margin-top: 2px;
     }
     .summary-table td {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
-      padding: ${isA4Full ? '2px 0' : '1px 0'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
+      padding: ${isA4Full ? '2px 0' : '1.5px 0'};
     }
     .grand-total-row td {
       font-weight: 900;
       border-top: 1.5px solid #000000;
       border-bottom: 1.5px solid #000000;
-      padding: ${isA4Full ? '3px 0' : '2px 0'} !important;
+      padding: ${isA4Full ? '3px 0' : '3px 0'} !important;
     }
     .grand-val {
-      font-size: ${isA4Full ? '13.5px' : '11.5px'};
+      font-size: ${isA4Full ? '14px' : '13.5px'};
     }
     .sig-table {
-      margin-top: ${isA4Full ? '12px' : '5px'};
+      margin-top: ${isA4Full ? '15px' : '10px'};
       text-align: center;
     }
     .sig-role {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
       font-weight: bold;
     }
     .sig-space {
-      height: ${isA4Full ? '45px' : '26px'};
+      height: ${isA4Full ? '45px' : '38px'};
     }
     .sig-line {
-      font-size: ${isA4Full ? '10.5px' : '9px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
       font-weight: bold;
     }
     @media print {
@@ -1339,7 +1341,7 @@ export function generateDotMatrixHTML(
       }
       .faktur-container {
         width: 100% !important;
-        max-width: ${isA4Full ? '190mm' : isA4Half ? '196mm' : '204mm'} !important;
+        max-width: ${isA4Full ? '185mm' : '178mm'} !important;
         margin: 0 auto !important;
         padding: 0 !important;
       }
@@ -1354,13 +1356,13 @@ export function generateDotMatrixHTML(
     <!-- Header Toko & Judul Faktur -->
     <table class="header-table">
       <tr>
-        <td style="width: 55%; vertical-align: top;">
+        <td style="width: 54%; vertical-align: top;">
           <div class="store-title">${storeName.toUpperCase()}</div>
           <div class="store-sub">SPAREPART & PENDINGIN RUANGAN AC</div>
           <div class="store-addr">${storeAddr}</div>
           <div class="store-addr">Telp / WA: <b>${storePhone}</b></div>
         </td>
-        <td style="width: 45%; text-align: right; vertical-align: top;">
+        <td style="width: 46%; text-align: right; vertical-align: top;">
           <div class="faktur-title">FAKTUR PENJUALAN</div>
           <div class="trx-info">No. Faktur : <b class="font-mono">${transaction.receipt_number}</b></div>
           <div class="trx-info">Tanggal    : <b>${new Date(transaction.created_at).toLocaleDateString('id-ID')} ${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</b></div>
@@ -1374,13 +1376,13 @@ export function generateDotMatrixHTML(
     <!-- Info Pelanggan & Pembayaran -->
     <table class="info-table">
       <tr>
-        <td style="width: 55%;">
+        <td style="width: 54%;">
           <div>Kepada Yth : <b class="cust-highlight">${transaction.customer_name ? transaction.customer_name.toUpperCase() : (transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM')}</b></div>
           <div>Status     : <span class="status-box">${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</span></div>
         </td>
-        <td style="width: 45%; text-align: right;">
+        <td style="width: 46%; text-align: right;">
           <div>Pembayaran : <b>${transaction.payment_method}</b></div>
-          <div>Kertas     : <b>${isA4Full ? 'A4 Full Page' : isA4Half ? 'A4 Di Bagi 2 (A5)' : 'Continuous Form'}</b></div>
+          <div>Kertas     : <b>${isA4Full ? 'A4 Full Page' : isA4Half ? 'A4 Di Bagi 2 (A5)' : 'Continuous Form 1/2'}</b></div>
         </td>
       </tr>
     </table>
@@ -1391,10 +1393,10 @@ export function generateDotMatrixHTML(
         <tr>
           <th style="width: 5%; text-align: center;">NO</th>
           <th style="width: 45%;">NAMA BARANG</th>
-          <th class="text-right" style="width: 9%;">QTY</th>
-          <th class="text-center" style="width: 7%;">SAT</th>
-          <th class="text-right" style="width: 17%;">HARGA (RP)</th>
-          <th class="text-right" style="width: 17%;">TOTAL (RP)</th>
+          <th class="text-right" style="width: 10%;">QTY</th>
+          <th class="text-center" style="width: 8%;">SAT</th>
+          <th class="text-right" style="width: 16%;">HARGA (RP)</th>
+          <th class="text-right" style="width: 16%;">TOTAL (RP)</th>
         </tr>
       </thead>
       <tbody>
