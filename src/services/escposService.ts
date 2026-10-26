@@ -1151,7 +1151,8 @@ export function generateDotMatrixHTML(
   const storeName = (config?.dotMatrixStoreTitle || config?.headerText?.split('\n')[0] || storeProfile?.name || 'CV. TUMBUH MAKMUR AIR CONINDO').trim();
   const storeSub = (config?.dotMatrixStoreSub || storeProfile?.tagline || 'SPAREPART & PENDINGIN RUANGAN AC').trim();
   const storeAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu').trim();
-  const storePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '0811 5121 215').trim();
+  const rawStorePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '0811 5121 215').trim();
+  const cleanPhone = rawStorePhone.replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '').trim() || rawStorePhone;
 
   // Catatan Bawah Faktur (Notice Retur/Garansi)
   const showNotice = config?.dotMatrixShowNotice !== false;
@@ -1233,15 +1234,16 @@ export function generateDotMatrixHTML(
       line-height: 1.15;
     }
     .store-sub {
-      font-size: ${isA4Full ? '10px' : '10.5px'};
+      font-size: ${isA4Full ? '10.5px' : '11px'};
       font-weight: bold;
-      color: #222;
+      color: #000000;
       margin-top: 1px;
     }
     .store-addr {
-      font-size: ${isA4Full ? '10.5px' : '11px'};
-      color: #333;
-      line-height: 1.25;
+      font-size: ${isA4Full ? '11px' : '11.5px'};
+      font-weight: bold;
+      color: #000000;
+      line-height: 1.3;
     }
     .faktur-title {
       font-size: ${isA4Full ? '18px' : '17px'};
@@ -1392,7 +1394,7 @@ export function generateDotMatrixHTML(
           <div class="store-title">${storeName.toUpperCase()}</div>
           ${storeSub ? `<div class="store-sub">${storeSub.toUpperCase()}</div>` : ''}
           <div class="store-addr">${storeAddr}</div>
-          <div class="store-addr">Telp / WA: <b>${storePhone}</b></div>
+          <div class="store-addr">Telp / WA: <b>${cleanPhone}</b></div>
         </td>
         <td style="width: 46%; text-align: right; vertical-align: top;">
           <div class="faktur-title">FAKTUR PENJUALAN</div>

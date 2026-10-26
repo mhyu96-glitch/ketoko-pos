@@ -1332,11 +1332,11 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                               <div className="text-[8px] font-bold text-stone-700">
                                 {config.dotMatrixStoreSub || 'SPAREPART & PENDINGIN RUANGAN AC'}
                               </div>
-                              <div className="text-[8.5px] text-stone-600">
+                              <div className="text-[8.5px] font-bold text-stone-900">
                                 {config.dotMatrixStoreAddress || config.headerText.split('\n')[1] || 'Jl. P Antasari No.106, Samarinda'}
                               </div>
-                              <div className="text-[8.5px] text-stone-600">
-                                Telp / WA: <b>{config.dotMatrixStorePhone || config.headerText.split('\n')[2] || '0811 5121 215'}</b>
+                              <div className="text-[8.5px] font-bold text-stone-900">
+                                Telp / WA: <b>{(config.dotMatrixStorePhone || config.headerText.split('\n')[2] || '0811 5121 215').replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '')}</b>
                               </div>
                             </div>
                             <div className="text-right">
