@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { Transaction } from '../types';
 import type { PrinterConfig } from './PrinterSettingsModal';
+import { DEFAULT_CONFIG } from './PrinterSettingsModal';
 import { 
   formatRupiah, 
   ESCPOSBuilder, 
@@ -28,23 +29,6 @@ interface ReceiptModalProps {
   onOpenPrinterSettings?: () => void;
 }
 
-const IS_WINDOWS_OS = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
-
-const DEFAULT_CONFIG: PrinterConfig = {
-  driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
-  paperWidth: '58mm',
-  autoCut: true,
-  headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
-  footerText: 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli dapat ditukar dlm 24 jam.',
-  receiptStyle: 'modern',
-  showLogo: true,
-  logoUrl: '',
-  showCashier: true,
-  showQueueNumber: true,
-  showDiscountSaving: true,
-  showBarcodeFooter: true
-};
-
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
@@ -61,10 +45,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       const saved = localStorage.getItem('ketoko_printer_settings');
       if (saved) {
         try {
-          setConfig(JSON.parse(saved));
+          setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) });
         } catch {
-          // fallback to DEFAULT_CONFIG
+          setConfig(DEFAULT_CONFIG);
         }
+      } else {
+        setConfig(DEFAULT_CONFIG);
       }
       setPrintStatus(null);
     }

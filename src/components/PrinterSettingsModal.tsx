@@ -66,18 +66,30 @@ export interface PrinterConfig {
   showDiscountSaving: boolean;
   showBarcodeFooter: boolean;
   baudRate?: number;
+
+  // Custom Dot Matrix / Faktur A4 Bagi 2 & Continuous Form
+  dotMatrixStoreTitle?: string;
+  dotMatrixStoreSub?: string;
+  dotMatrixStoreAddress?: string;
+  dotMatrixStorePhone?: string;
+  dotMatrixNotice?: string;
+  dotMatrixLeftMargin?: number;
+  dotMatrixSignerLeft?: string;
+  dotMatrixSignerRight?: string;
+  dotMatrixShowTerbilang?: boolean;
+  dotMatrixShowNotice?: boolean;
 }
 
 const IS_WINDOWS_OS = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
 
-const DEFAULT_CONFIG: PrinterConfig = {
+export const DEFAULT_CONFIG: PrinterConfig = {
   printerType: 'THERMAL',
   dotMatrixPaperSize: 'A4_HALF',
   driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
   paperWidth: '58mm',
   autoCut: true,
   headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
-  footerText: 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli dapat ditukar dlm 24 jam.',
+  footerText: 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli tidak dapat ditukar kembali.',
   receiptStyle: 'modern',
   showLogo: true,
   logoUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80',
@@ -85,7 +97,19 @@ const DEFAULT_CONFIG: PrinterConfig = {
   showQueueNumber: true,
   showDiscountSaving: true,
   showBarcodeFooter: true,
-  baudRate: 9600
+  baudRate: 9600,
+
+  // Default Dot Matrix (Faktur A4 Bagi 2 & Continuous Form)
+  dotMatrixStoreTitle: 'CV. TUMBUH MAKMUR AIR CONINDO',
+  dotMatrixStoreSub: 'SPAREPART & PENDINGIN RUANGAN AC',
+  dotMatrixStoreAddress: 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu',
+  dotMatrixStorePhone: '0811 5121 215',
+  dotMatrixNotice: '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian tertulis.\n* Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.',
+  dotMatrixLeftMargin: 0,
+  dotMatrixSignerLeft: 'Tanda Terima / Pembeli',
+  dotMatrixSignerRight: 'Hormat Kami / Kasir',
+  dotMatrixShowTerbilang: true,
+  dotMatrixShowNotice: true
 };
 
 export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
@@ -557,27 +581,204 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Kop Toko & Catatan Faktur */}
+                {/* 4. Pengaturan Posisi Kiri (Full Kiri) & Desain Tata Letak */}
                 <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
-                  <div>
-                    <label className="text-[#332219] font-bold text-xs mb-1 block">Identitas Kop Toko pada Faktur</label>
-                    <textarea
-                      value={config.headerText}
-                      onChange={(e) => setConfig({ ...config, headerText: e.target.value })}
-                      rows={3}
-                      className="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20"
-                    />
-                    <span className="text-[10px] text-stone-500">Baris 1: Nama Toko • Baris 2: Alamat • Baris 3: Kontak / Telepon</span>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[#332219] font-bold text-xs flex items-center space-x-1.5">
+                      <Sliders className="w-4 h-4 text-[#7c4e2f]" />
+                      <span>Posisi Kiri Cetak (Penjajaran Continuous Form)</span>
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      {(config.dotMatrixLeftMargin ?? 0) === 0 ? 'Rata Kiri Penuh (0 mm)' : `Margin ${config.dotMatrixLeftMargin} mm`}
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="text-[#332219] font-bold text-xs mb-1 block">Syarat / Catatan Bawah Faktur</label>
-                    <textarea
-                      value={config.footerText}
-                      onChange={(e) => setConfig({ ...config, footerText: e.target.value })}
-                      rows={2}
-                      className="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20"
-                    />
+                  <p className="text-[11px] text-stone-500 leading-snug">
+                    Pilih <b>Rata Kiri Penuh (0 mm)</b> agar cetakan rapat dari tepi lubang traktor continuous form, tidak menyisakan ruang kosong besar di sebelah kiri, dan sisi kanan aman tidak terpotong.
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, dotMatrixLeftMargin: 0 })}
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        (config.dotMatrixLeftMargin ?? 0) === 0
+                          ? 'bg-[#edf5ee] border-[#166534] text-[#166534] font-bold shadow-2xs'
+                          : 'bg-[#fdfaf7] border-[#e4d5c7] text-stone-700 hover:bg-[#faebd7]'
+                      }`}
+                    >
+                      <div className="text-xs font-black">0 mm (Full Kiri)</div>
+                      <div className="text-[9px] text-emerald-800 mt-0.5">Rekomendasi Utama</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, dotMatrixLeftMargin: 2 })}
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        config.dotMatrixLeftMargin === 2
+                          ? 'bg-[#edf5ee] border-[#166534] text-[#166534] font-bold shadow-2xs'
+                          : 'bg-[#fdfaf7] border-[#e4d5c7] text-stone-700 hover:bg-[#faebd7]'
+                      }`}
+                    >
+                      <div className="text-xs font-black">2 mm</div>
+                      <div className="text-[9px] text-stone-500 mt-0.5">Margin Tipis</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, dotMatrixLeftMargin: 5 })}
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        config.dotMatrixLeftMargin === 5
+                          ? 'bg-[#edf5ee] border-[#166534] text-[#166534] font-bold shadow-2xs'
+                          : 'bg-[#fdfaf7] border-[#e4d5c7] text-stone-700 hover:bg-[#faebd7]'
+                      }`}
+                    >
+                      <div className="text-xs font-black">5 mm</div>
+                      <div className="text-[9px] text-stone-500 mt-0.5">Sedikit Masuk</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5. Catatan Bawah Faktur / Syarat Retur & Garansi */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[#332219] font-bold text-xs flex items-center space-x-1.5">
+                      <FileText className="w-4 h-4 text-[#7c4e2f]" />
+                      <span>Catatan Bawah Faktur & Kebijakan Retur / Garansi</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, dotMatrixShowNotice: config.dotMatrixShowNotice === false ? true : false })}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                        config.dotMatrixShowNotice !== false
+                          ? 'bg-emerald-100 text-[#166534] border border-emerald-300'
+                          : 'bg-stone-100 text-stone-500 border border-stone-200'
+                      }`}
+                    >
+                      {config.dotMatrixShowNotice !== false ? '✓ Tampil di Faktur' : '✕ Disembunyikan'}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-stone-500 leading-snug">
+                    Teks ini dicetak otomatis pada kotak catatan di bawah kalimat <b>Terbilang Rupiah</b> (faktur A4 Bagi 2 & Continuous Form). Anda dapat mengubah syarat penukaran barang, klaim garansi, dll.
+                  </p>
+
+                  <textarea
+                    value={config.dotMatrixNotice ?? config.footerText ?? ''}
+                    onChange={(e) => setConfig({ ...config, dotMatrixNotice: e.target.value })}
+                    rows={3}
+                    placeholder="Contoh:&#10;* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.&#10;* Klaim garansi sparepart wajib menyertakan faktur resmi."
+                    className="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-stone-500">
+                    <span>Gunakan tombol Enter untuk membuat baris baru. Tiap baris otomatis diberi tanda bintang (*)</span>
+                    <button
+                      type="button"
+                      onClick={() => setConfig({
+                        ...config,
+                        dotMatrixNotice: '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian tertulis.\n* Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.'
+                      })}
+                      className="text-[#7c4e2f] hover:underline font-bold"
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+
+                {/* 6. Identitas Kop Toko pada Faktur A4 Bagi 2 */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
+                  <label className="text-[#332219] font-bold text-xs flex items-center space-x-1.5">
+                    <Store className="w-4 h-4 text-[#7c4e2f]" />
+                    <span>Identitas Kop Toko pada Faktur Dot Matrix</span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Nama Toko / Usaha:</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixStoreTitle ?? config.headerText.split('\n')[0] ?? ''}
+                        onChange={(e) => setConfig({ ...config, dotMatrixStoreTitle: e.target.value })}
+                        placeholder="CV. TUMBUH MAKMUR AIR CONINDO"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-bold focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Subjudul / Bidang Usaha:</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixStoreSub ?? 'SPAREPART & PENDINGIN RUANGAN AC'}
+                        onChange={(e) => setConfig({ ...config, dotMatrixStoreSub: e.target.value })}
+                        placeholder="SPAREPART & PENDINGIN RUANGAN AC"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Alamat Lengkap Toko:</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixStoreAddress ?? config.headerText.split('\n')[1] ?? ''}
+                        onChange={(e) => setConfig({ ...config, dotMatrixStoreAddress: e.target.value })}
+                        placeholder="Jl. P Antasari No.106, Samarinda"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Kontak / Telepon / WA:</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixStorePhone ?? config.headerText.split('\n')[2] ?? ''}
+                        onChange={(e) => setConfig({ ...config, dotMatrixStorePhone: e.target.value })}
+                        placeholder="0811 5121 215"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. Opsi Kalimat Terbilang & Tanda Tangan */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
+                  <label className="text-[#332219] font-bold text-xs block">
+                    Kolom Tanda Tangan & Kalimat Terbilang
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Pihak Kiri (Penerima):</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixSignerLeft ?? 'Tanda Terima / Pembeli'}
+                        onChange={(e) => setConfig({ ...config, dotMatrixSignerLeft: e.target.value })}
+                        placeholder="Tanda Terima / Pembeli"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-stone-700 block mb-1">Pihak Kanan (Pengirim/Kasir):</span>
+                      <input
+                        type="text"
+                        value={config.dotMatrixSignerRight ?? 'Hormat Kami / Kasir'}
+                        onChange={(e) => setConfig({ ...config, dotMatrixSignerRight: e.target.value })}
+                        placeholder="Hormat Kami / Kasir"
+                        className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#eed7c4]">
+                    <label className="flex items-center space-x-2 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={config.dotMatrixShowTerbilang !== false}
+                        onChange={(e) => setConfig({ ...config, dotMatrixShowTerbilang: e.target.checked })}
+                        className="rounded text-[#7c4e2f] focus:ring-[#7c4e2f]"
+                      />
+                      <span className="font-semibold text-[#332219]">Tampilkan Kotak Kalimat Terbilang Rupiah</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1056,13 +1257,15 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
               </div>
 
               <div>
-                <label className="text-[#332219] font-bold text-xs mb-1 block">Teks Footer Nota (Ucapan & Kebijakan)</label>
+                <label className="text-[#332219] font-bold text-xs mb-1 block">Catatan Kaki Struk Kasir Thermal (Footer & Syarat Retur)</label>
                 <textarea
                   value={config.footerText}
                   onChange={(e) => setConfig({ ...config, footerText: e.target.value })}
                   rows={2}
+                  placeholder="Terima kasih atas kunjungan Anda!&#10;Barang yang sudah dibeli tidak dapat ditukar lagi."
                   className="w-full px-3 py-2 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20"
                 />
+                <span className="text-[10px] text-stone-500">Tercetak di bagian bawah struk kasir thermal mini (58mm/80mm). Contoh: ucapan terima kasih atau syarat penukaran barang.</span>
               </div>
             </div>
               </>
@@ -1119,18 +1322,21 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                         )}
 
                         {/* Main Invoice Sheet Content */}
-                        <div className={isContinuous ? 'px-4' : 'px-2'}>
+                        <div className={isContinuous ? 'px-4' : 'px-2'} style={{ marginLeft: `${(config.dotMatrixLeftMargin ?? 0) * 1.5}px` }}>
                           {/* Store Header & Faktur Badge */}
                           <div className="flex justify-between items-start border-b border-stone-800 pb-1.5">
                             <div>
                               <div className="font-black text-xs uppercase tracking-wide text-stone-950">
-                                {config.headerText.split('\n')[0] || 'KETOKO POS'}
+                                {config.dotMatrixStoreTitle || config.headerText.split('\n')[0] || 'CV. TUMBUH MAKMUR AIR CONINDO'}
+                              </div>
+                              <div className="text-[8px] font-bold text-stone-700">
+                                {config.dotMatrixStoreSub || 'SPAREPART & PENDINGIN RUANGAN AC'}
                               </div>
                               <div className="text-[8.5px] text-stone-600">
-                                {config.headerText.split('\n')[1] || 'Jl. Pahlawan No. 45, Samarinda'}
+                                {config.dotMatrixStoreAddress || config.headerText.split('\n')[1] || 'Jl. P Antasari No.106, Samarinda'}
                               </div>
                               <div className="text-[8.5px] text-stone-600">
-                                {config.headerText.split('\n')[2] || 'Telp: 0812-3456-7890'}
+                                Telp / WA: <b>{config.dotMatrixStorePhone || config.headerText.split('\n')[2] || '0811 5121 215'}</b>
                               </div>
                             </div>
                             <div className="text-right">
@@ -1208,12 +1414,16 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                           {/* Subtotals & Terbilang */}
                           <div className="border-t border-stone-800 pt-1.5 flex justify-between items-start text-[8.5px] gap-2">
                             <div className="flex-1">
-                              <div className="p-1 border border-dashed border-stone-500 rounded bg-white text-[8px] italic">
-                                <b>Terbilang:</b> {numberToWordsID(210000)}
-                              </div>
-                              <div className="text-[7.5px] text-stone-500 mt-1 leading-snug">
-                                {config.footerText || '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.'}
-                              </div>
+                              {config.dotMatrixShowTerbilang !== false && (
+                                <div className="p-1 border border-dashed border-stone-500 rounded bg-white text-[8px] italic">
+                                  <b>Terbilang:</b> {numberToWordsID(210000)}
+                                </div>
+                              )}
+                              {config.dotMatrixShowNotice !== false && (
+                                <div className="text-[7.5px] text-stone-600 mt-1 leading-snug p-1 bg-stone-50 border border-dashed border-stone-300 rounded whitespace-pre-line">
+                                  {config.dotMatrixNotice || config.footerText || '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.'}
+                                </div>
+                              )}
                             </div>
 
                             <div className="w-36 space-y-0.5">
@@ -1243,12 +1453,12 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                           {/* Signatures */}
                           <div className="grid grid-cols-2 text-center text-[8px] pt-4 mt-2 border-t border-dashed border-stone-400">
                             <div>
-                              <div>Tanda Terima / Pembeli,</div>
+                              <div>{config.dotMatrixSignerLeft || 'Tanda Terima / Pembeli'},</div>
                               <div className="h-7"></div>
                               <div>( .......................... )</div>
                             </div>
                             <div>
-                              <div>Hormat Kami / Kasir,</div>
+                              <div>{config.dotMatrixSignerRight || 'Hormat Kami / Kasir'},</div>
                               <div className="h-7"></div>
                               <div>( Budi Santoso )</div>
                             </div>

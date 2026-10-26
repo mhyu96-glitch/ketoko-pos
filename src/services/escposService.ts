@@ -1123,27 +1123,53 @@ export function generateDotMatrixHTML(
   const isContinuousFull = paperSize === 'CONTINUOUS_FULL' || paperSize === 'FULL_CONTINUOUS';
 
   let pageSizeCss = '210mm 140mm';
-  let pageMarginCss = '3mm 4mm';
+  let pageMarginCss = '2mm 3mm';
   let minRows = 6;
+  let containerMaxWidth = '185mm';
 
   if (isA4Full) {
     pageSizeCss = 'A4 portrait';
-    pageMarginCss = '8mm 10mm';
+    pageMarginCss = '6mm 6mm';
     minRows = 11;
+    containerMaxWidth = '190mm';
   } else if (isContinuousHalf) {
     pageSizeCss = '210mm 140mm';
-    pageMarginCss = '3mm 4mm';
+    pageMarginCss = '2mm 3mm';
     minRows = 6;
+    containerMaxWidth = '185mm';
   } else if (isContinuousFull) {
     pageSizeCss = '216mm 280mm';
-    pageMarginCss = '5mm 6mm';
+    pageMarginCss = '4mm 4mm';
     minRows = 12;
+    containerMaxWidth = '190mm';
   }
 
-  const storeName = storeProfile?.name || config?.headerText?.split('\n')[0] || 'CV. TUMBUH MAKMUR AIR CONINDO';
-  const storeAddr = storeProfile?.address || config?.headerText?.split('\n')[1] || 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu';
-  const storePhone = storeProfile?.phone || config?.headerText?.split('\n')[2] || '0811 5121 215';
-  
+  // Margin kiri: default 0 mm (Rata Kiri Penuh untuk Continuous Form Epson LX-310)
+  const leftMarginMm = typeof config?.dotMatrixLeftMargin === 'number' ? config.dotMatrixLeftMargin : 0;
+
+  // Nama & Kop Usaha
+  const storeName = (config?.dotMatrixStoreTitle || config?.headerText?.split('\n')[0] || storeProfile?.name || 'CV. TUMBUH MAKMUR AIR CONINDO').trim();
+  const storeSub = (config?.dotMatrixStoreSub || storeProfile?.tagline || 'SPAREPART & PENDINGIN RUANGAN AC').trim();
+  const storeAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu').trim();
+  const storePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '0811 5121 215').trim();
+
+  // Catatan Bawah Faktur (Notice Retur/Garansi)
+  const showNotice = config?.dotMatrixShowNotice !== false;
+  const showTerbilang = config?.dotMatrixShowTerbilang !== false;
+  const rawNotice = (config?.dotMatrixNotice ?? config?.footerText ?? '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian tertulis.\n* Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.').trim();
+  const noticeLines = rawNotice
+    ? rawNotice
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean)
+        .map(l => (l.startsWith('*') || l.startsWith('-') ? l : `* ${l}`))
+        .join('<br/>')
+    : '';
+
+  // Label Tanda Tangan
+  const signerLeft = config?.dotMatrixSignerLeft || 'Tanda Terima / Pembeli';
+  const signerRight = config?.dotMatrixSignerRight || 'Hormat Kami / Kasir';
+
   const terbilangText = numberToWordsID(transaction.grand_total);
   const totalQty = transaction.items.reduce((sum, it) => sum + it.qty, 0);
   const netSubtotal = Math.max(1, transaction.subtotal - (transaction.discount_amount || 0));
@@ -1182,9 +1208,10 @@ export function generateDotMatrixHTML(
     }
     .faktur-container {
       width: 100%;
-      max-width: ${isA4Full ? '185mm' : '180mm'};
-      margin: 0 auto;
-      padding: 1px 0;
+      max-width: ${containerMaxWidth};
+      margin: 0;
+      margin-left: ${leftMarginMm}mm;
+      padding: 0;
       box-sizing: border-box;
     }
     .header-table, .info-table, .footer-table, .sig-table, .item-table, .summary-table {
@@ -1292,20 +1319,20 @@ export function generateDotMatrixHTML(
       line-height: 1.3;
     }
     .notice-box {
-      font-size: ${isA4Full ? '9.5px' : '9.5px'};
+      font-size: 9.5px;
       color: #333;
       line-height: 1.3;
       margin-top: 3px;
     }
     .summary-table td {
       font-size: ${isA4Full ? '11.5px' : '11px'};
-      padding: ${isA4Full ? '2px 0' : '2px 0'};
+      padding: 2px 0;
     }
     .grand-total-row td {
       font-weight: 900;
       border-top: 2px solid #000000;
       border-bottom: 2px solid #000000;
-      padding: ${isA4Full ? '4px 0' : '4px 0'} !important;
+      padding: 4px 0 !important;
     }
     .grand-val {
       font-size: ${isA4Full ? '15px' : '14.5px'};
@@ -1341,10 +1368,15 @@ export function generateDotMatrixHTML(
       }
       .faktur-container {
         width: 100% !important;
-        max-width: ${isA4Full ? '185mm' : '180mm'} !important;
-        margin: 0 auto !important;
+        max-width: ${containerMaxWidth} !important;
+        margin: 0 !important;
+        margin-left: ${leftMarginMm}mm !important;
         padding: 0 !important;
       }
+      .no-print { display: none !important; }
+      tr { page-break-inside: avoid; }
+      .footer-table, .sig-table { page-break-inside: avoid; }
+    }
       .no-print { display: none !important; }
       tr { page-break-inside: avoid; }
       .footer-table, .sig-table { page-break-inside: avoid; }
@@ -1358,7 +1390,7 @@ export function generateDotMatrixHTML(
       <tr>
         <td style="width: 54%; vertical-align: top;">
           <div class="store-title">${storeName.toUpperCase()}</div>
-          <div class="store-sub">SPAREPART & PENDINGIN RUANGAN AC</div>
+          ${storeSub ? `<div class="store-sub">${storeSub.toUpperCase()}</div>` : ''}
           <div class="store-addr">${storeAddr}</div>
           <div class="store-addr">Telp / WA: <b>${storePhone}</b></div>
         </td>
@@ -1427,14 +1459,15 @@ export function generateDotMatrixHTML(
     <table class="footer-table">
       <tr>
         <td style="width: 52%; padding-right: 8px; vertical-align: top;">
+          ${showTerbilang ? `
           <div class="terbilang-box">
             <div class="terbilang-label">TERBILANG:</div>
             <div class="terbilang-text">${terbilangText}</div>
-          </div>
+          </div>` : ''}
+          ${showNotice && noticeLines ? `
           <div class="notice-box">
-            * Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian tertulis.<br/>
-            * Klaim garansi sparepart wajib menyertakan bukti faktur resmi ini.
-          </div>
+            ${noticeLines}
+          </div>` : ''}
         </td>
         <td style="width: 48%; vertical-align: top;">
           <table class="summary-table">
@@ -1477,12 +1510,12 @@ export function generateDotMatrixHTML(
     <table class="sig-table">
       <tr>
         <td style="width: 50%;">
-          <div class="sig-role">Tanda Terima / Pembeli,</div>
+          <div class="sig-role">${signerLeft},</div>
           <div class="sig-space"></div>
           <div class="sig-line">( .......................... )</div>
         </td>
         <td style="width: 50%;">
-          <div class="sig-role">Hormat Kami / Kasir,</div>
+          <div class="sig-role">${signerRight},</div>
           <div class="sig-space"></div>
           <div class="sig-line">( ${transaction.cashier_name || 'Kasir'} )</div>
         </td>
