@@ -1854,7 +1854,7 @@ export const App: React.FC = () => {
         <MemberModal
           isOpen={isMemberModalOpen}
           onClose={() => setIsMemberModalOpen(false)}
-          onSelectMember={(selectedId) => setMemberId(selectedId)}
+          onSelectMember={(selectedId, member) => setMemberId(selectedId, member?.discount_percent)}
           currentMemberId={memberId}
         />
       )}

@@ -137,6 +137,7 @@ export interface Customer {
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
+  discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
   notes?: string;
   created_at?: string;
 }

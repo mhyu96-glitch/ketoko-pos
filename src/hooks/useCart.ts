@@ -1,9 +1,11 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { CartItem, Product } from '../types';
+import { db } from '../db';
 
 export function useCart() {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [memberId, setMemberId] = useState<string>('');
+  const [memberId, setMemberIdState] = useState<string>('');
+  const [memberDiscountPercent, setMemberDiscountPercent] = useState<number>(0);
   const [taxEnabled, setTaxEnabled] = useState<boolean>(true);
   const [taxRate, setTaxRateState] = useState<number>(() => {
     try {
@@ -102,9 +104,33 @@ export function useCart() {
     setItems((prevItems) => prevItems.filter((item) => String(item.product_id).trim() !== cleanId));
   }, []);
 
+  const setMemberId = useCallback((id: string, discountPercent?: number) => {
+    const cleanId = (id || '').trim();
+    setMemberIdState(cleanId);
+    if (!cleanId) {
+      setMemberDiscountPercent(0);
+      return;
+    }
+    if (typeof discountPercent === 'number' && !isNaN(discountPercent)) {
+      setMemberDiscountPercent(Math.max(0, discountPercent));
+    } else {
+      db.customers.get(cleanId).then((cust) => {
+        if (cust) {
+          const pct = typeof cust.discount_percent === 'number' ? cust.discount_percent : 5;
+          setMemberDiscountPercent(pct);
+        } else {
+          setMemberDiscountPercent(5);
+        }
+      }).catch(() => {
+        setMemberDiscountPercent(5);
+      });
+    }
+  }, []);
+
   const clearCart = useCallback(() => {
     setItems([]);
-    setMemberId('');
+    setMemberIdState('');
+    setMemberDiscountPercent(0);
   }, []);
 
   // Summary Calculations
@@ -121,8 +147,9 @@ export function useCart() {
       }
     }
 
-    // Member discount e.g. 5% if member is active
-    const disc = memberId.trim().length > 0 ? Math.round(sub * 0.05) : 0;
+    // Dynamic Member discount based on configured memberDiscountPercent (default 5%)
+    const effectiveDiscPct = memberId.trim().length > 0 ? (memberDiscountPercent ?? 5) : 0;
+    const disc = effectiveDiscPct > 0 ? Math.round(sub * (effectiveDiscPct / 100)) : 0;
     
     // Tax (PPN) after discount based on dynamic taxRate
     const taxableBase = Math.max(0, sub - disc);
@@ -137,12 +164,14 @@ export function useCart() {
       grandTotal: grand,
       totalItemCount: totalItems
     };
-  }, [items, memberId, taxEnabled, taxRate]);
+  }, [items, memberId, memberDiscountPercent, taxEnabled, taxRate]);
 
   return {
     items,
     memberId,
     setMemberId,
+    memberDiscountPercent,
+    setMemberDiscountPercent,
     taxEnabled,
     setTaxEnabled,
     taxRate,

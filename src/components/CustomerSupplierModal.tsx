@@ -42,6 +42,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const [custPhone, setCustPhone] = useState('');
   const [custAddress, setCustAddress] = useState('');
   const [custCreditLimit, setCustCreditLimit] = useState<number>(1000000);
+  const [custDiscountPercent, setCustDiscountPercent] = useState<number>(5);
 
   // Supplier Form State
   const [isAddingSup, setIsAddingSup] = useState(false);
@@ -85,6 +86,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     setCustPhone('');
     setCustAddress('');
     setCustCreditLimit(1000000);
+    setCustDiscountPercent(5);
   };
 
   // Reset Supplier Form
@@ -109,7 +111,8 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         name: custName.trim(),
         phone: custPhone.trim(),
         address: custAddress.trim(),
-        credit_limit: Number(custCreditLimit)
+        credit_limit: Number(custCreditLimit),
+        discount_percent: Math.max(0, Math.min(100, Number(custDiscountPercent) || 0))
       });
     } else {
       const newCust: Customer = {
@@ -119,6 +122,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         phone: custPhone.trim(),
         address: custAddress.trim(),
         credit_limit: Number(custCreditLimit),
+        discount_percent: Math.max(0, Math.min(100, Number(custDiscountPercent) || 0)),
         current_debt: 0
       };
       await db.customers.add(newCust);
@@ -136,6 +140,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     setCustPhone(c.phone || '');
     setCustAddress(c.address || '');
     setCustCreditLimit(c.credit_limit || 0);
+    setCustDiscountPercent(typeof c.discount_percent === 'number' ? c.discount_percent : 5);
     setIsAddingCust(true);
   };
 
@@ -356,7 +361,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="text-[11px] font-bold text-[#543c2e] block mb-1">Alamat Domisili:</label>
                       <input
                         type="text"
@@ -365,6 +370,34 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                         placeholder="Alamat rumah/toko pelanggan..."
                         className="w-full px-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-medium"
                       />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-[#166534] block mb-1">Diskon Belanja Member (%):</label>
+                      <div className="flex items-center space-x-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={custDiscountPercent}
+                          onChange={(e) => setCustDiscountPercent(Number(e.target.value))}
+                          placeholder="5"
+                          className="w-20 px-3 py-2 text-xs border border-[#cce2cf] bg-[#edf5ee] text-[#166534] rounded-xl font-black text-center"
+                        />
+                        <div className="flex items-center space-x-1">
+                          {[0, 5, 10].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => setCustDiscountPercent(pct)}
+                              className={`px-1.5 py-1 text-[10px] font-bold rounded-lg border ${
+                                custDiscountPercent === pct ? 'bg-[#166534] text-white border-[#166534]' : 'bg-white text-stone-600 border-stone-200'
+                              }`}
+                            >
+                              {pct}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <label className="text-[11px] font-bold text-[#543c2e] block mb-1">Plafon Limit Piutang (Rp):</label>
@@ -404,6 +437,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                         <th className="py-3 px-4">Kode</th>
                         <th className="py-3 px-4">Nama Pelanggan</th>
                         <th className="py-3 px-4">Kontak & Alamat</th>
+                        <th className="py-3 px-4 text-center">Diskon Member</th>
                         <th className="py-3 px-4 text-right">Plafon Piutang</th>
                         <th className="py-3 px-4 text-center">Aksi</th>
                       </tr>
@@ -431,6 +465,11 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                                 <MapPin className="w-3 h-3 text-[#a08573]" />
                                 <span>{c.address || '-'}</span>
                               </div>
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                Diskon {c.discount_percent ?? 5}%
+                              </span>
                             </td>
                             <td className="py-3 px-4 text-right font-mono font-bold text-[#332219] whitespace-nowrap">
                               {formatRupiah(c.credit_limit || 0)}
