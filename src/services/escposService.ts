@@ -1131,7 +1131,7 @@ export function generateDotMatrixHTML(
     pageMarginCss = '8mm 10mm';
     minRows = 11;
   } else if (isContinuousHalf) {
-    pageSizeCss = '216mm 140mm';
+    pageSizeCss = '210mm 140mm';
     pageMarginCss = '3mm 4mm';
     minRows = 6;
   } else if (isContinuousFull) {
@@ -1176,15 +1176,15 @@ export function generateDotMatrixHTML(
     }
     body {
       font-family: 'Courier New', Courier, monospace, 'Lucida Console';
-      font-size: ${isA4Full ? '12px' : '11px'};
+      font-size: ${isA4Full ? '12px' : '11.5px'};
       line-height: ${isA4Full ? '1.3' : '1.25'};
       color: #000000;
     }
     .faktur-container {
       width: 100%;
-      max-width: ${isA4Full ? '185mm' : '178mm'};
+      max-width: ${isA4Full ? '185mm' : '180mm'};
       margin: 0 auto;
-      padding: 2px 0;
+      padding: 1px 0;
       box-sizing: border-box;
     }
     .header-table, .info-table, .footer-table, .sig-table, .item-table, .summary-table {
@@ -1200,71 +1200,71 @@ export function generateDotMatrixHTML(
       overflow: hidden;
     }
     .store-title {
-      font-size: ${isA4Full ? '17px' : '15px'};
+      font-size: ${isA4Full ? '17px' : '16px'};
       font-weight: 900;
       letter-spacing: 0.5px;
       line-height: 1.15;
     }
     .store-sub {
-      font-size: ${isA4Full ? '10px' : '9.5px'};
+      font-size: ${isA4Full ? '10px' : '10.5px'};
       font-weight: bold;
       color: #222;
       margin-top: 1px;
     }
     .store-addr {
-      font-size: ${isA4Full ? '10.5px' : '10px'};
+      font-size: ${isA4Full ? '10.5px' : '11px'};
       color: #333;
-      line-height: 1.2;
+      line-height: 1.25;
     }
     .faktur-title {
-      font-size: ${isA4Full ? '17px' : '16px'};
+      font-size: ${isA4Full ? '18px' : '17px'};
       font-weight: 900;
       letter-spacing: 1px;
       line-height: 1.15;
     }
     .trx-info {
-      font-size: ${isA4Full ? '11px' : '10.5px'};
-      line-height: 1.25;
+      font-size: ${isA4Full ? '11.5px' : '11px'};
+      line-height: 1.3;
     }
     .sep-line {
       border: none;
       border-top: 1.5px dashed #000000;
-      margin: ${isA4Full ? '4px 0' : '3.5px 0'};
+      margin: ${isA4Full ? '5px 0' : '4px 0'};
     }
     .info-table td {
-      font-size: ${isA4Full ? '11px' : '10.5px'};
-      padding: ${isA4Full ? '2px 0' : '2px 0'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
+      padding: ${isA4Full ? '2.5px 0' : '2.5px 0'};
     }
     .cust-highlight {
-      font-size: ${isA4Full ? '11.5px' : '11px'};
+      font-size: ${isA4Full ? '12px' : '11.5px'};
     }
     .status-box {
       font-weight: 800;
       border-bottom: 1px dotted #000;
     }
     .item-table {
-      margin: ${isA4Full ? '5px 0' : '3px 0'};
+      margin: ${isA4Full ? '5px 0' : '4px 0'};
     }
     .item-table th {
       text-align: left;
-      font-size: ${isA4Full ? '11px' : '10.5px'};
-      padding: ${isA4Full ? '5px 3px' : '5px 3px'};
-      border-top: 1.5px solid #000000;
-      border-bottom: 1.5px solid #000000;
+      font-size: ${isA4Full ? '11.5px' : '11px'};
+      padding: ${isA4Full ? '6px 3px' : '6px 3px'};
+      border-top: 2px solid #000000;
+      border-bottom: 2px solid #000000;
       font-weight: 900;
       background: #f2f2f2;
     }
     .item-table td {
-      padding: ${isA4Full ? '4px 3px' : '4px 3px'};
-      font-size: ${isA4Full ? '11px' : '10.5px'};
+      padding: ${isA4Full ? '5px 3px' : '5px 3px'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
       border-bottom: 1px dotted #ddd;
     }
     .item-name {
       font-weight: 700;
-      line-height: 1.2;
+      line-height: 1.25;
     }
     .empty-row td {
-      height: ${isA4Full ? '24px' : '22px'};
+      height: ${isA4Full ? '24px' : '25px'};
       border-bottom: 1px dotted #e5e5e5;
     }
     .text-muted {
@@ -1275,54 +1275,54 @@ export function generateDotMatrixHTML(
     .font-mono { font-family: 'Courier New', Courier, monospace; }
     .font-bold { font-weight: bold; }
     .terbilang-box {
-      border: 1px dashed #000000;
-      padding: ${isA4Full ? '5px 7px' : '4px 6px'};
+      border: 1.5px dashed #000000;
+      padding: ${isA4Full ? '5px 7px' : '5px 7px'};
       background: #fafafa;
       margin-bottom: 3px;
     }
     .terbilang-label {
-      font-size: ${isA4Full ? '9px' : '8.5px'};
+      font-size: ${isA4Full ? '9px' : '9px'};
       font-weight: 900;
       letter-spacing: 0.5px;
     }
     .terbilang-text {
-      font-size: ${isA4Full ? '10.5px' : '9.5px'};
+      font-size: ${isA4Full ? '11px' : '10.5px'};
       font-style: italic;
       font-weight: 700;
-      line-height: 1.25;
+      line-height: 1.3;
     }
     .notice-box {
-      font-size: ${isA4Full ? '9.5px' : '9px'};
+      font-size: ${isA4Full ? '9.5px' : '9.5px'};
       color: #333;
       line-height: 1.3;
-      margin-top: 2px;
+      margin-top: 3px;
     }
     .summary-table td {
-      font-size: ${isA4Full ? '11px' : '10.5px'};
-      padding: ${isA4Full ? '2px 0' : '1.5px 0'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
+      padding: ${isA4Full ? '2px 0' : '2px 0'};
     }
     .grand-total-row td {
       font-weight: 900;
-      border-top: 1.5px solid #000000;
-      border-bottom: 1.5px solid #000000;
-      padding: ${isA4Full ? '3px 0' : '3px 0'} !important;
+      border-top: 2px solid #000000;
+      border-bottom: 2px solid #000000;
+      padding: ${isA4Full ? '4px 0' : '4px 0'} !important;
     }
     .grand-val {
-      font-size: ${isA4Full ? '14px' : '13.5px'};
+      font-size: ${isA4Full ? '15px' : '14.5px'};
     }
     .sig-table {
-      margin-top: ${isA4Full ? '15px' : '10px'};
+      margin-top: ${isA4Full ? '16px' : '14px'};
       text-align: center;
     }
     .sig-role {
-      font-size: ${isA4Full ? '11px' : '10.5px'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
       font-weight: bold;
     }
     .sig-space {
-      height: ${isA4Full ? '45px' : '38px'};
+      height: ${isA4Full ? '48px' : '44px'};
     }
     .sig-line {
-      font-size: ${isA4Full ? '11px' : '10.5px'};
+      font-size: ${isA4Full ? '11.5px' : '11px'};
       font-weight: bold;
     }
     @media print {
@@ -1341,7 +1341,7 @@ export function generateDotMatrixHTML(
       }
       .faktur-container {
         width: 100% !important;
-        max-width: ${isA4Full ? '185mm' : '178mm'} !important;
+        max-width: ${isA4Full ? '185mm' : '180mm'} !important;
         margin: 0 auto !important;
         padding: 0 !important;
       }
