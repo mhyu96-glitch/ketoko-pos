@@ -246,6 +246,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       TRANSFER: 0
     };
 
+    const paymentCountMap: Record<string, number> = {
+      CASH: 0,
+      QRIS: 0,
+      DEBIT: 0,
+      TRANSFER: 0
+    };
+
     const productSalesMap = new Map<string, { product: Product; qty: number; totalSales: number; totalCost: number }>();
     const categorySalesMap = new Map<string, { qty: number; totalSales: number; totalCost: number }>();
 
@@ -257,6 +264,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
       const pMethod = trx.payment_method || 'CASH';
       paymentMethodMap[pMethod] = (paymentMethodMap[pMethod] || 0) + trx.grand_total;
+      paymentCountMap[pMethod] = (paymentCountMap[pMethod] || 0) + 1;
 
       trx.items.forEach((item: TransactionItem) => {
         totalItems += item.qty;
@@ -351,6 +359,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       netProfit,
       netProfitMarginPercent,
       paymentMethodMap,
+      paymentCountMap,
       rankedProducts,
       rankedCategories,
       allCategories,
@@ -399,10 +408,10 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
         periodText: periodLabel,
         storeProfile,
         kpis: [
-          { label: 'Penjualan Kotor', value: formatRupiah(metrics.totalGrossRevenue) },
-          { label: 'Total Diskon', value: '-' + formatRupiah(metrics.totalDiscount) },
           { label: 'Penjualan Bersih', value: formatRupiah(metrics.totalNetRevenue), highlight: true },
-          { label: 'Total Transaksi', value: `${filteredTransactions.length} Struk` }
+          { label: 'Penjualan Tunai (CASH)', value: formatRupiah(metrics.paymentMethodMap.CASH), sublabel: `${metrics.paymentCountMap.CASH} Nota (${(metrics.totalNetRevenue > 0 ? (metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%)` },
+          { label: 'Transfer Bank (TF)', value: formatRupiah(metrics.paymentMethodMap.TRANSFER), sublabel: `${metrics.paymentCountMap.TRANSFER} Nota (${(metrics.totalNetRevenue > 0 ? (metrics.paymentMethodMap.TRANSFER / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%)` },
+          { label: 'QRIS & Kartu Debit', value: formatRupiah(metrics.paymentMethodMap.QRIS + metrics.paymentMethodMap.DEBIT), sublabel: `${metrics.paymentCountMap.QRIS + metrics.paymentCountMap.DEBIT} Nota` }
         ],
         table: {
           headers: ['No. Nota', 'Waktu Transaksi', 'Kasir / Petugas', 'Metode', 'Item', 'Subtotal', 'Diskon', 'Total Bayar'],
@@ -937,6 +946,98 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 </div>
               </div>
 
+              {/* Rincian Detail Penjualan: CASH vs TRANSFER (TF) / Non-Tunai */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <div className="p-2 rounded-xl bg-[#faebd7] text-[#7c4e2f]">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-sm text-[#332219]">Rincian Metode Pembayaran (TF vs CASH)</h4>
+                      <p className="text-[11px] text-[#856b59]">Detail pembagian omset penjualan antara Tunai (Cash), Transfer Bank (TF), QRIS & Debit</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-[#7c4e2f] bg-[#f5ece3] px-3 py-1 rounded-xl border border-[#dfcebe] self-start sm:self-auto">
+                    Total: {formatRupiah(metrics.totalNetRevenue)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                  {/* CASH Card */}
+                  <div className="p-3.5 rounded-2xl bg-[#f7faf7] border border-[#cce2cf] flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#166534] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center">
+                        <Banknote className="w-3.5 h-3.5 mr-1" /> Tunai (CASH)
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#cce2cf]">
+                        {metrics.paymentCountMap.CASH} Nota
+                      </span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-[#166534] mt-1">
+                      {formatRupiah(metrics.paymentMethodMap.CASH)}
+                    </div>
+                    <div className="text-[10px] text-[#856b59] mt-1 font-medium">
+                      {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
+                    </div>
+                  </div>
+
+                  {/* TRANSFER Card */}
+                  <div className="p-3.5 rounded-2xl bg-[#fcf8f4] border border-[#eed7c4] flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#7c4e2f] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center">
+                        <DollarSign className="w-3.5 h-3.5 mr-1" /> Transfer Bank (TF)
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#eed7c4]">
+                        {metrics.paymentCountMap.TRANSFER} Nota
+                      </span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-[#7c4e2f] mt-1">
+                      {formatRupiah(metrics.paymentMethodMap.TRANSFER)}
+                    </div>
+                    <div className="text-[10px] text-[#856b59] mt-1 font-medium">
+                      {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.TRANSFER / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
+                    </div>
+                  </div>
+
+                  {/* QRIS Card */}
+                  <div className="p-3.5 rounded-2xl bg-[#f0f7fb] border border-[#bae6fd] flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#0369a1] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center">
+                        <QrCode className="w-3.5 h-3.5 mr-1" /> QRIS Digital
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#bae6fd]">
+                        {metrics.paymentCountMap.QRIS} Nota
+                      </span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-[#0369a1] mt-1">
+                      {formatRupiah(metrics.paymentMethodMap.QRIS)}
+                    </div>
+                    <div className="text-[10px] text-[#856b59] mt-1 font-medium">
+                      {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.QRIS / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
+                    </div>
+                  </div>
+
+                  {/* DEBIT Card */}
+                  <div className="p-3.5 rounded-2xl bg-[#faf5ff] border border-[#e9d5ff] flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-[#6b21a8] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center">
+                        <CreditCard className="w-3.5 h-3.5 mr-1" /> Kartu Debit (EDC)
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#e9d5ff]">
+                        {metrics.paymentCountMap.DEBIT} Nota
+                      </span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-[#6b21a8] mt-1">
+                      {formatRupiah(metrics.paymentMethodMap.DEBIT)}
+                    </div>
+                    <div className="text-[10px] text-[#856b59] mt-1 font-medium">
+                      {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.DEBIT / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Transactions List */}
               <div className="p-5 rounded-3xl bg-white border border-[#e4d5c7] shadow-xs space-y-4">
                 <div className="flex items-center justify-between">
@@ -1434,22 +1535,38 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                         <th className="py-3 px-4">Waktu</th>
                         <th className="py-3 px-4">No. Invoice</th>
+                        <th className="py-3 px-4">Pelanggan</th>
                         <th className="py-3 px-4">Kasir</th>
+                        <th className="py-3 px-4 text-center">Metode</th>
                         <th className="py-3 px-4 text-right">Jumlah Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f0e4d7] font-medium">
                       {filteredTransactions
                         .filter((t) => paymentFilterMethod === 'ALL' || t.payment_method === paymentFilterMethod)
-                        .slice(0, 40)
+                        .slice(0, 50)
                         .map((trx) => (
                           <tr key={trx.id} className="hover:bg-[#fcf8f4] transition-colors">
-                            <td className="py-2.5 px-4 text-[#856b59] font-mono text-[11px]">
+                            <td className="py-2.5 px-4 text-[#856b59] font-mono text-[11px] whitespace-nowrap">
                               {new Date(trx.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                             </td>
-                            <td className="py-2.5 px-4 font-mono font-bold text-[#332219]">{trx.receipt_number}</td>
-                            <td className="py-2.5 px-4 text-[#543c2e]">{trx.cashier_name || 'Kasir'}</td>
-                            <td className="py-2.5 px-4 text-right font-mono font-black text-[#332219]">
+                            <td className="py-2.5 px-4 font-mono font-bold text-[#332219] whitespace-nowrap">{trx.receipt_number}</td>
+                            <td className="py-2.5 px-4 text-[#332219] font-medium">{trx.customer_name || 'Pelanggan Umum'}</td>
+                            <td className="py-2.5 px-4 text-[#543c2e] whitespace-nowrap">{trx.cashier_name || 'Kasir'}</td>
+                            <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                trx.payment_method === 'CASH'
+                                  ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf]'
+                                  : trx.payment_method === 'TRANSFER'
+                                  ? 'bg-[#fcf5ed] text-[#7c4e2f] border-[#eed7c4]'
+                                  : trx.payment_method === 'QRIS'
+                                  ? 'bg-[#f0f7fb] text-[#0369a1] border-[#bae6fd]'
+                                  : 'bg-[#faf5ff] text-[#6b21a8] border-[#e9d5ff]'
+                              }`}>
+                                {trx.payment_method}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-black text-[#332219] whitespace-nowrap">
                               {formatRupiah(trx.grand_total)}
                             </td>
                           </tr>

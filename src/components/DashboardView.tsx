@@ -16,6 +16,8 @@ import {
   HardDrive, 
   Banknote, 
   QrCode, 
+  CreditCard,
+  DollarSign,
   ChevronRight, 
   MapPin, 
   Barcode, 
@@ -192,9 +194,13 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     lowStockCount, 
     topLowStockProducts,
     cashRevenue,
-    nonCashRevenue,
+    transferRevenue,
+    qrisRevenue,
+    debitRevenue,
     cashPercent,
-    nonCashPercent,
+    transferPercent,
+    qrisPercent,
+    debitPercent,
     avgBasketValue,
     recentTrxList,
     todaySoldProducts,
@@ -218,6 +224,9 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     };
 
     const soldMap = new Map<string, SoldProductSummary>();
+    let transfer = 0;
+    let qris = 0;
+    let debit = 0;
 
     const tLen = transactions.length;
     for (let i = 0; i < tLen; i++) {
@@ -227,6 +236,15 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       revenue += gTotal;
       if (t.payment_method === 'CASH') {
         cash += gTotal;
+      } else if (t.payment_method === 'TRANSFER') {
+        transfer += gTotal;
+        nonCash += gTotal;
+      } else if (t.payment_method === 'QRIS') {
+        qris += gTotal;
+        nonCash += gTotal;
+      } else if (t.payment_method === 'DEBIT') {
+        debit += gTotal;
+        nonCash += gTotal;
       } else {
         nonCash += gTotal;
       }
@@ -300,8 +318,11 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       }
     }
 
-    const cPct = revenue > 0 ? Math.round((cash / revenue) * 100) : 100;
-    const ncPct = revenue > 0 ? 100 - cPct : 0;
+    const cPct = revenue > 0 ? (cash / revenue) * 100 : 0;
+    const tfPct = revenue > 0 ? (transfer / revenue) * 100 : 0;
+    const qrisPct = revenue > 0 ? (qris / revenue) * 100 : 0;
+    const debitPct = revenue > 0 ? (debit / revenue) * 100 : 0;
+    const ncPct = revenue > 0 ? 100 - Math.round(cPct) : 0;
     const avgBasket = tLen > 0 ? Math.round(revenue / tLen) : 0;
     const recent = [...transactions].slice(0, 5);
     const sortedTodaySold = Array.from(soldMap.values()).sort((a, b) => b.totalQty - a.totalQty);
@@ -313,8 +334,14 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       lowStockCount: count,
       topLowStockProducts: topLow,
       cashRevenue: cash,
+      transferRevenue: transfer,
+      qrisRevenue: qris,
+      debitRevenue: debit,
       nonCashRevenue: nonCash,
-      cashPercent: cPct,
+      cashPercent: Math.round(cPct),
+      transferPercent: Math.round(tfPct),
+      qrisPercent: Math.round(qrisPct),
+      debitPercent: Math.round(debitPct),
       nonCashPercent: ncPct,
       avgBasketValue: avgBasket,
       recentTrxList: recent,
@@ -430,20 +457,25 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
 
           <div className="mt-4 pt-3 border-t border-[#f0e4d7]/80">
             {/* Mini Payment Breakdown Pill */}
-            <div className="flex items-center justify-between text-[11px] font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-mono">
               <span className="text-[#166534] font-bold flex items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#166534] mr-1.5 inline-block" />
-                Tunai: {formatRupiah(cashRevenue)}
+                <span className="w-1.5 h-1.5 rounded-full bg-[#166534] mr-1 inline-block shrink-0" />
+                Cash: {formatRupiah(cashRevenue)}
+              </span>
+              <span className="text-[#7c4e2f] font-bold flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#7c4e2f] mr-1 inline-block shrink-0" />
+                TF: {formatRupiah(transferRevenue)}
               </span>
               <span className="text-[#0369a1] font-bold flex items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#0369a1] mr-1.5 inline-block" />
-                Non-Tunai: {formatRupiah(nonCashRevenue)}
+                <span className="w-1.5 h-1.5 rounded-full bg-[#0369a1] mr-1 inline-block shrink-0" />
+                QRIS/EDC: {formatRupiah(qrisRevenue + debitRevenue)}
               </span>
             </div>
             {/* Visual mini bar */}
-            <div className="w-full h-1.5 bg-[#ebdccf] rounded-full overflow-hidden flex mt-1.5">
-              <div style={{ width: `${cashPercent}%` }} className="bg-[#166534] h-full" />
-              <div style={{ width: `${nonCashPercent}%` }} className="bg-[#0369a1] h-full" />
+            <div className="w-full h-1.5 bg-[#ebdccf] rounded-full overflow-hidden flex mt-2">
+              <div style={{ width: `${cashPercent}%` }} className="bg-[#166534] h-full" title={`Cash: ${cashPercent}%`} />
+              <div style={{ width: `${transferPercent}%` }} className="bg-[#7c4e2f] h-full" title={`Transfer TF: ${transferPercent}%`} />
+              <div style={{ width: `${qrisPercent + debitPercent}%` }} className="bg-[#0369a1] h-full" title={`QRIS & EDC: ${qrisPercent + debitPercent}%`} />
             </div>
           </div>
         </div>
@@ -793,7 +825,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-[#3d2617] text-sm flex items-center space-x-1.5">
                 <Banknote className="w-4 h-4 text-[#7c4e2f]" />
-                <span>Distribusi Metode Pembayaran Hari Ini</span>
+                <span>Distribusi Metode Pembayaran (TF vs Cash)</span>
               </h3>
               <span className="text-[11px] font-mono text-[#8a6b53] font-bold">
                 {totalTransactions} Transaksi
@@ -808,9 +840,19 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
                 title={`Tunai: ${cashPercent}%`}
               />
               <div 
-                style={{ width: `${nonCashPercent}%` }} 
+                style={{ width: `${transferPercent}%` }} 
+                className="bg-[#7c4e2f] h-full transition-all duration-500" 
+                title={`Transfer Bank (TF): ${transferPercent}%`}
+              />
+              <div 
+                style={{ width: `${qrisPercent}%` }} 
                 className="bg-[#0369a1] h-full transition-all duration-500" 
-                title={`Non-Tunai: ${nonCashPercent}%`}
+                title={`QRIS: ${qrisPercent}%`}
+              />
+              <div 
+                style={{ width: `${debitPercent}%` }} 
+                className="bg-[#6b21a8] h-full transition-all duration-500" 
+                title={`Debit EDC: ${debitPercent}%`}
               />
             </div>
 
@@ -820,7 +862,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
                   <div className="w-2.5 h-2.5 rounded-full bg-[#166534]" />
                   <Banknote className="w-4 h-4 text-[#166534]" />
                   <div>
-                    <div className="font-bold text-[#166534]">Tunai (Cash Laci)</div>
+                    <div className="font-bold text-[#166534]">Tunai (Cash Fisik)</div>
                     <div className="text-[10px] text-[#15803d] font-mono">{cashPercent}% dari total omset</div>
                   </div>
                 </div>
@@ -829,17 +871,45 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
                 </span>
               </div>
 
+              <div className="p-3 rounded-2xl bg-[#fcf5ed] border border-[#eed7c4] flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#7c4e2f]" />
+                  <DollarSign className="w-4 h-4 text-[#7c4e2f]" />
+                  <div>
+                    <div className="font-bold text-[#7c4e2f]">Transfer Bank (TF)</div>
+                    <div className="text-[10px] text-[#7c4e2f] font-mono">{transferPercent}% dari total omset</div>
+                  </div>
+                </div>
+                <span className="font-mono font-black text-sm text-[#7c4e2f]">
+                  {formatRupiah(transferRevenue)}
+                </span>
+              </div>
+
               <div className="p-3 rounded-2xl bg-[#f0f7fb] border border-[#cfe2ed] flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-[#0369a1]" />
                   <QrCode className="w-4 h-4 text-[#0369a1]" />
                   <div>
-                    <div className="font-bold text-[#0369a1]">Non-Tunai (QRIS/EDC)</div>
-                    <div className="text-[10px] text-[#0284c7] font-mono">{nonCashPercent}% dari total omset</div>
+                    <div className="font-bold text-[#0369a1]">QRIS Digital</div>
+                    <div className="text-[10px] text-[#0284c7] font-mono">{qrisPercent}% dari total omset</div>
                   </div>
                 </div>
                 <span className="font-mono font-black text-sm text-[#0369a1]">
-                  {formatRupiah(nonCashRevenue)}
+                  {formatRupiah(qrisRevenue)}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#faf5ff] border border-[#e9d5ff] flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#6b21a8]" />
+                  <CreditCard className="w-4 h-4 text-[#6b21a8]" />
+                  <div>
+                    <div className="font-bold text-[#6b21a8]">Kartu Debit (EDC)</div>
+                    <div className="text-[10px] text-[#7e22ce] font-mono">{debitPercent}% dari total omset</div>
+                  </div>
+                </div>
+                <span className="font-mono font-black text-sm text-[#6b21a8]">
+                  {formatRupiah(debitRevenue)}
                 </span>
               </div>
             </div>

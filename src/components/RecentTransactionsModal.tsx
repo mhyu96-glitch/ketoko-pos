@@ -179,10 +179,10 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     <div class="sep"></div>
 
     <table class="summary-tbl">
-      <tr><td class="label">💵 Penjualan CASH:</td><td class="val font-mono">${formatRupiah(cashSales)}</td></tr>
-      <tr><td class="label">📱 Penjualan QRIS:</td><td class="val font-mono">${formatRupiah(qrisSales)}</td></tr>
-      <tr><td class="label">💳 Penjualan DEBIT:</td><td class="val font-mono">${formatRupiah(debitSales)}</td></tr>
-      <tr><td class="label">🏦 Penjualan TRANSFER:</td><td class="val font-mono">${formatRupiah(transferSales)}</td></tr>
+      <tr><td class="label">💵 Penjualan CASH (Tunai):</td><td class="val font-mono">${formatRupiah(cashSales)} (${todayTrx.filter(t => t.payment_method === 'CASH').length} Nota)</td></tr>
+      <tr><td class="label">🏦 Penjualan TRANSFER (TF):</td><td class="val font-mono">${formatRupiah(transferSales)} (${todayTrx.filter(t => t.payment_method === 'TRANSFER').length} Nota)</td></tr>
+      <tr><td class="label">📱 Penjualan QRIS Digital:</td><td class="val font-mono">${formatRupiah(qrisSales)} (${todayTrx.filter(t => t.payment_method === 'QRIS').length} Nota)</td></tr>
+      <tr><td class="label">💳 Penjualan KARTU DEBIT:</td><td class="val font-mono">${formatRupiah(debitSales)} (${todayTrx.filter(t => t.payment_method === 'DEBIT').length} Nota)</td></tr>
     </table>
     <div class="sep"></div>
 
@@ -254,6 +254,18 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     0
   );
 
+  const cashTrx = filtered.filter((t) => t.payment_method === 'CASH');
+  const cashTotal = cashTrx.reduce((acc, t) => acc + t.grand_total, 0);
+
+  const transferTrx = filtered.filter((t) => t.payment_method === 'TRANSFER');
+  const transferTotal = transferTrx.reduce((acc, t) => acc + t.grand_total, 0);
+
+  const qrisTrx = filtered.filter((t) => t.payment_method === 'QRIS');
+  const qrisTotal = qrisTrx.reduce((acc, t) => acc + t.grand_total, 0);
+
+  const debitTrx = filtered.filter((t) => t.payment_method === 'DEBIT');
+  const debitTotal = debitTrx.reduce((acc, t) => acc + t.grand_total, 0);
+
   if (!isOpen) return null;
 
   return (
@@ -271,7 +283,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                 Laporan Transaksi Harian Kasir
               </h3>
               <p className="text-xs text-[#fcefe3] font-medium">
-                Rekap transaksi offline-first tersimpan di database lokal browser (IndexedDB)
+                Rekap detail penjualan tunai (CASH), transfer (TF), QRIS & debit
               </p>
             </div>
           </div>
@@ -310,6 +322,93 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
             </span>
             <div className="text-lg sm:text-xl font-bold font-mono text-[#3d2617] mt-0.5">
               {totalItemsSold} <span className="text-xs text-[#8a6b53] font-normal">Pcs</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2.b Detail Pembayaran (TF vs CASH Hero Strip) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 bg-[#fcf9f5] border-b border-[#e5d0be]">
+          {/* CASH Card */}
+          <div 
+            onClick={() => setSelectedMethod(selectedMethod === 'CASH' ? 'ALL' : 'CASH')}
+            className={`p-2.5 rounded-2xl border cursor-pointer transition-all ${
+              selectedMethod === 'CASH' 
+                ? 'bg-[#edf5ee] border-[#166534] ring-2 ring-[#166534]/20 shadow-xs' 
+                : 'bg-white border-[#dfcebe] hover:border-[#166534]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] font-bold text-[#166534]">
+              <span className="flex items-center"><Banknote className="w-3.5 h-3.5 mr-1" /> CASH (TUNAI)</span>
+              <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-[#cce2cf]">{cashTrx.length} Nota</span>
+            </div>
+            <div className="text-base sm:text-lg font-black font-mono text-[#166534] mt-1">
+              {formatRupiah(cashTotal)}
+            </div>
+            <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
+              {totalVolume > 0 ? ((cashTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
+            </div>
+          </div>
+
+          {/* TRANSFER Card */}
+          <div 
+            onClick={() => setSelectedMethod(selectedMethod === 'TRANSFER' ? 'ALL' : 'TRANSFER')}
+            className={`p-2.5 rounded-2xl border cursor-pointer transition-all ${
+              selectedMethod === 'TRANSFER' 
+                ? 'bg-[#fcf5ed] border-[#7c4e2f] ring-2 ring-[#7c4e2f]/20 shadow-xs' 
+                : 'bg-white border-[#dfcebe] hover:border-[#7c4e2f]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] font-bold text-[#7c4e2f]">
+              <span className="flex items-center"><DollarSign className="w-3.5 h-3.5 mr-1" /> TRANSFER (TF)</span>
+              <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-[#eed7c4]">{transferTrx.length} Nota</span>
+            </div>
+            <div className="text-base sm:text-lg font-black font-mono text-[#7c4e2f] mt-1">
+              {formatRupiah(transferTotal)}
+            </div>
+            <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
+              {totalVolume > 0 ? ((transferTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
+            </div>
+          </div>
+
+          {/* QRIS Card */}
+          <div 
+            onClick={() => setSelectedMethod(selectedMethod === 'QRIS' ? 'ALL' : 'QRIS')}
+            className={`p-2.5 rounded-2xl border cursor-pointer transition-all ${
+              selectedMethod === 'QRIS' 
+                ? 'bg-[#f0f7fb] border-[#0369a1] ring-2 ring-[#0369a1]/20 shadow-xs' 
+                : 'bg-white border-[#dfcebe] hover:border-[#0369a1]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] font-bold text-[#0369a1]">
+              <span className="flex items-center"><QrCode className="w-3.5 h-3.5 mr-1" /> QRIS DIGITAL</span>
+              <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-[#bae6fd]">{qrisTrx.length} Nota</span>
+            </div>
+            <div className="text-base sm:text-lg font-black font-mono text-[#0369a1] mt-1">
+              {formatRupiah(qrisTotal)}
+            </div>
+            <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
+              {totalVolume > 0 ? ((qrisTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
+            </div>
+          </div>
+
+          {/* DEBIT Card */}
+          <div 
+            onClick={() => setSelectedMethod(selectedMethod === 'DEBIT' ? 'ALL' : 'DEBIT')}
+            className={`p-2.5 rounded-2xl border cursor-pointer transition-all ${
+              selectedMethod === 'DEBIT' 
+                ? 'bg-[#faf5ff] border-[#6b21a8] ring-2 ring-[#6b21a8]/20 shadow-xs' 
+                : 'bg-white border-[#dfcebe] hover:border-[#6b21a8]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] font-bold text-[#6b21a8]">
+              <span className="flex items-center"><CreditCard className="w-3.5 h-3.5 mr-1" /> KARTU DEBIT</span>
+              <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-[#e9d5ff]">{debitTrx.length} Nota</span>
+            </div>
+            <div className="text-base sm:text-lg font-black font-mono text-[#6b21a8] mt-1">
+              {formatRupiah(debitTotal)}
+            </div>
+            <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
+              {totalVolume > 0 ? ((debitTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
             </div>
           </div>
         </div>
