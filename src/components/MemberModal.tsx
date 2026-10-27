@@ -7,7 +7,6 @@ import {
   Phone, 
   Edit3, 
   Trash2, 
-  Percent, 
   MapPin, 
   Save, 
   AlertTriangle,
@@ -38,7 +37,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newAddress, setNewAddress] = useState('');
-  const [newDiscount, setNewDiscount] = useState<number>(5);
   const [newCreditLimit, setNewCreditLimit] = useState<number>(5000000);
 
   // Edit Form State
@@ -46,7 +44,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
-  const [editDiscount, setEditDiscount] = useState<number>(5);
   const [editCreditLimit, setEditCreditLimit] = useState<number>(5000000);
   const [editNotes, setEditNotes] = useState('');
 
@@ -96,7 +93,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     setEditName(m.name);
     setEditPhone(m.phone || '');
     setEditAddress(m.address || '');
-    setEditDiscount(typeof m.discount_percent === 'number' ? m.discount_percent : 5);
     setEditCreditLimit(m.credit_limit || 5000000);
     setEditNotes(m.notes || '');
     setShowAddForm(false);
@@ -114,7 +110,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         name: editName.trim(),
         phone: editPhone.trim() || '-',
         address: editAddress.trim() || 'Lokal',
-        discount_percent: Math.max(0, Math.min(100, Number(editDiscount) || 0)),
         credit_limit: Number(editCreditLimit) || 0,
         notes: editNotes.trim()
       };
@@ -128,7 +123,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       }
 
       setEditingMember(null);
-      showToast(`Data member "${updatedMember.name}" & diskon ${updatedMember.discount_percent}% berhasil disimpan!`);
+      showToast(`Data member "${updatedMember.name}" berhasil disimpan!`);
     } catch (err) {
       console.error('Gagal menyimpan perubahan member:', err);
       showToast('Gagal menyimpan perubahan data member.');
@@ -150,7 +145,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         address: newAddress.trim() || 'Lokal',
         credit_limit: Number(newCreditLimit) || 5000000,
         current_debt: 0,
-        discount_percent: Math.max(0, Math.min(100, Number(newDiscount) || 0)),
         created_at: new Date().toISOString()
       };
 
@@ -159,9 +153,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       setNewName('');
       setNewPhone('');
       setNewAddress('');
-      setNewDiscount(5);
       setShowAddForm(false);
-      showToast(`Member baru "${newMember.name}" (Diskon ${newMember.discount_percent}%) berhasil didaftarkan!`);
+      showToast(`Member baru "${newMember.name}" berhasil didaftarkan!`);
     } catch (err) {
       console.error('Gagal menambah member baru:', err);
       showToast('Gagal menambahkan member.');
@@ -202,8 +195,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Kelola Member & Diskon Pelanggan</h3>
-              <p className="text-xs text-[#fcefe3]">Atur nama, nomor kontak, dan persentase potongan diskon belanja member</p>
+              <h3 className="font-bold text-white text-base">Kelola Data Member Pelanggan</h3>
+              <p className="text-xs text-[#fcefe3]">Atur nama, nomor kontak, limit piutang, dan data pelanggan toko</p>
             </div>
           </div>
           <button
@@ -305,44 +298,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-[#166534] flex items-center space-x-1 mb-1">
-                    <Percent className="w-3.5 h-3.5" />
-                    <span>Persentase Diskon Member (%) *</span>
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={editDiscount}
-                      onChange={(e) => setEditDiscount(Number(e.target.value))}
-                      className="w-24 px-3 py-1.5 bg-[#edf5ee] text-[#166534] rounded-xl border border-[#cce2cf] font-black text-sm text-center focus:bg-white"
-                      required
-                    />
-                    <span className="font-bold text-stone-600">% Diskon</span>
-                  </div>
-
-                  {/* Preset Pills */}
-                  <div className="flex items-center space-x-1.5 mt-1.5">
-                    {[0, 3, 5, 10, 15, 20].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setEditDiscount(pct)}
-                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
-                          editDiscount === pct
-                            ? 'bg-[#166534] text-white border-[#166534]'
-                            : 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200'
-                        }`}
-                      >
-                        {pct}%
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
                   <label className="font-bold text-[#3d2617] block mb-1">Limit Bon / Piutang (Rp)</label>
                   <input
                     type="number"
@@ -379,7 +334,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Perubahan & Diskon</span>
+                  <span>Simpan Perubahan Data</span>
                 </button>
               </div>
             </form>
@@ -428,42 +383,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-[#166534] flex items-center space-x-1 mb-1">
-                    <Percent className="w-3.5 h-3.5" />
-                    <span>Diskon Member (%)</span>
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={newDiscount}
-                      onChange={(e) => setNewDiscount(Number(e.target.value))}
-                      className="w-20 px-3 py-1.5 bg-[#edf5ee] text-[#166534] rounded-xl border border-[#cce2cf] font-black text-center"
-                      required
-                    />
-                    <span className="font-bold text-stone-600">% Diskon</span>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5 mt-1.5">
-                    {[0, 3, 5, 10, 15].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setNewDiscount(pct)}
-                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
-                          newDiscount === pct
-                            ? 'bg-[#166534] text-white border-[#166534]'
-                            : 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200'
-                        }`}
-                      >
-                        {pct}%
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
                   <label className="font-bold text-[#3d2617] block mb-1">Limit Bon / Piutang (Rp)</label>
                   <input
                     type="number"
@@ -498,12 +417,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs text-stone-500 font-bold px-1">
               <span>Daftar Member Terdaftar ({filteredMembers.length})</span>
-              <span>Klik <b>Edit</b> untuk ubah diskon • Klik <b>Pilih</b> untuk kasir</span>
+              <span>Klik <b>Edit</b> untuk ubah data • Klik <b>Pilih</b> untuk kasir</span>
             </div>
 
             {filteredMembers.map((m) => {
               const isSelected = currentMemberId === m.id;
-              const discPct = typeof m.discount_percent === 'number' ? m.discount_percent : 5;
               const isConfirmingDelete = deleteConfirmId === m.id;
 
               return (
@@ -523,9 +441,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                         <span className="font-black text-sm text-[#3d2617]">{m.name}</span>
                         <span className="text-[10px] font-mono bg-[#f5ebe0] text-[#96633b] px-2 py-0.5 rounded-md border border-[#ddc3aa] font-bold">
                           {m.id}
-                        </span>
-                        <span className="text-[11px] font-black text-[#166534] bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                          Diskon {discPct}%
                         </span>
                         {isSelected && (
                           <span className="text-[10px] font-bold bg-[#166534] text-white px-2 py-0.5 rounded-full flex items-center space-x-1">
@@ -552,7 +467,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     {/* Right: Action Buttons (Edit, Pilih, Hapus) */}
                     <div className="flex items-center space-x-1.5 self-end sm:self-center shrink-0">
                       
-                      {/* Tombol Edit & Diskon */}
+                      {/* Tombol Edit */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -560,7 +475,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                           startEdit(m);
                         }}
                         className="px-2.5 py-1.5 rounded-xl bg-[#fdf8f4] hover:bg-[#faebd7] text-[#96633b] border border-[#ddc3aa] text-xs font-bold flex items-center space-x-1 transition-all shadow-2xs"
-                        title="Edit data dan diskon member"
+                        title="Edit data member"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>Edit</span>

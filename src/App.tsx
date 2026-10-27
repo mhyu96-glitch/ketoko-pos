@@ -234,6 +234,7 @@ export const App: React.FC = () => {
   const {
     items: cartItems,
     memberId,
+    customerName,
     setMemberId,
     taxEnabled,
     setTaxEnabled,
@@ -1071,6 +1072,20 @@ export const App: React.FC = () => {
     const now = new Date();
     const receiptNumber = `TRX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    // Resolve clean customer name (real name, not ID/Member #)
+    let finalCustName = (paymentData.customer_name || '').trim() || (customerName || '').trim();
+    if (!finalCustName && memberId) {
+      try {
+        const cust = await db.customers.get(memberId);
+        if (cust?.name) {
+          finalCustName = cust.name;
+        } else {
+          const byCode = await db.customers.where('code').equalsIgnoreCase(memberId).first();
+          if (byCode?.name) finalCustName = byCode.name;
+        }
+      } catch {}
+    }
+
     const newTrx: Transaction = {
       id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       store_id: activeStoreId || 'store-01',
@@ -1079,7 +1094,7 @@ export const App: React.FC = () => {
       cashier_name: currentUser?.name || 'Kasir',
       branch_id: currentUser?.branch_id || 'BR-01',
       member_id: memberId || undefined,
-      customer_name: paymentData.customer_name || (memberId ? `Member #${memberId}` : undefined),
+      customer_name: finalCustName || (memberId ? undefined : 'PELANGGAN UMUM'),
       items: [...cartItems],
       subtotal,
       discount_amount: discountAmount,
@@ -1119,7 +1134,7 @@ export const App: React.FC = () => {
     // 1.b Catat Piutang Pelanggan otomatis jika transaksi dibayar secara TEMPO / BON
     if (paymentData.payment_method === 'TEMPO') {
       try {
-        const custName = paymentData.customer_name || (memberId ? `Member #${memberId}` : 'Pelanggan Umum');
+        const custName = finalCustName || 'Pelanggan Umum';
         const dp = Number(paymentData.cash_given) || 0;
         const remaining = Math.max(0, grandTotal - dp);
         const dueDateVal = paymentData.due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
@@ -1759,6 +1774,7 @@ export const App: React.FC = () => {
           products={products}
           cartItems={cartItems}
           memberId={memberId}
+          customerName={customerName}
           setMemberId={setMemberId}
           taxEnabled={taxEnabled}
           setTaxEnabled={setTaxEnabled}
@@ -1788,7 +1804,7 @@ export const App: React.FC = () => {
           isOpen={isPaymentOpen}
           onClose={() => setIsPaymentOpen(false)}
           grandTotal={grandTotal}
-          customerName={memberId ? `Member #${memberId}` : ''}
+          customerName={customerName || ''}
           onProcessPayment={handleProcessPayment}
           isTouchscreenMode={isTouchscreenMode}
           onToggleTouchscreen={handleToggleTouchscreen}
@@ -1854,7 +1870,7 @@ export const App: React.FC = () => {
         <MemberModal
           isOpen={isMemberModalOpen}
           onClose={() => setIsMemberModalOpen(false)}
-          onSelectMember={(selectedId, member) => setMemberId(selectedId, member?.discount_percent)}
+          onSelectMember={(selectedId, member) => setMemberId(selectedId, member?.name)}
           currentMemberId={memberId}
         />
       )}

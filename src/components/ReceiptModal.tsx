@@ -211,6 +211,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </div>
             )}
 
+            {transaction.customer_name && transaction.payment_method !== 'TEMPO' && (
+              <div className="text-center pt-1 text-xs text-[#5c3c26]">
+                Pelanggan: <b className="font-bold text-[#3d2617]">{transaction.customer_name}</b>
+              </div>
+            )}
+
             {transaction.payment_method === 'TEMPO' && (
               <div className="flex items-center justify-center space-x-3 pt-1 text-xs text-amber-900 font-medium">
                 {transaction.due_date && (

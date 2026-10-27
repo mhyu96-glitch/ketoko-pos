@@ -303,8 +303,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Member & Diskon Kasir</div>
-                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Diskon 5% otomatis & riwayat poin</div>
+                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Data Member / Pelanggan</div>
+                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Kelola member & data pelanggan toko</div>
                     </div>
                   </button>
 

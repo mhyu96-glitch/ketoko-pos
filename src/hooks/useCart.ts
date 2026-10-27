@@ -5,6 +5,7 @@ import { db } from '../db';
 export function useCart() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [memberId, setMemberIdState] = useState<string>('');
+  const [customerName, setCustomerName] = useState<string>('');
   const [memberDiscountPercent, setMemberDiscountPercent] = useState<number>(0);
   const [taxEnabled, setTaxEnabled] = useState<boolean>(true);
   const [taxRate, setTaxRateState] = useState<number>(() => {
@@ -104,32 +105,35 @@ export function useCart() {
     setItems((prevItems) => prevItems.filter((item) => String(item.product_id).trim() !== cleanId));
   }, []);
 
-  const setMemberId = useCallback((id: string, discountPercent?: number) => {
+  const setMemberId = useCallback((id: string, nameOrDiscount?: string | number) => {
     const cleanId = (id || '').trim();
     setMemberIdState(cleanId);
     if (!cleanId) {
+      setCustomerName('');
       setMemberDiscountPercent(0);
       return;
     }
-    if (typeof discountPercent === 'number' && !isNaN(discountPercent)) {
-      setMemberDiscountPercent(Math.max(0, discountPercent));
+    if (typeof nameOrDiscount === 'string' && nameOrDiscount.trim()) {
+      setCustomerName(nameOrDiscount.trim());
     } else {
       db.customers.get(cleanId).then((cust) => {
-        if (cust) {
-          const pct = typeof cust.discount_percent === 'number' ? cust.discount_percent : 5;
-          setMemberDiscountPercent(pct);
+        if (cust && cust.name) {
+          setCustomerName(cust.name);
         } else {
-          setMemberDiscountPercent(5);
+          db.customers.where('code').equalsIgnoreCase(cleanId).first().then((c2) => {
+            if (c2 && c2.name) setCustomerName(c2.name);
+          }).catch(() => {});
         }
-      }).catch(() => {
-        setMemberDiscountPercent(5);
-      });
+      }).catch(() => {});
     }
+    // Diskon pelanggan dihilangkan sesuai permintaan
+    setMemberDiscountPercent(0);
   }, []);
 
   const clearCart = useCallback(() => {
     setItems([]);
     setMemberIdState('');
+    setCustomerName('');
     setMemberDiscountPercent(0);
   }, []);
 
@@ -147,12 +151,11 @@ export function useCart() {
       }
     }
 
-    // Dynamic Member discount based on configured memberDiscountPercent (default 5%)
-    const effectiveDiscPct = memberId.trim().length > 0 ? (memberDiscountPercent ?? 5) : 0;
-    const disc = effectiveDiscPct > 0 ? Math.round(sub * (effectiveDiscPct / 100)) : 0;
+    // Diskon pelanggan telah dihilangkan secara menyeluruh (0%)
+    const disc = 0;
     
-    // Tax (PPN) after discount based on dynamic taxRate
-    const taxableBase = Math.max(0, sub - disc);
+    // Tax (PPN) based on dynamic taxRate
+    const taxableBase = sub;
     const tax = taxEnabled ? Math.round(taxableBase * (taxRate / 100)) : 0;
     const grand = taxableBase + tax;
 
@@ -164,11 +167,13 @@ export function useCart() {
       grandTotal: grand,
       totalItemCount: totalItems
     };
-  }, [items, memberId, memberDiscountPercent, taxEnabled, taxRate]);
+  }, [items, taxEnabled, taxRate]);
 
   return {
     items,
     memberId,
+    customerName,
+    setCustomerName,
     setMemberId,
     memberDiscountPercent,
     setMemberDiscountPercent,

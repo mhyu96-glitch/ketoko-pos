@@ -1298,7 +1298,6 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   {(() => {
                     const isContinuous = config.dotMatrixPaperSize === 'CONTINUOUS_HALF' || config.dotMatrixPaperSize === 'CONTINUOUS_FULL' || config.dotMatrixPaperSize === 'FULL_CONTINUOUS';
                     const isA4Half = config.dotMatrixPaperSize === 'A4_HALF' || config.dotMatrixPaperSize === 'HALF_LETTER' || !config.dotMatrixPaperSize;
-                    const isA4Full = config.dotMatrixPaperSize === 'A4_FULL';
 
                     return (
                       <div className={`w-full ${isA4Half ? 'max-w-[450px]' : 'max-w-[420px]'} bg-[#fbfdf9] border border-[#d2dbce] shadow-md rounded-xs p-3 font-mono text-stone-900 select-text text-[9.5px] leading-tight relative`}>
@@ -1342,9 +1341,6 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                             <div className="text-right">
                               <div className="font-black text-xs text-stone-950 tracking-wider">
                                 FAKTUR PENJUALAN
-                              </div>
-                              <div className="text-[8px] text-emerald-800 font-bold">
-                                {isA4Half ? '[A4 Di Bagi 2]' : isA4Full ? '[A4 Full]' : isContinuous ? '[Continuous Form]' : ''}
                               </div>
                               <div className="text-[8.5px] font-bold">No: FAK-20260922-001</div>
                               <div className="text-[8.5px] text-stone-500">Tgl: {new Date().toLocaleDateString('id-ID')}</div>

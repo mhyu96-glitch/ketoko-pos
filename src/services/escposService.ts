@@ -1,5 +1,6 @@
 import type { Transaction } from '../types';
 import type { PrinterConfig } from '../components/PrinterSettingsModal';
+import { db } from '../db';
 
 // Standard ESC/POS Constants from Technical Spec
 const ESC = 0x1B;
@@ -179,8 +180,9 @@ export class ESCPOSBuilder {
       this.addLine(`Ksr: ${transaction.cashier_name || 'Kasir'} (BR-01)`);
     }
 
-    if (transaction.member_id) {
-      this.addLine(`Plg: Member ${transaction.member_id}`);
+    if (transaction.customer_name || transaction.member_id) {
+      const cleanCust = (transaction.customer_name || '').replace(/^Member #/i, '').trim();
+      this.addLine(`Plg: ${cleanCust || `Member ${transaction.member_id}`}`);
     }
 
     this.addLine('-'.repeat(width));
@@ -827,7 +829,7 @@ export async function printThermalReceiptSpooler(
     <span>Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}</span>
     ${config.showCashier ? `<span>Ksr: ${transaction.cashier_name || 'Kasir'}</span>` : ''}
   </div>
-  ${transaction.customer_name || transaction.member_id ? `<div class="row"><span>Plg: <b>${transaction.customer_name || `Member #${transaction.member_id}`}</b></span></div>` : ''}
+  ${transaction.customer_name || transaction.member_id ? `<div class="row"><span>Plg: <b>${(transaction.customer_name || '').replace(/^Member #/i, '').trim() || `Member #${transaction.member_id}`}</b></span></div>` : ''}
 
   <div class="divider"></div>
 
@@ -1117,7 +1119,6 @@ export function generateDotMatrixHTML(
   storeProfile?: any
 ): string {
   const paperSize = config?.dotMatrixPaperSize || 'A4_HALF';
-  const isA4Half = paperSize === 'A4_HALF' || paperSize === 'HALF_LETTER' || !config?.dotMatrixPaperSize;
   const isA4Full = paperSize === 'A4_FULL';
   const isContinuousHalf = paperSize === 'CONTINUOUS_HALF';
   const isContinuousFull = paperSize === 'CONTINUOUS_FULL' || paperSize === 'FULL_CONTINUOUS';
@@ -1176,6 +1177,18 @@ export function generateDotMatrixHTML(
   const netSubtotal = Math.max(1, transaction.subtotal - (transaction.discount_amount || 0));
   const effectiveTaxRate = transaction.tax_amount > 0 ? Math.round((transaction.tax_amount / netSubtotal) * 100) : 0;
   const emptyRowsNeeded = Math.max(0, minRows - transaction.items.length);
+
+  // Customer Display Name: pastikan cetak nama pelanggan asli, bukan ID / format Member #
+  let custDisplayName = (transaction.customer_name || '').trim();
+  if (custDisplayName.toUpperCase().startsWith('MEMBER #')) {
+    custDisplayName = custDisplayName.substring(8).trim();
+  }
+  if (!custDisplayName && transaction.member_id) {
+    custDisplayName = transaction.member_id;
+  }
+  if (!custDisplayName) {
+    custDisplayName = 'PELANGGAN UMUM';
+  }
 
   return `<!DOCTYPE html>
 <html lang="id">
@@ -1379,10 +1392,6 @@ export function generateDotMatrixHTML(
       tr { page-break-inside: avoid; }
       .footer-table, .sig-table { page-break-inside: avoid; }
     }
-      .no-print { display: none !important; }
-      tr { page-break-inside: avoid; }
-      .footer-table, .sig-table { page-break-inside: avoid; }
-    }
   </style>
 </head>
 <body>
@@ -1407,16 +1416,15 @@ export function generateDotMatrixHTML(
 
     <div class="sep-line"></div>
 
-    <!-- Info Pelanggan & Pembayaran -->
+    <!-- Info Pelanggan & Pembayaran (Keterangan jenis kertas telah dihilangkan sesuai permintaan) -->
     <table class="info-table">
       <tr>
         <td style="width: 54%;">
-          <div>Kepada Yth : <b class="cust-highlight">${transaction.customer_name ? transaction.customer_name.toUpperCase() : (transaction.member_id ? `MEMBER #${transaction.member_id}` : 'PELANGGAN UMUM')}</b></div>
+          <div>Kepada Yth : <b class="cust-highlight">${custDisplayName.toUpperCase()}</b></div>
           <div>Status     : <span class="status-box">${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</span></div>
         </td>
         <td style="width: 46%; text-align: right;">
           <div>Pembayaran : <b>${transaction.payment_method}</b></div>
-          <div>Kertas     : <b>${isA4Full ? 'A4 Full Page' : isA4Half ? 'A4 Di Bagi 2 (A5)' : 'Continuous Form 1/2'}</b></div>
         </td>
       </tr>
     </table>
@@ -1547,7 +1555,26 @@ export async function printEpsonLX310Invoice(
   storeProfile?: any
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const html = generateDotMatrixHTML(transaction, config, storeProfile);
+    let resolvedTx = { ...transaction };
+    // Resolusi nama pelanggan asli dari database jika kosong atau berformat Member #...
+    if (!resolvedTx.customer_name || resolvedTx.customer_name.startsWith('Member #') || resolvedTx.customer_name.startsWith('MEMBER #')) {
+      const searchKey = resolvedTx.member_id || (resolvedTx.customer_name ? resolvedTx.customer_name.replace(/^Member #/i, '').trim() : '');
+      if (searchKey) {
+        try {
+          const cust = await db.customers.get(searchKey);
+          if (cust && cust.name) {
+            resolvedTx.customer_name = cust.name;
+          } else {
+            const byCode = await db.customers.where('code').equalsIgnoreCase(searchKey).first();
+            if (byCode && byCode.name) {
+              resolvedTx.customer_name = byCode.name;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const html = generateDotMatrixHTML(resolvedTx, config, storeProfile);
     const printWindow = window.open('', '_blank', 'width=850,height=600');
     if (!printWindow) {
       // Fallback if popup blocked: use hidden iframe

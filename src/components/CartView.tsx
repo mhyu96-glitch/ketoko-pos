@@ -197,7 +197,7 @@ export const CartView: React.FC<CartViewProps> = ({
               type="text"
               value={memberId}
               onChange={(e) => setMemberId(e.target.value)}
-              placeholder="ID Member (5%)..."
+              placeholder="ID Member (F7)..."
               className="w-full pl-7 pr-2 py-1.5 bg-white text-[#3d2617] rounded-xl border border-[#ddc3aa] focus:border-[#96633b] text-xs placeholder:text-[#8a6b53] shadow-xs"
             />
             <UserPlus className="w-3.5 h-3.5 absolute left-2 top-2 text-[#8a6b53]" />
@@ -249,7 +249,7 @@ export const CartView: React.FC<CartViewProps> = ({
           {discountAmount > 0 && (
             <div className="flex justify-between text-[#15803d] font-medium">
               <span className="flex items-center">
-                <Percent className="w-3 h-3 mr-1" /> Diskon Member (5%)
+                <Percent className="w-3 h-3 mr-1" /> Potongan Diskon
               </span>
               <span className="font-mono font-bold">-{formatRupiah(discountAmount)}</span>
             </div>
