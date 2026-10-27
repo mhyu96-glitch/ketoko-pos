@@ -238,10 +238,10 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
 
                   <div className="my-1 border-t border-[#f0e4d7]" />
 
-                  {/* Data Pelanggan (+ Kode) */}
+                  {/* Data Pelanggan (+ Member) */}
                   <button
                     onClick={() => {
-                      onOpenCustomerSupplier?.('customer');
+                      onOpenMemberModal();
                       setOpenDropdown(null);
                     }}
                     className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
@@ -250,7 +250,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Data Pelanggan (+ Kode)</div>
+                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Data Pelanggan (+ Member)</div>
                       <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Kode PLG, limit piutang & WhatsApp</div>
                     </div>
                   </button>
@@ -288,23 +288,6 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Lokasi Rak & Gudang</div>
                       <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Manajemen tata letak rak toko</div>
-                    </div>
-                  </button>
-
-                  {/* Member & Pelanggan Diskon */}
-                  <button
-                    onClick={() => {
-                      onOpenMemberModal();
-                      setOpenDropdown(null);
-                    }}
-                    className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
-                  >
-                    <div className="w-8 h-8 rounded-xl bg-[#f5ece3] text-[#543c2e] flex items-center justify-center shrink-0">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Data Member / Pelanggan</div>
-                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Kelola member & data pelanggan toko</div>
                     </div>
                   </button>
 
@@ -469,6 +452,23 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Riwayat Transaksi & Struk</div>
                     <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Cetak ulang nota kasir penjualan</div>
+                  </div>
+                </button>
+
+                {/* Data Pelanggan & Member (F7) */}
+                <button
+                  onClick={() => {
+                    onOpenMemberModal();
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#edf5ee] text-[#166534] flex items-center justify-center shrink-0">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Data Pelanggan & Member (F7)</div>
+                    <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Kelola, tambah & pilih pelanggan kasir</div>
                   </div>
                 </button>
 

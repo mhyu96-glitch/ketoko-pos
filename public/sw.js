@@ -1,5 +1,5 @@
 // Ketoko POS - Offline-First Service Worker
-const CACHE_NAME = 'ketoko-pos-pwa-v14';
+const CACHE_NAME = 'ketoko-pos-pwa-v15';
 
 const STATIC_PRECACHE = [
   '/',

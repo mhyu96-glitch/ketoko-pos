@@ -1701,8 +1701,12 @@ export const App: React.FC = () => {
           }}
           onOpenOmsetChart={() => setIsOmsetChartOpen(true)}
           onOpenCustomerSupplier={(tab = 'customer') => {
-            setCustomerSupplierTab(tab);
-            setIsCustomerSupplierOpen(true);
+            if (tab === 'customer') {
+              setIsMemberModalOpen(true);
+            } else {
+              setCustomerSupplierTab(tab);
+              setIsCustomerSupplierOpen(true);
+            }
           }}
           onOpenDebtReceivable={(tab = 'debt') => {
             setDebtReceivableTab(tab);
