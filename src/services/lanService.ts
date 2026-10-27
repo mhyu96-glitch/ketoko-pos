@@ -1,4 +1,5 @@
-import type { Product, Transaction } from '../types';
+import type { Product, Transaction, Customer } from '../types';
+import { db } from '../db';
 
 export type LanMode = 'SERVER' | 'CLIENT' | 'STANDALONE';
 
@@ -287,7 +288,9 @@ class LanService {
     onStockUpdate: (stocks: Array<{ id: string; stock: number }>) => void,
     onProductUpdate?: (prod: Product) => void,
     onTransactionCreated?: (data: any) => void,
-    onTransactionDeleted?: (trxId: string) => void
+    onTransactionDeleted?: (trxId: string) => void,
+    onCustomerUpdate?: (cust: Customer) => void,
+    onCustomerDelete?: (id: string) => void
   ): () => void {
     if (this.eventSource) {
       this.eventSource.close();
@@ -357,16 +360,97 @@ class LanService {
         } catch {}
       });
 
+      es.addEventListener('customer_updated', (e: MessageEvent) => {
+        try {
+          const cust = JSON.parse(e.data);
+          if (cust && cust.id) {
+            db.customers.put(cust).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: cust }));
+            if (onCustomerUpdate) onCustomerUpdate(cust);
+          }
+        } catch {}
+      });
+
+      es.addEventListener('customer_deleted', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && data.id) {
+            db.customers.delete(data.id).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: data.id } }));
+            if (onCustomerDelete) onCustomerDelete(data.id);
+          }
+        } catch {}
+      });
+
       return () => {
         es.close();
         if (this.eventSource === es) {
           this.eventSource = null;
         }
       };
-    } catch (err) {
-      console.warn('[LanService] SSE Connection error:', err);
+    } catch {
       return () => {};
     }
+  }
+
+  /**
+   * Kirim / Update Customer ke Central LAN Server
+   */
+  public async submitCustomer(cust: Customer): Promise<{ success: boolean; data?: any }> {
+    if (this.config.mode !== 'CLIENT') return { success: false };
+    try {
+      const cleanUrl = this.config.serverUrl.replace(/\/+$/, '');
+      const res = await fetch(`${cleanUrl}/api/lan/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cust)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return { success: true, data: data.data };
+      }
+    } catch {}
+    return { success: false };
+  }
+
+  /**
+   * Hapus Customer di Central LAN Server
+   */
+  public async deleteCustomerFromLan(id: string): Promise<boolean> {
+    if (this.config.mode !== 'CLIENT') return false;
+    try {
+      const cleanUrl = this.config.serverUrl.replace(/\/+$/, '');
+      const res = await fetch(`${cleanUrl}/api/lan/customers/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Ambil daftar Customer dari Central LAN Server dan simpan ke IndexedDB lokal
+   */
+  public async fetchCustomersFromLan(): Promise<Customer[]> {
+    if (this.config.mode !== 'CLIENT') return [];
+    try {
+      const cleanUrl = this.config.serverUrl.replace(/\/+$/, '');
+      const res = await fetch(`${cleanUrl}/api/lan/customers`, {
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && Array.isArray(json.data)) {
+          await db.customers.bulkPut(json.data);
+          window.dispatchEvent(new CustomEvent('ketoko_customers_synced', { detail: { count: json.data.length } }));
+          return json.data;
+        }
+      }
+    } catch {}
+    return [];
   }
 
   /**

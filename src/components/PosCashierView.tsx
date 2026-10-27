@@ -20,7 +20,8 @@ import {
   Smartphone,
   Coins,
   Delete,
-  ShoppingBag
+  ShoppingBag,
+  Users
 } from 'lucide-react';
 import type { CartItem, Product } from '../types';
 import { formatRupiah } from '../services/escposService';
@@ -59,6 +60,7 @@ interface PosCashierViewProps {
   onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER', cashGiven?: number) => void;
   isCatalogSeeding?: boolean;
   isTouchscreenMode?: boolean;
+  onOpenMemberModal?: () => void;
 }
 
 // Isolated Self-Updating Live Digital Clock (Prevents whole page re-render every second)
@@ -205,7 +207,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   onOpenRecentTrx,
   onDirectPayment,
   isCatalogSeeding = false,
-  isTouchscreenMode = false
+  isTouchscreenMode = false,
+  onOpenMemberModal
 }) => {
   // Quick cash tender input state
   const [cashGivenInput, setCashGivenInput] = useState<string>('');
@@ -649,9 +652,19 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   value={memberId}
                   onChange={(e) => setMemberId(e.target.value)}
                   placeholder="ID Member (F7)..."
-                  className="w-full pl-8 pr-2 py-1.5 bg-[#fcf8f4] text-[#332219] rounded-xl border border-[#dfcebe] focus:border-[#7c4e2f] focus:bg-white text-xs font-semibold placeholder:text-[#8a6b53] shadow-2xs"
+                  className="w-full pl-8 pr-8 py-1.5 bg-[#fcf8f4] text-[#332219] rounded-xl border border-[#dfcebe] focus:border-[#7c4e2f] focus:bg-white text-xs font-semibold placeholder:text-[#8a6b53] shadow-2xs"
                 />
                 <UserCheck className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#8a6b53]" />
+                {onOpenMemberModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenMemberModal}
+                    title="Cari / Pilih Member (F7)"
+                    className="absolute right-1.5 top-1.5 p-1 rounded-lg text-[#8a6b53] hover:text-[#54321c] hover:bg-[#faebd7] transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Dynamic Tax Rate Badge with Quick Edit & Toggle Checkbox */}

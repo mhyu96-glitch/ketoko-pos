@@ -539,6 +539,7 @@ export const App: React.FC = () => {
           if (centralTrx && centralTrx.length > 0) {
             await db.transactions.bulkPut(centralTrx);
           }
+          await lanService.fetchCustomersFromLan().catch(() => {});
         } catch (err) {
           console.warn('[App] Gagal fetch transaksi dari LAN Server:', err);
         }
@@ -547,7 +548,8 @@ export const App: React.FC = () => {
       if (navigator.onLine && !isCleanStore) {
         await Promise.allSettled([
           syncService.pushLocalTransactionsToSupabase(),
-          syncService.pullTransactionsFromSupabase(100)
+          syncService.pullTransactionsFromSupabase(100),
+          syncService.pullCustomersFromSupabase().catch(() => {})
         ]);
       }
 
@@ -1795,6 +1797,7 @@ export const App: React.FC = () => {
           onDirectPayment={handleDirectPayment}
           isCatalogSeeding={isCatalogSeeding}
           isTouchscreenMode={isTouchscreenMode}
+          onOpenMemberModal={() => setIsMemberModalOpen(true)}
         />
       )}
 

@@ -13,6 +13,7 @@ import {
 import { db } from '../db';
 import type { Customer, Supplier } from '../types';
 import { formatRupiah } from '../services/escposService';
+import { syncService } from '../services/syncService';
 
 interface CustomerSupplierModalProps {
   isOpen: boolean;
@@ -62,6 +63,33 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
       setActiveTab(initialTab);
       loadData();
     }
+
+    const handleSyncEvent = () => {
+      loadData();
+    };
+
+    window.addEventListener('ketoko_customer_updated', handleSyncEvent);
+    window.addEventListener('ketoko_customer_deleted', handleSyncEvent);
+    window.addEventListener('ketoko_customers_synced', handleSyncEvent);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.onmessage = () => {
+          loadData();
+        };
+      }
+    } catch {}
+
+    return () => {
+      window.removeEventListener('ketoko_customer_updated', handleSyncEvent);
+      window.removeEventListener('ketoko_customer_deleted', handleSyncEvent);
+      window.removeEventListener('ketoko_customers_synced', handleSyncEvent);
+      if (bc) {
+        bc.close();
+      }
+    };
   }, [isOpen, initialTab]);
 
   const loadData = async () => {
@@ -103,25 +131,23 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const handleSaveCustomer = async () => {
     if (!custName.trim()) return;
 
-    if (editingCustId) {
-      await db.customers.update(editingCustId, {
-        code: custCode.trim() || `PLG-${Date.now().toString().slice(-4)}`,
+    try {
+      const existing = editingCustId ? await db.customers.get(editingCustId) : null;
+      const targetCust: Customer = {
+        ...(existing || {}),
+        id: editingCustId || `cust-${Date.now()}`,
+        code: custCode.trim() || existing?.code || `PLG-${String(customers.length + 1).padStart(3, '0')}`,
         name: custName.trim(),
-        phone: custPhone.trim(),
-        address: custAddress.trim(),
-        credit_limit: Number(custCreditLimit)
-      });
-    } else {
-      const newCust: Customer = {
-        id: `cust-${Date.now()}`,
-        code: custCode.trim() || `PLG-${String(customers.length + 1).padStart(3, '0')}`,
-        name: custName.trim(),
-        phone: custPhone.trim(),
-        address: custAddress.trim(),
-        credit_limit: Number(custCreditLimit),
-        current_debt: 0
+        phone: custPhone.trim() || '-',
+        address: custAddress.trim() || '-',
+        credit_limit: Number(custCreditLimit) || 0,
+        current_debt: existing?.current_debt || 0,
+        created_at: existing?.created_at || new Date().toISOString()
       };
-      await db.customers.add(newCust);
+
+      await syncService.syncCustomerChange(targetCust);
+    } catch (err) {
+      console.error('Gagal menyimpan pelanggan:', err);
     }
 
     resetCustForm();
@@ -142,7 +168,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   // Delete Customer
   const handleDeleteCustomer = async (id: string) => {
     try {
-      await db.customers.delete(id);
+      await syncService.deleteCustomer(id);
       setDeleteConfirmCustId(null);
       loadData();
     } catch (err) {

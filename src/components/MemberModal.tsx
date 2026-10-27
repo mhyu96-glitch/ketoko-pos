@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer } from '../types';
+import { syncService } from '../services/syncService';
 
 interface MemberModalProps {
   isOpen: boolean;
@@ -59,18 +60,13 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   const loadMembers = async () => {
     try {
-      const custs = await db.customers.toArray();
-      if (custs.length > 0) {
-        setMembers(custs);
-      } else {
-        const defaults: Customer[] = [
-          { id: 'MBR-001', code: 'CUST-001', name: 'Budi Santoso', phone: '081234567890', address: 'Jl. Ahmad Yani No. 12', credit_limit: 5000000, current_debt: 0, discount_percent: 5, created_at: new Date().toISOString() },
-          { id: 'MBR-002', code: 'CUST-002', name: 'Siti Rahmawati', phone: '085298765432', address: 'Jl. Merdeka No. 45', credit_limit: 3000000, current_debt: 0, discount_percent: 10, created_at: new Date().toISOString() },
-          { id: 'MBR-003', code: 'CUST-003', name: 'Toko Kelontong Berkah', phone: '081345678901', address: 'Jl. Gajah Mada No. 8', credit_limit: 10000000, current_debt: 0, discount_percent: 5, created_at: new Date().toISOString() }
-        ];
-        await db.customers.bulkPut(defaults);
-        setMembers(defaults);
+      let custs = await db.customers.toArray();
+      if (custs.length === 0) {
+        // Coba tarik dari Cloud Supabase terlebih dahulu
+        await syncService.pullCustomersFromSupabase().catch(() => {});
+        custs = await db.customers.toArray();
       }
+      setMembers(custs);
     } catch (err) {
       console.error('Gagal memuat data member:', err);
     }
@@ -83,6 +79,33 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       setShowAddForm(false);
       setDeleteConfirmId(null);
     }
+
+    const handleSync = () => {
+      db.customers.toArray().then((custs) => {
+        setMembers(custs);
+      }).catch(() => {});
+    };
+
+    window.addEventListener('ketoko_customer_updated', handleSync);
+    window.addEventListener('ketoko_customer_deleted', handleSync);
+    window.addEventListener('ketoko_customers_synced', handleSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.onmessage = () => {
+          handleSync();
+        };
+      }
+    } catch {}
+
+    return () => {
+      window.removeEventListener('ketoko_customer_updated', handleSync);
+      window.removeEventListener('ketoko_customer_deleted', handleSync);
+      window.removeEventListener('ketoko_customers_synced', handleSync);
+      if (bc) bc.close();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -111,10 +134,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         phone: editPhone.trim() || '-',
         address: editAddress.trim() || 'Lokal',
         credit_limit: Number(editCreditLimit) || 0,
-        notes: editNotes.trim()
+        notes: editNotes.trim(),
+        updated_at: new Date().toISOString()
       };
 
-      await db.customers.put(updatedMember);
+      await syncService.syncCustomerChange(updatedMember);
       setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));
       
       // If this member is currently active in POS, update the selection
@@ -136,19 +160,20 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     if (!newName.trim()) return;
 
     try {
-      const newId = `MBR-00${members.length + 1}`;
+      const newId = `MBR-${Date.now().toString().slice(-6)}`;
       const newMember: Customer = {
         id: newId,
-        code: `CUST-00${members.length + 1}`,
+        code: `CUST-${String(members.length + 1).padStart(3, '0')}`,
         name: newName.trim(),
         phone: newPhone.trim() || '-',
         address: newAddress.trim() || 'Lokal',
         credit_limit: Number(newCreditLimit) || 5000000,
         current_debt: 0,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      await db.customers.put(newMember);
+      await syncService.syncCustomerChange(newMember);
       setMembers((prev) => [newMember, ...prev]);
       setNewName('');
       setNewPhone('');
@@ -164,7 +189,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   // Delete Member
   const handleDeleteMember = async (id: string) => {
     try {
-      await db.customers.delete(id);
+      await syncService.deleteCustomer(id);
       setMembers((prev) => prev.filter((m) => m.id !== id));
       if (currentMemberId === id && onSelectMember) {
         onSelectMember('');

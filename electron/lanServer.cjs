@@ -203,6 +203,23 @@ function initCentralDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS idx_pur_created_at ON purchases(created_at);
   `);
 
+  // Tabel Pelanggan Terpusat
+  sqliteDb.exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      code TEXT,
+      name TEXT NOT NULL,
+      phone TEXT,
+      address TEXT,
+      credit_limit REAL DEFAULT 0,
+      current_debt REAL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_customers_code ON customers(code);
+    CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+  `);
+
   // Tabel Profil Toko & Pengaturan
   sqliteDb.exec(`
     CREATE TABLE IF NOT EXISTS store_profile (
@@ -841,6 +858,59 @@ function handleHttpRequest(req, res) {
       date: today,
       summary,
       per_terminal: perTerminal
+    });
+  }
+
+  // 8.b Mengambil Semua Pelanggan
+  if (pathname === '/api/lan/customers' && req.method === 'GET') {
+    const custs = sqliteDb.prepare('SELECT * FROM customers ORDER BY name ASC').all();
+    return sendJson(200, {
+      status: 'success',
+      count: custs.length,
+      data: custs
+    });
+  }
+
+  // 8.c Tambah / Update Pelanggan Terpusat
+  if (pathname === '/api/lan/customers' && req.method === 'POST') {
+    return readJsonBody((cust) => {
+      if (!cust || (!cust.id && !cust.name)) {
+        return sendJson(400, { error: 'Data pelanggan tidak lengkap' });
+      }
+
+      const id = String(cust.id || `cust-${Date.now()}`);
+      const code = cust.code || '';
+      const name = cust.name || 'Pelanggan';
+      const phone = cust.phone || '-';
+      const address = cust.address || '-';
+      const credit_limit = Number(cust.credit_limit) || 0;
+      const current_debt = Number(cust.current_debt) || 0;
+      const created_at = cust.created_at || new Date().toISOString();
+      const updated_at = new Date().toISOString();
+
+      const stmt = sqliteDb.prepare(`
+        INSERT OR REPLACE INTO customers (
+          id, code, name, phone, address, credit_limit, current_debt, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run(id, code, name, phone, address, credit_limit, current_debt, created_at, updated_at);
+      const saved = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+
+      broadcastSseEvent('customer_updated', saved);
+      return sendJson(200, { status: 'success', data: saved });
+    });
+  }
+
+  // 8.d Hapus Pelanggan Terpusat
+  if (pathname === '/api/lan/customers/delete' && req.method === 'POST') {
+    return readJsonBody((body) => {
+      if (!body || !body.id) {
+        return sendJson(400, { error: 'ID pelanggan wajib disertakan' });
+      }
+      sqliteDb.prepare('DELETE FROM customers WHERE id = ?').run(body.id);
+      broadcastSseEvent('customer_deleted', { id: body.id });
+      return sendJson(200, { status: 'success', deletedId: body.id });
     });
   }
 

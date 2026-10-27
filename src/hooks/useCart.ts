@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { CartItem, Product } from '../types';
 import { db } from '../db';
 
@@ -121,7 +121,15 @@ export function useCart() {
           setCustomerName(cust.name);
         } else {
           db.customers.where('code').equalsIgnoreCase(cleanId).first().then((c2) => {
-            if (c2 && c2.name) setCustomerName(c2.name);
+            if (c2 && c2.name) {
+              setCustomerName(c2.name);
+            } else {
+              db.customers.where('phone').equalsIgnoreCase(cleanId).first().then((c3) => {
+                if (c3 && c3.name) {
+                  setCustomerName(c3.name);
+                }
+              }).catch(() => {});
+            }
           }).catch(() => {});
         }
       }).catch(() => {});
@@ -129,6 +137,36 @@ export function useCart() {
     // Diskon pelanggan dihilangkan sesuai permintaan
     setMemberDiscountPercent(0);
   }, []);
+
+  // Sinkronisasi otomatis data pelanggan yang sedang dipilih jika terjadi pembaruan di latar belakang
+  useEffect(() => {
+    if (!memberId) return;
+
+    const handleCustUpdated = (e: any) => {
+      const cust = e?.detail;
+      if (cust && (cust.id === memberId || cust.code === memberId || cust.phone === memberId)) {
+        if (cust.name) {
+          setCustomerName(cust.name);
+        }
+      }
+    };
+
+    const handleCustDeleted = (e: any) => {
+      const id = e?.detail?.id;
+      if (id && id === memberId) {
+        setMemberIdState('');
+        setCustomerName('');
+      }
+    };
+
+    window.addEventListener('ketoko_customer_updated', handleCustUpdated);
+    window.addEventListener('ketoko_customer_deleted', handleCustDeleted);
+
+    return () => {
+      window.removeEventListener('ketoko_customer_updated', handleCustUpdated);
+      window.removeEventListener('ketoko_customer_deleted', handleCustDeleted);
+    };
+  }, [memberId]);
 
   const clearCart = useCallback(() => {
     setItems([]);

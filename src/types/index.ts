@@ -134,12 +134,14 @@ export interface Customer {
   phone: string;
   address: string;
   store_id?: string;
+  type?: 'RETAIL' | 'WHOLESALE' | 'MEMBER';
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
   discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
   notes?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface Supplier {
@@ -154,6 +156,7 @@ export interface Supplier {
   current_debt?: number;
   notes?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 // 2. Hutang & Piutang
@@ -225,6 +228,7 @@ export interface PurchaseRecord {
   cashier_name?: string;
   notes?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export type Purchase = PurchaseRecord;

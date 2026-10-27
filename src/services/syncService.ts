@@ -2,7 +2,7 @@ import { db, type PendingSyncItem } from '../db';
 import { api } from '../api/client';
 import { getSupabaseClient, getSupabaseConfig } from '../api/supabaseClient';
 import { INITIAL_PRODUCTS } from '../api/mockData';
-import type { Transaction, Product } from '../types';
+import type { Transaction, Product, Customer } from '../types';
 import { lanService } from './lanService';
 import { notifySaleToTelegram } from './telegramService';
 import { resolveStoreFromCurrentHost } from './storeRegistry';
@@ -25,6 +25,8 @@ export interface CloudRealtimeCallbacks {
   onPurchaseCreated?: (purchase: any) => void;
   onDebtReceivableUpdated?: () => void;
   onReceivableCreated?: (receivable: any) => void;
+  onCustomerUpdated?: (customer: Customer) => void;
+  onCustomerDeleted?: (customerId: string) => void;
 }
 
 export class SyncService {
@@ -151,6 +153,44 @@ export class SyncService {
         await db.receivables.put(payload).catch(() => {});
         this.realtimeCallbacks.onReceivableCreated?.(payload);
       }
+    })
+    .on('broadcast', { event: 'customer_updated' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
+      const cust = payload as Customer;
+      if (cust && cust.id) {
+        await db.customers.put(cust).catch(() => {});
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: cust }));
+        }
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('ketoko_customer_sync');
+            bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: cust });
+            bc.close();
+          }
+        } catch {}
+        this.realtimeCallbacks.onCustomerUpdated?.(cust);
+      }
+    })
+    .on('broadcast', { event: 'customer_deleted' }, async ({ payload }) => {
+      const activeStore = this.getActiveStoreId();
+      if (payload?.store_id && payload.store_id !== activeStore) return;
+      const custId = String(payload?.id || '').trim();
+      if (custId) {
+        await db.customers.delete(custId).catch(() => {});
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: custId } }));
+        }
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('ketoko_customer_sync');
+            bc.postMessage({ type: 'CUSTOMER_DELETED', id: custId });
+            bc.close();
+          }
+        } catch {}
+        this.realtimeCallbacks.onCustomerDeleted?.(custId);
+      }
     });
 
     ch.subscribe((status: string) => {
@@ -224,12 +264,21 @@ export class SyncService {
     if (!cleanId) return null;
     const storeId = this.getActiveStoreId();
     try {
-      const { data, error } = await supabase.from('customers').upsert({
+      // Ambil detail pelanggan lokal dari Dexie jika tersedia
+      const localCust = await db.customers.get(cleanId).catch(() => null);
+      const custData = {
         id: cleanId,
         store_id: storeId,
-        name: customerName || `Pelanggan ${cleanId}`,
-        type: 'RETAIL'
-      }, { onConflict: 'id' }).select('id').single();
+        code: localCust?.code || cleanId,
+        name: localCust?.name || customerName || `Pelanggan ${cleanId}`,
+        phone: localCust?.phone || '-',
+        address: localCust?.address || '-',
+        type: localCust?.type || 'RETAIL',
+        credit_limit: Number(localCust?.credit_limit) || 0,
+        current_debt: Number(localCust?.current_debt) || 0,
+        updated_at: localCust?.updated_at || new Date().toISOString()
+      };
+      const { data, error } = await supabase.from('customers').upsert(custData, { onConflict: 'id' }).select('id').single();
       if (!error && data?.id) return String(data.id);
       if (!error) return cleanId;
     } catch {}
@@ -1148,6 +1197,266 @@ export class SyncService {
     }
   }
 
+  /**
+   * Menyelaraskan penambahan atau pembaruan pelanggan ke seluruh terminal kasir & admin
+   * (Lokal Dexie, Tab lain via BroadcastChannel, Server LAN, dan Supabase Cloud Realtime)
+   */
+  async syncCustomerChange(customer: Customer): Promise<Customer> {
+    const storeId = this.getActiveStoreId();
+    const cleanId = String(customer.id).trim();
+
+    const updatedCust: Customer = {
+      ...customer,
+      id: cleanId,
+      store_id: customer.store_id || storeId,
+      code: customer.code?.trim() || cleanId,
+      name: customer.name.trim(),
+      phone: customer.phone?.trim() || '-',
+      address: customer.address?.trim() || '-',
+      type: customer.type || 'RETAIL',
+      credit_limit: Number(customer.credit_limit) || 0,
+      current_debt: Number(customer.current_debt) || 0,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Simpan ke IndexedDB lokal (Dexie)
+    await db.customers.put(updatedCust);
+
+    // 2. Dispatch DOM event lokal seketika (0ms delay)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedCust }));
+    }
+
+    // 3. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: updatedCust });
+        bc.close();
+      }
+    } catch {}
+
+    // 4. Kirim ke LAN Server terpusat (jika aktif)
+    await lanService.submitCustomer(updatedCust).catch(() => {});
+
+    // 5. Kirim ke Supabase Cloud & Broadcast ke seluruh komputer kasir/admin
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          // Bersihkan tombstone dari sync_logs jika pelanggan ini pernah dihapus sebelumnya
+          Promise.resolve(
+            supabase
+              .from('sync_logs')
+              .delete()
+              .eq('operation_type', 'DELETE_CUSTOMER')
+              .eq('error_message', cleanId)
+          ).catch(() => {});
+
+          const cloudPayload = {
+            id: String(updatedCust.id),
+            store_id: updatedCust.store_id || storeId,
+            code: updatedCust.code || '',
+            name: updatedCust.name,
+            phone: updatedCust.phone || '-',
+            address: updatedCust.address || '-',
+            type: updatedCust.type || 'RETAIL',
+            credit_limit: Number(updatedCust.credit_limit) || 0,
+            current_debt: Number(updatedCust.current_debt) || 0,
+            created_at: updatedCust.created_at || new Date().toISOString(),
+            updated_at: updatedCust.updated_at
+          };
+
+          const { error: upsertErr } = await supabase
+            .from('customers')
+            .upsert(cloudPayload, { onConflict: 'id' });
+
+          if (upsertErr) {
+            console.warn('[Sync] Gagal upsert pelanggan ke Supabase:', upsertErr.message);
+          }
+
+          // Siarkan realtime broadcast ke semua terminal kasir & admin
+          this.broadcastCloudEvent('customer_updated', updatedCust);
+        }
+      } catch (e) {
+        console.warn('[Sync] Gagal push pelanggan ke Supabase:', e);
+      }
+    }
+
+    return updatedCust;
+  }
+
+  /**
+   * Menghapus pelanggan secara real-time ke seluruh terminal (Lokal, Tab lain, LAN, dan Cloud Supabase)
+   */
+  async deleteCustomer(customerId: string): Promise<boolean> {
+    const cleanId = String(customerId).trim();
+    if (!cleanId) return false;
+
+    // 1. Hapus dari IndexedDB lokal
+    await db.customers.delete(cleanId).catch(() => {});
+
+    // 2. Dispatch DOM event lokal seketika
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: cleanId } }));
+    }
+
+    // 3. Siarkan ke tab/jendela lain di mesin yang sama via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.postMessage({ type: 'CUSTOMER_DELETED', id: cleanId });
+        bc.close();
+      }
+    } catch {}
+
+    // 4. Hapus dari LAN Server terpusat
+    await lanService.deleteCustomerFromLan(cleanId).catch(() => {});
+
+    // 5. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const storeId = this.getActiveStoreId();
+          await Promise.allSettled([
+            supabase.from('customers').delete().eq('id', cleanId).eq('store_id', storeId),
+            supabase.from('sync_logs').insert({
+              branch_id: 'BR-01',
+              operation_type: 'DELETE_CUSTOMER',
+              error_message: cleanId,
+              status: 'DELETED',
+              synced_at: new Date().toISOString()
+            })
+          ]);
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal hapus pelanggan dari Supabase:', err);
+      }
+    }
+
+    // 6. Siarkan realtime broadcast ke semua terminal kasir & admin
+    await this.broadcastCloudEvent('customer_deleted', { id: cleanId, store_id: this.getActiveStoreId() });
+
+    return true;
+  }
+
+  /**
+   * Mengambil seluruh data pelanggan dari Supabase Cloud dan menyimpannya ke IndexedDB lokal
+   */
+  async pullCustomersFromSupabase(): Promise<{ count: number; error?: string }> {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return { count: 0, error: 'Supabase belum dikonfigurasi.' };
+    }
+
+    try {
+      const storeId = this.getActiveStoreId();
+
+      // 1. Tarik log pelanggan yang telah dihapus (Tombstone)
+      try {
+        const { data: remoteDeleted } = await supabase
+          .from('sync_logs')
+          .select('error_message')
+          .eq('operation_type', 'DELETE_CUSTOMER')
+          .order('synced_at', { ascending: false })
+          .limit(500);
+
+        if (remoteDeleted && remoteDeleted.length > 0) {
+          for (const item of remoteDeleted) {
+            if (item.error_message) {
+              const cId = String(item.error_message).trim();
+              await db.customers.delete(cId).catch(() => {});
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal tarik tombstone pelanggan:', err);
+      }
+
+      // 2. Tarik SELURUH pelanggan aktif dari Supabase untuk store aktif ini
+      let allCloudCustomers: Customer[] = [];
+      let fromCust = 0;
+      const stepCust = 1000;
+      while (true) {
+        const { data: cloudBatch, error: custErr } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('store_id', storeId)
+          .order('name', { ascending: true })
+          .range(fromCust, fromCust + stepCust - 1);
+
+        if (custErr) throw custErr;
+        if (!cloudBatch || cloudBatch.length === 0) break;
+
+        allCloudCustomers = allCloudCustomers.concat(cloudBatch as Customer[]);
+        fromCust += stepCust;
+        if (cloudBatch.length < stepCust) break;
+      }
+
+      if (allCloudCustomers.length > 0) {
+        await db.customers.bulkPut(allCloudCustomers);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_customers_synced', { detail: { count: allCloudCustomers.length } }));
+        }
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('ketoko_customer_sync');
+            bc.postMessage({ type: 'CUSTOMERS_SYNCED', count: allCloudCustomers.length });
+            bc.close();
+          }
+        } catch {}
+      }
+
+      return { count: allCloudCustomers.length };
+    } catch (err: any) {
+      console.warn('[Sync] Gagal menarik pelanggan dari Supabase:', err);
+      return { count: 0, error: err.message || 'Gagal sinkron pelanggan' };
+    }
+  }
+
+  /**
+   * Mengirim seluruh pelanggan lokal ke Supabase Cloud (Inisialisasi / Rekonsiliasi)
+   */
+  async pushCustomersToSupabase(): Promise<{ count: number }> {
+    const supabase = getSupabaseClient();
+    if (!supabase || !navigator.onLine) return { count: 0 };
+
+    try {
+      const storeId = this.getActiveStoreId();
+      const allLocal = await db.customers.toArray();
+      const valid = allLocal.filter((c) => c && c.id && c.name);
+      if (valid.length === 0) return { count: 0 };
+
+      const batch = valid.map((c) => ({
+        id: String(c.id).trim(),
+        store_id: c.store_id || storeId,
+        code: c.code || '',
+        name: c.name,
+        phone: c.phone || '-',
+        address: c.address || '-',
+        type: c.type || 'RETAIL',
+        credit_limit: Number(c.credit_limit) || 0,
+        current_debt: Number(c.current_debt) || 0,
+        created_at: c.created_at || new Date().toISOString(),
+        updated_at: c.updated_at || new Date().toISOString()
+      }));
+
+      const chunkSize = 100;
+      let pushed = 0;
+      for (let i = 0; i < batch.length; i += chunkSize) {
+        const slice = batch.slice(i, i + chunkSize);
+        const { error } = await supabase.from('customers').upsert(slice, { onConflict: 'id' });
+        if (!error) pushed += slice.length;
+      }
+
+      return { count: pushed };
+    } catch (err) {
+      console.warn('[Sync] Gagal push pelanggan ke Supabase:', err);
+      return { count: 0 };
+    }
+  }
+
   async pullFromSupabase(): Promise<{ count: number; error?: string; products?: Product[] }> {
     const supabase = getSupabaseClient();
     if (!supabase) {
@@ -1746,6 +2055,8 @@ export class SyncService {
       await this.pullTransactionsFromSupabase().catch((err) => console.warn('[Sync] pullTransactions failed:', err));
       await this.pullFromSupabase().catch((err) => console.warn('[Sync] pullProducts failed:', err));
       await this.pullPurchasesFromSupabase().catch((err) => console.warn('[Sync] pullPurchases failed:', err));
+      await this.pullCustomersFromSupabase().catch((err) => console.warn('[Sync] pullCustomers failed:', err));
+      await this.pushCustomersToSupabase().catch((err) => console.warn('[Sync] pushCustomers failed:', err));
       await this.syncDebtsAndReceivables().catch((err) => console.warn('[Sync] syncDebts failed:', err));
 
       this.lastSyncTime = new Date().toISOString();
