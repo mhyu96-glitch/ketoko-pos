@@ -107,6 +107,7 @@ test('11. Navigasi Laporan - Modal Riwayat Transaksi Harian Kasir', async ({ app
   await screen.getByRole('button', 'Penjualan').click();
   await screen.getByRole('button', /Riwayat Transaksi & Struk/).click();
   await expect(screen.getByText('Laporan Transaksi Harian Kasir')).toBeVisible();
+  await expect(screen.getByText(/Admin: Bisa Edit & Hapus Nota/)).toBeVisible();
 });
 
 test('12. Navigasi Laporan - Pusat Laporan & Analitik Retail', async ({ app, screen }) => {

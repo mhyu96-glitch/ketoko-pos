@@ -15,13 +15,15 @@ import {
   Receipt, 
   Eye,
   Trash2,
+  Edit3,
   FileSpreadsheet,
   AlertTriangle
 } from 'lucide-react';
 import { db } from '../db';
-import type { Transaction } from '../types';
+import type { Transaction, Product } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
+import { EditTransactionModal } from './EditTransactionModal';
 
 interface RecentTransactionsModalProps {
   isOpen: boolean;
@@ -29,6 +31,8 @@ interface RecentTransactionsModalProps {
   onSelectReceipt: (trx: Transaction) => void;
   userRole?: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | 'MANAGER';
   onTransactionDeleted?: (trxId: string) => void;
+  products?: Product[];
+  onTransactionUpdated?: (updatedTrx: Transaction) => void;
 }
 
 export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = ({
@@ -36,7 +40,9 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   onClose,
   onSelectReceipt,
   userRole,
-  onTransactionDeleted
+  onTransactionDeleted,
+  products,
+  onTransactionUpdated
 }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState('');
@@ -45,8 +51,10 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   const [viewingItemsTrx, setViewingItemsTrx] = useState<Transaction | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [editingTrx, setEditingTrx] = useState<Transaction | null>(null);
 
   const canDelete = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
+  const canEdit = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
 
   useEffect(() => {
     if (isOpen) {
@@ -75,12 +83,20 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     const handleRemoteRefresh = () => {
       db.transactions.reverse().sortBy('created_at').then(setTransactions).catch(() => {});
     };
+    const handleRemoteUpdate = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setTransactions(prev => prev.map(t => (t.id === trx.id ? trx : t)));
+      }
+    };
     window.addEventListener('ketoko_transaction_deleted', handleRemoteDelete);
     window.addEventListener('ketoko_transaction_created', handleRemoteCreate);
+    window.addEventListener('ketoko_transaction_updated', handleRemoteUpdate);
     window.addEventListener('ketoko_transactions_refreshed', handleRemoteRefresh);
     return () => {
       window.removeEventListener('ketoko_transaction_deleted', handleRemoteDelete);
       window.removeEventListener('ketoko_transaction_created', handleRemoteCreate);
+      window.removeEventListener('ketoko_transaction_updated', handleRemoteUpdate);
       window.removeEventListener('ketoko_transactions_refreshed', handleRemoteRefresh);
     };
   }, []);
@@ -578,6 +594,17 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                       <span>Cetak</span>
                     </button>
 
+                    {canEdit && (
+                      <button
+                        onClick={() => setEditingTrx(trx)}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center space-x-1 transition-colors"
+                        title="Edit Nota Transaksi (Admin Only)"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                        <span className="hidden sm:inline">Edit</span>
+                      </button>
+                    )}
+
                     {canDelete && (
                       deleteConfirmId === trx.id ? (
                         <div className="flex items-center space-x-1">
@@ -662,9 +689,9 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
         <div className="p-3.5 border-t border-[#e5d0be] bg-white flex items-center justify-between text-xs text-[#8a6b53]">
           <div className="flex items-center space-x-2">
             <span>Menampilkan {filtered.length} dari {transactions.length} transaksi</span>
-            {canDelete && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-bold">
-                🔐 Admin: Bisa Hapus
+            {(canEdit || canDelete) && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-bold">
+                🔐 Admin: Bisa Edit & Hapus Nota
               </span>
             )}
           </div>
@@ -685,6 +712,25 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
             </button>
           </div>
         </div>
+
+        {/* Modal Edit Nota (Admin Only) */}
+        {editingTrx && (
+          <EditTransactionModal
+            isOpen={!!editingTrx}
+            onClose={() => setEditingTrx(null)}
+            transaction={editingTrx}
+            products={products}
+            onSaved={(updated) => {
+              setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+              onTransactionUpdated?.(updated);
+              setDeleteStatus({
+                success: true,
+                message: `Nota ${updated.receipt_number} berhasil diperbarui & stok fisik disesuaikan!`
+              });
+              setTimeout(() => setDeleteStatus(null), 3500);
+            }}
+          />
+        )}
 
       </div>
     </div>

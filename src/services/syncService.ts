@@ -1102,6 +1102,225 @@ export class SyncService {
   }
 
   /**
+   * Memperbarui transaksi penjualan yang sudah terjadi (Edit Nota oleh Admin/Superadmin).
+   * 1. Menghitung diferensial stok barang (delta = oldQty - newQty).
+   *    - Jika qty baru lebih sedikit / item dihapus: selisih dikembalikan ke stok fisik rak toko.
+   *    - Jika qty baru lebih banyak / item baru ditambahkan: selisih dipotong dari stok fisik.
+   * 2. Menyimpan nota yang diperbarui ke IndexedDB lokal (db.transactions) & antrean sinkronisasi.
+   * 3. Menyesuaikan piutang (db.receivables) jika metode bayar adalah TEMPO.
+   * 4. Menyiarkan perubahan via DOM Event (ketoko_transaction_updated) & BroadcastChannel.
+   * 5. Mengirim pembaruan ke Supabase Cloud (tabel transactions, transaction_items, dan products) jika online.
+   * 6. Menyiarkan Cloud Broadcast agar terminal kasir lain langsung sinkron.
+   */
+  async updateTransaction(updatedTrx: Transaction, originalTrx?: Transaction): Promise<boolean> {
+    const activeStoreId = this.getActiveStoreId();
+    const finalTrx: Transaction = {
+      ...updatedTrx,
+      store_id: updatedTrx.store_id || activeStoreId,
+      synced: false
+    };
+
+    // Ambil data transaksi lama jika tidak dipass
+    const oldTrx = originalTrx || (await db.transactions.get(finalTrx.id));
+    const updatedStocks: Array<{ id: string; stock: number }> = [];
+
+    // 1. Kumpulkan semua product_id yang terlibat di nota lama dan nota baru
+    const productIds = new Set<string>();
+    if (oldTrx && Array.isArray(oldTrx.items)) {
+      for (const it of oldTrx.items) {
+        if (it.product_id) productIds.add(String(it.product_id));
+      }
+    }
+    if (Array.isArray(finalTrx.items)) {
+      for (const it of finalTrx.items) {
+        if (it.product_id) productIds.add(String(it.product_id));
+      }
+    }
+
+    // 2. Hitung delta stok untuk setiap produk dan perbarui stok di Dexie & Supabase
+    for (const pId of productIds) {
+      const oldQty = (oldTrx?.items || [])
+        .filter((it) => String(it.product_id) === pId)
+        .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+
+      const newQty = (finalTrx.items || [])
+        .filter((it) => String(it.product_id) === pId)
+        .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+
+      const stockDelta = oldQty - newQty; // Positif = kembalikan ke stok, Negatif = potong stok
+
+      if (stockDelta !== 0) {
+        const prod = await db.products.get(pId);
+        if (prod) {
+          const newStock = Math.max(0, (Number(prod.stock) || 0) + stockDelta);
+          await db.products.update(pId, { stock: newStock });
+          await this.syncProductChange({
+            ...prod,
+            stock: newStock
+          }).catch(() => {});
+          updatedStocks.push({ id: pId, stock: newStock });
+        }
+      }
+    }
+
+    // 3. Update transaksi di IndexedDB & Antrean Sync
+    await db.transaction('rw', db.transactions, db.syncQueue, db.receivables, async () => {
+      await db.transactions.put(finalTrx);
+
+      const queueItem: PendingSyncItem = {
+        id: finalTrx.id,
+        payload: finalTrx,
+        status: 'pending',
+        attempts: 0,
+        created_at: new Date().toISOString()
+      };
+      await db.syncQueue.put(queueItem);
+
+      // Sesuaikan data piutang jika pembayaran TEMPO
+      if (finalTrx.payment_method === 'TEMPO') {
+        const existingRec = await db.receivables.where('transaction_id').equals(finalTrx.id).first();
+        const remaining = Math.max(0, finalTrx.grand_total - (Number(finalTrx.cash_given) || 0));
+        const status = remaining === 0 ? 'PAID' : ((Number(finalTrx.cash_given) || 0) > 0 ? 'PARTIAL' : 'UNPAID');
+
+        if (existingRec) {
+          await db.receivables.update(existingRec.id, {
+            total_amount: finalTrx.grand_total,
+            paid_amount: Number(finalTrx.cash_given) || 0,
+            remaining_amount: remaining,
+            status,
+            customer_name: finalTrx.customer_name || existingRec.customer_name,
+            notes: finalTrx.notes || existingRec.notes
+          });
+        } else {
+          const newRec: any = {
+            id: `REC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            customer_id: finalTrx.member_id || 'CUST-GENERAL',
+            customer_name: finalTrx.customer_name || 'Pelanggan Umum',
+            store_id: activeStoreId,
+            receipt_number: finalTrx.receipt_number,
+            transaction_id: finalTrx.id,
+            invoice_date: new Date().toISOString().split('T')[0],
+            total_amount: finalTrx.grand_total,
+            paid_amount: Number(finalTrx.cash_given) || 0,
+            remaining_amount: remaining,
+            due_date: finalTrx.due_date || new Date().toISOString().split('T')[0],
+            status,
+            notes: finalTrx.notes || `Penjualan Bon Nota ${finalTrx.receipt_number}`,
+            created_at: new Date().toISOString()
+          };
+          await db.receivables.put(newRec);
+        }
+      } else {
+        // Jika sebelumnya TEMPO lalu diubah jadi CASH / QRIS / DEBIT / TRANSFER, bersihkan piutang
+        await db.receivables.where('transaction_id').equals(finalTrx.id).delete().catch(() => {});
+      }
+    });
+
+    // 4. Siarkan via BroadcastChannel lokal ke seluruh tab di browser yang sama
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_product_sync');
+        bc.postMessage({
+          type: 'transaction_updated',
+          transaction: finalTrx,
+          updated_stocks: updatedStocks
+        });
+        bc.close();
+      }
+    } catch {}
+
+    // 5. Dispatch DOM Event untuk komponen di tab aktif (App.tsx, Modal, Dashboard)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('ketoko_transaction_updated', {
+          detail: { transaction: finalTrx, updated_stocks: updatedStocks }
+        })
+      );
+    }
+
+    // 6. Siarkan broadcast Cloud ke seluruh komputer toko lain
+    this.broadcastCloudEvent('transaction_updated', {
+      transaction: finalTrx,
+      store_id: activeStoreId,
+      updated_stocks: updatedStocks
+    });
+    if (updatedStocks.length > 0) {
+      this.broadcastCloudEvent('stock_updated', updatedStocks);
+    }
+
+    // 7. Jika online, langsung update ke tabel Supabase (transactions, transaction_items)
+    if (navigator.onLine) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          let validCustomerId: string | null = null;
+          if (finalTrx.member_id) {
+            validCustomerId = await this.ensureCustomerExists(supabase, finalTrx.member_id, finalTrx.customer_name);
+          }
+
+          const trxPayload: any = {
+            id: String(finalTrx.id),
+            store_id: activeStoreId,
+            receipt_number: finalTrx.receipt_number,
+            branch_id: finalTrx.branch_id || 'BR-01',
+            cashier_id: finalTrx.cashier_id || 'KASIR-01',
+            cashier_name: finalTrx.cashier_name || 'Kasir Toko',
+            customer_id: validCustomerId,
+            customer_name: finalTrx.customer_name || (validCustomerId ? `Member #${validCustomerId}` : null),
+            subtotal: Number(finalTrx.subtotal) || 0,
+            discount_amount: Number(finalTrx.discount_amount) || 0,
+            tax_amount: Number(finalTrx.tax_amount) || 0,
+            grand_total: Number(finalTrx.grand_total) || 0,
+            cash_given: Number(finalTrx.cash_given) || Number(finalTrx.grand_total) || 0,
+            change_due: Number(finalTrx.change_returned) || 0,
+            payment_method: finalTrx.payment_method || 'CASH',
+            payment_status: finalTrx.payment_method === 'TEMPO' ? (Number(finalTrx.cash_given) >= Number(finalTrx.grand_total) ? 'PAID' : 'PENDING') : 'PAID',
+            notes: finalTrx.notes || (finalTrx.due_date ? `Jatuh Tempo: ${finalTrx.due_date}` : null),
+            created_at: finalTrx.created_at || new Date().toISOString(),
+            synced_at: new Date().toISOString()
+          };
+
+          const { error: upsertErr } = await supabase.from('transactions').upsert(trxPayload, { onConflict: 'id' });
+          if (!upsertErr) {
+            // Hapus items lama dan ganti dengan yang baru
+            await supabase.from('transaction_items').delete().eq('transaction_id', finalTrx.id);
+            if (finalTrx.items && finalTrx.items.length > 0) {
+              const itemsPayload = finalTrx.items.map((it) => ({
+                transaction_id: finalTrx.id,
+                store_id: activeStoreId,
+                product_id: String(it.product_id),
+                product_name: it.product_name,
+                qty: Number(it.qty) || 1,
+                unit: it.unit || 'Pcs',
+                cost_price: Number(it.buy_price) || 0,
+                unit_price: Number(it.price_applied) || 0,
+                subtotal: Number(it.subtotal_item) || 0,
+                created_at: finalTrx.created_at || new Date().toISOString()
+              }));
+              await supabase.from('transaction_items').insert(itemsPayload);
+            }
+
+            await db.transactions.update(finalTrx.id, {
+              synced: true,
+              synced_at: new Date().toISOString()
+            });
+            await db.syncQueue.delete(finalTrx.id).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('[Sync] Gagal update transaksi ke Supabase:', err);
+      }
+    }
+
+    this.notifyStatusChange();
+    if (navigator.onLine) {
+      this.reconcileQueue().catch(() => {});
+    }
+
+    return true;
+  }
+
+  /**
    * Menyinkronkan perubahan produk & stok secara menyeluruh ke seluruh terminal:
    * 1. Simpan ke IndexedDB lokal (Dexie)
    * 2. Broadcast ke tab lain di browser via BroadcastChannel

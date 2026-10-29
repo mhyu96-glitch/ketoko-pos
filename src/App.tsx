@@ -723,6 +723,26 @@ export const App: React.FC = () => {
             return;
           }
 
+          if (event.data?.type === 'transaction_updated') {
+            const trx = event.data.transaction;
+            if (trx && trx.id) {
+              db.transactions.put(trx).catch(() => {});
+              setTransactions((prev) => prev.map((t) => (t.id === trx.id ? trx : t)));
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_updated', { detail: { transaction: trx, updated_stocks: event.data.updated_stocks } }));
+            }
+            if (event.data?.updated_stocks && Array.isArray(event.data.updated_stocks)) {
+              const stockMap = new Map<string, number>(event.data.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              for (const s of event.data.updated_stocks) {
+                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(p.id);
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
+            }
+            return;
+          }
+
           const prod = event.data?.product || event.data;
           if (prod && prod.id) {
             db.products.put(prod).catch(() => {});
@@ -960,6 +980,23 @@ export const App: React.FC = () => {
       }
     };
 
+    const handleTrxUpdated = (e: any) => {
+      const trx = e.detail?.transaction;
+      if (trx && trx.id) {
+        setTransactions((prev) => prev.map((t) => (t.id === trx.id ? trx : t)));
+      }
+      const updatedStocks = e.detail?.updated_stocks;
+      if (Array.isArray(updatedStocks) && updatedStocks.length > 0) {
+        const stockMap = new Map<string, number>(updatedStocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+        setProducts((prev) =>
+          prev.map((p) => {
+            const s = stockMap.get(p.id);
+            return s !== undefined ? { ...p, stock: s } : p;
+          })
+        );
+      }
+    };
+
     const handleTrxRefreshed = async () => {
       try {
         const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
@@ -980,6 +1017,7 @@ export const App: React.FC = () => {
     window.addEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
     window.addEventListener('ketoko_transaction_deleted', handleTrxDeleted);
     window.addEventListener('ketoko_transaction_created', handleTrxCreated);
+    window.addEventListener('ketoko_transaction_updated', handleTrxUpdated);
     window.addEventListener('ketoko_product_deleted', handleProductDeleted);
 
     return () => {
@@ -989,6 +1027,7 @@ export const App: React.FC = () => {
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
       window.removeEventListener('ketoko_transaction_deleted', handleTrxDeleted);
       window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
+      window.removeEventListener('ketoko_transaction_updated', handleTrxUpdated);
       window.removeEventListener('ketoko_product_deleted', handleProductDeleted);
     };
   }, [isOnline, handleManualSync]);
@@ -1836,8 +1875,12 @@ export const App: React.FC = () => {
             setIsReceiptOpen(true);
           }}
           userRole={currentUser?.role}
+          products={products}
           onTransactionDeleted={(deletedId) => {
             setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
+          }}
+          onTransactionUpdated={(updated) => {
+            setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
           }}
         />
       )}
