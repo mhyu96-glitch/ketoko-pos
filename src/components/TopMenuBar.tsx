@@ -52,7 +52,7 @@ interface TopMenuBarProps {
   onOpenBarcodeLabels?: () => void;
   onOpenLicense?: () => void;
   onOpenNewProduct: () => void;
-  onOpenFullReports?: (initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment') => void;
+  onOpenFullReports?: (initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items') => void;
   onOpenOmsetChart?: () => void;
   onOpenCustomerSupplier?: (tab?: 'customer' | 'supplier') => void;
   onOpenDebtReceivable?: (tab?: 'debt' | 'receivable' | 'report') => void;
@@ -706,6 +706,23 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Laporan Penjualan (Shift)</div>
                       <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Rekap omset harian kasir</div>
+                    </div>
+                  </button>
+
+                  {/* Laporan Pelanggan & Barang (New!) */}
+                  <button
+                    onClick={() => {
+                      onOpenFullReports?.('customer_items');
+                      setOpenDropdown(null);
+                    }}
+                    className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4 text-blue-700" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Laporan Pelanggan & Barang</div>
+                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Rekap item per pelanggan & Export Excel</div>
                     </div>
                   </button>
 

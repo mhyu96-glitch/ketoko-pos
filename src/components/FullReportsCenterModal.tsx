@@ -20,19 +20,27 @@ import {
   Coins,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Users,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile } from '../types';
 import { exportReportToPDF } from '../services/pdfReportService';
-import { FileSpreadsheet } from 'lucide-react';
+import { 
+  exportCustomerItemsToExcel, 
+  exportCustomerItemsToCSV, 
+  type CustomerReportGroupData, 
+  type CustomerItemRowData 
+} from '../services/excelReportService';
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment';
+  initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items';
   userRole?: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | 'MANAGER';
   cashierName?: string;
   branchId?: string;
@@ -49,7 +57,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   cashierName = 'Kasir Toko',
   branchId = 'BR-01'
 }) => {
-  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items'>(initialTab);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   
@@ -60,6 +68,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const [endDate, setEndDate] = useState<string>(todayStr);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>('ALL');
   const [selectedProductCategory, setSelectedProductCategory] = useState<string>('ALL');
   const [inventoryStockFilter, setInventoryStockFilter] = useState<'ALL' | 'CRITICAL'>('ALL');
   const [paymentFilterMethod, setPaymentFilterMethod] = useState<'ALL' | 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER'>('ALL');
@@ -395,6 +405,148 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     setInventoryPage(1);
   }, [searchTerm, inventoryStockFilter]);
 
+  // Helper to format date label
+  const periodFormattedHeader = useMemo(() => {
+    if (dateFilter === 'custom') {
+      const s = new Date(startDate);
+      const e = new Date(endDate);
+      const sStr = s.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      const eStr = e.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      return `Dari ${sStr} s/d ${eStr}`;
+    } else if (dateFilter === 'today') {
+      const t = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      return `Hari Ini (${t})`;
+    } else if (dateFilter === '7days') {
+      const now = new Date();
+      const sevenAgo = new Date();
+      sevenAgo.setDate(now.getDate() - 7);
+      return `Dari ${sevenAgo.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} s/d ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    } else if (dateFilter === 'month') {
+      return `Bulan Ini (${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })})`;
+    }
+    return 'Semua Periode Transaksi';
+  }, [dateFilter, startDate, endDate]);
+
+  // Customer & Item Report Grouping
+  const customerReportGroups = useMemo(() => {
+    const map = new Map<string, Map<string, CustomerItemRowData>>();
+
+    filteredTransactions.forEach((trx) => {
+      const rawName = (trx.customer_name || '').trim();
+      const customer = rawName ? rawName.toUpperCase() : (trx.payment_method ? trx.payment_method.toUpperCase() : 'CASH');
+
+      if (!map.has(customer)) {
+        map.set(customer, new Map<string, CustomerItemRowData>());
+      }
+      const itemMap = map.get(customer)!;
+
+      (trx.items || []).forEach((it) => {
+        const prod = productMap.get(it.product_id);
+        const buyPrice = Number(it.buy_price) > 0 ? Number(it.buy_price) : (prod?.buy_price || 0);
+        const qty = Number(it.qty) || 0;
+        const unitPrice = Number(it.price_applied) || 0;
+        const sales = Number(it.subtotal_item) || (qty * unitPrice);
+        const modal = buyPrice * qty;
+
+        const key = `${it.product_name}__${unitPrice}`;
+        const existing = itemMap.get(key);
+
+        if (existing) {
+          existing.qty += qty;
+          existing.modal += modal;
+          existing.sales += sales;
+          existing.profit += (sales - modal);
+        } else {
+          itemMap.set(key, {
+            product_id: it.product_id,
+            product_name: it.product_name,
+            qty,
+            modal,
+            unit_modal: buyPrice,
+            unit_price: unitPrice,
+            sales,
+            profit: sales - modal
+          });
+        }
+      });
+    });
+
+    const groups: CustomerReportGroupData[] = [];
+    map.forEach((itemMap, customer_name) => {
+      const items = Array.from(itemMap.values());
+      const total_qty = items.reduce((s, i) => s + i.qty, 0);
+      const total_modal = items.reduce((s, i) => s + i.modal, 0);
+      const total_sales = items.reduce((s, i) => s + i.sales, 0);
+      const total_profit = items.reduce((s, i) => s + i.profit, 0);
+
+      groups.push({
+        customer_name,
+        items,
+        total_qty,
+        total_modal,
+        total_sales,
+        total_profit
+      });
+    });
+
+    groups.sort((a, b) => {
+      if (a.customer_name === 'CASH' && b.customer_name !== 'CASH') return 1;
+      if (a.customer_name !== 'CASH' && b.customer_name === 'CASH') return -1;
+      return a.customer_name.localeCompare(b.customer_name);
+    });
+
+    return groups;
+  }, [filteredTransactions, productMap]);
+
+  const allCustomerNames = useMemo(() => {
+    return Array.from(new Set(customerReportGroups.map((g) => g.customer_name))).sort();
+  }, [customerReportGroups]);
+
+  const filteredCustomerReportGroups = useMemo(() => {
+    let result = customerReportGroups;
+
+    if (selectedCustomerFilter !== 'ALL') {
+      result = result.filter((g) => g.customer_name === selectedCustomerFilter);
+    }
+
+    const q = customerSearchTerm.trim().toLowerCase();
+    if (q) {
+      result = result
+        .map((g) => {
+          const matchCust = g.customer_name.toLowerCase().includes(q);
+          if (matchCust) return g;
+          const matchItems = g.items.filter((it) => it.product_name.toLowerCase().includes(q));
+          if (matchItems.length > 0) {
+            return {
+              ...g,
+              items: matchItems,
+              total_qty: matchItems.reduce((s, i) => s + i.qty, 0),
+              total_modal: matchItems.reduce((s, i) => s + i.modal, 0),
+              total_sales: matchItems.reduce((s, i) => s + i.sales, 0),
+              total_profit: matchItems.reduce((s, i) => s + i.profit, 0)
+            };
+          }
+          return null;
+        })
+        .filter(Boolean) as CustomerReportGroupData[];
+    }
+
+    return result;
+  }, [customerReportGroups, customerSearchTerm, selectedCustomerFilter]);
+
+  const customerGrandTotals = useMemo(() => {
+    let modal = 0;
+    let qty = 0;
+    let sales = 0;
+    let profit = 0;
+    filteredCustomerReportGroups.forEach((g) => {
+      modal += g.total_modal;
+      qty += g.total_qty;
+      sales += g.total_sales;
+      profit += g.total_profit;
+    });
+    return { modal, qty, sales, profit };
+  }, [filteredCustomerReportGroups]);
 
   // Export active report to A4 PDF with Official Letterhead
   const handleExportPDF = () => {
@@ -539,11 +691,92 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
           footers: ['TOTAL SETTLEMENT', 'SEMUA SALURAN PEMBAYARAN', formatRupiah(metrics.totalNetRevenue), '100.0%']
         }
       });
+    } else if (activeTab === 'customer_items') {
+      const rows: any[] = [];
+      filteredCustomerReportGroups.forEach((g) => {
+        g.items.forEach((it, idx) => {
+          rows.push([
+            idx === 0 ? g.customer_name : '',
+            it.product_name,
+            it.modal > 0 ? formatRupiah(it.modal) : '-',
+            it.qty,
+            it.unit_price > 0 ? formatRupiah(it.unit_price) : '-',
+            formatRupiah(it.sales)
+          ]);
+        });
+        rows.push([
+          '',
+          `Total Nama Barang (${g.customer_name})`,
+          g.total_modal > 0 ? formatRupiah(g.total_modal) : '-',
+          g.total_qty,
+          '-',
+          formatRupiah(g.total_sales)
+        ]);
+      });
+
+      exportReportToPDF({
+        title: 'LAPORAN PENJUALAN PER PELANGGAN & BARANG',
+        periodText: periodFormattedHeader,
+        storeProfile,
+        kpis: [
+          { label: 'Total Pelanggan', value: `${filteredCustomerReportGroups.length} Pelanggan`, highlight: true },
+          { label: 'Total Penjualan', value: formatRupiah(customerGrandTotals.sales) },
+          { label: 'Total Kuantitas', value: `${customerGrandTotals.qty.toLocaleString('id-ID')} Pcs` },
+          { label: 'Total Laba Kotor', value: formatRupiah(customerGrandTotals.profit) }
+        ],
+        table: {
+          headers: ['Pelanggan', 'Nama Barang', 'Modal (Rp)', 'Kuantitas', 'Harga Satuan', 'Penjualan (Rp)'],
+          rows,
+          alignments: ['left', 'left', 'right', 'center', 'right', 'right'],
+          footers: [
+            'GRAND TOTAL',
+            `Semua ${filteredCustomerReportGroups.length} Pelanggan`,
+            formatRupiah(customerGrandTotals.modal),
+            String(customerGrandTotals.qty),
+            '-',
+            formatRupiah(customerGrandTotals.sales)
+          ]
+        },
+        notes: 'Laporan perincian penjualan pelanggan dan item barang resmi Ketoko POS.'
+      });
+    }
+  };
+
+  // Export to native Microsoft Excel (.xls) with custom styling and formula support
+  const handleExportExcel = () => {
+    const savedStore = localStorage.getItem('ketoko_store_profile');
+    const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
+    const storeName = storeProfile?.name || 'KETOKO POS';
+    const branchName = storeProfile?.branch_name || branchId;
+
+    if (activeTab === 'customer_items') {
+      exportCustomerItemsToExcel({
+        storeName,
+        branchName,
+        periodText: periodFormattedHeader,
+        groups: filteredCustomerReportGroups,
+        grandTotals: customerGrandTotals
+      });
+    } else {
+      handleExportCSV();
     }
   };
 
   // Export active report to CSV
   const handleExportCSV = () => {
+    if (activeTab === 'customer_items') {
+      const savedStore = localStorage.getItem('ketoko_store_profile');
+      const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
+      exportCustomerItemsToCSV({
+        storeName: storeProfile?.name || 'KETOKO POS',
+        branchName: storeProfile?.branch_name || branchId,
+        periodText: periodFormattedHeader,
+        groups: filteredCustomerReportGroups,
+        grandTotals: customerGrandTotals
+      });
+      return;
+    }
+
     let filename = `laporan-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`;
     let csvContent = 'data:text/csv;charset=utf-8,';
 
@@ -1572,6 +1805,232 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           </tr>
                         ))}
                     </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: LAPORAN PELANGGAN & BARANG (MATCHES USER SPREADSHEET PHOTO) */}
+          {activeTab === 'customer_items' && (
+            <div className="space-y-6">
+              {/* Filter & Summary Controls */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-[#e4d5c7] shadow-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Customer Filter */}
+                  <div className="flex items-center space-x-2">
+                    <label className="text-xs font-bold text-[#856b59] whitespace-nowrap">Pelanggan:</label>
+                    <select
+                      value={selectedCustomerFilter}
+                      onChange={(e) => setSelectedCustomerFilter(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-[#d6c4b2] text-xs font-semibold text-[#332219] bg-[#fbf7f4] focus:outline-none focus:ring-2 focus:ring-[#7c4e2f]"
+                    >
+                      <option value="ALL">Semua Pelanggan ({allCustomerNames.length})</option>
+                      {allCustomerNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Search Filter */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Cari pelanggan / barang..."
+                      value={customerSearchTerm}
+                      onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                      className="w-56 pl-8 pr-3 py-1.5 rounded-xl border border-[#d6c4b2] text-xs font-medium text-[#332219] bg-[#fbf7f4] focus:outline-none focus:ring-2 focus:ring-[#7c4e2f]"
+                    />
+                    <Search className="w-3.5 h-3.5 text-[#856b59] absolute left-2.5 top-2" />
+                    {customerSearchTerm && (
+                      <button
+                        onClick={() => setCustomerSearchTerm('')}
+                        className="absolute right-2 top-1.5 text-xs text-[#856b59] hover:text-[#332219]"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Export Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportExcel}
+                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95"
+                    title="Export ke file Microsoft Excel (.xls)"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Export Excel</span>
+                  </button>
+                  <button
+                    onClick={handleExportCSV}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#d6c4b2] hover:bg-[#fbf7f4] text-[#332219] text-xs font-bold transition-all"
+                    title="Export ke file CSV"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#856b59]" />
+                    <span>CSV</span>
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#d6c4b2] hover:bg-[#fbf7f4] text-[#332219] text-xs font-bold transition-all"
+                    title="Cetak Laporan PDF Resmi"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#856b59]" />
+                    <span>PDF</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary KPI Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Pelanggan</div>
+                  <div className="text-xl font-black text-[#332219] mt-1">
+                    {filteredCustomerReportGroups.length} <span className="text-xs font-semibold text-[#856b59]">Orang/Akun</span>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Kuantitas</div>
+                  <div className="text-xl font-black text-[#332219] mt-1 font-mono">
+                    {customerGrandTotals.qty.toLocaleString('id-ID')}, <span className="text-xs font-semibold text-[#856b59]">Item</span>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#be185d]">Total Modal (HPP)</div>
+                  <div className="text-xl font-black text-[#be185d] mt-1 font-mono">
+                    {formatRupiah(customerGrandTotals.modal)}
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-[#eff6ff] border border-[#bfdbfe] shadow-xs">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#1d4ed8]">Total Penjualan</div>
+                  <div className="text-xl font-black text-[#1d4ed8] mt-1 font-mono">
+                    {formatRupiah(customerGrandTotals.sales)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Container - Exact Match to Reference Photo */}
+              <div className="bg-white rounded-2xl border border-[#b2cde8] shadow-sm overflow-hidden">
+                <div className="py-2.5 px-4 bg-[#e8f1fc] border-b border-[#b2cde8] flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Users className="w-4 h-4 text-[#1d4ed8]" />
+                    <span className="text-xs font-black text-[#1e3a8a] uppercase tracking-wider">
+                      Laporan Penjualan Per Pelanggan & Barang
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold text-[#1e40af] bg-[#dbeafe] px-2.5 py-0.5 rounded-full border border-[#bfdbfe]">
+                    {periodFormattedHeader}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#cbe4fc] text-[#1e3a8a] border-b border-[#a6c8ea] font-bold text-center">
+                        <th className="py-2.5 px-4 text-left border-r border-[#a6c8ea] w-48">Pelanggan</th>
+                        <th className="py-2.5 px-4 text-left border-r border-[#a6c8ea]">Nama Barang</th>
+                        <th className="py-2.5 px-4 text-right border-r border-[#a6c8ea] w-32 text-[#be185d]">Modal</th>
+                        <th className="py-2.5 px-4 text-right border-r border-[#a6c8ea] w-24">Kuantitas</th>
+                        <th className="py-2.5 px-4 text-right border-r border-[#a6c8ea] w-32">Harga Satuan</th>
+                        <th className="py-2.5 px-4 text-right w-36">Penjualan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#d4e4f7]">
+                      {filteredCustomerReportGroups.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-[#856b59]">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#1e3a8a]" />
+                            <p className="font-bold">Tidak ada data transaksi pelanggan pada periode ini</p>
+                            <p className="text-[11px] opacity-75 mt-0.5">Ubah filter periode tanggal atau kata kunci pencarian</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCustomerReportGroups.map((group) => (
+                          <React.Fragment key={group.customer_name}>
+                            {group.items.map((item, itemIdx) => (
+                              <tr
+                                key={`${group.customer_name}-${item.product_name}-${itemIdx}`}
+                                className="hover:bg-[#f0f7ff] transition-colors"
+                              >
+                                {itemIdx === 0 ? (
+                                  <td
+                                    rowSpan={group.items.length}
+                                    className="py-2.5 px-4 font-bold text-[#1e3a8a] align-top border-r border-[#d4e4f7] bg-[#f8fbff]"
+                                  >
+                                    <div className="sticky top-0">
+                                      <span className="font-extrabold tracking-wide">{group.customer_name}</span>
+                                      <div className="text-[10px] text-[#6b7280] font-normal">
+                                        {group.items.length} macam barang
+                                      </div>
+                                    </div>
+                                  </td>
+                                ) : null}
+                                <td className="py-2 px-4 text-[#1f2937] border-r border-[#d4e4f7] font-medium">
+                                  {item.product_name}
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono text-[#be185d] border-r border-[#d4e4f7]">
+                                  {item.modal > 0 ? `${Math.round(item.modal).toLocaleString('id-ID')},` : ''}
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono font-medium text-[#111827] border-r border-[#d4e4f7]">
+                                  {item.qty.toLocaleString('id-ID')},
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono text-[#374151] border-r border-[#d4e4f7]">
+                                  {item.unit_price > 0 ? `${Math.round(item.unit_price).toLocaleString('id-ID')},` : ''}
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono font-semibold text-[#111827]">
+                                  {`${Math.round(item.sales).toLocaleString('id-ID')},`}
+                                </td>
+                              </tr>
+                            ))}
+
+                            {/* Subtotal Per Pelanggan Row (Exact blue row from user reference) */}
+                            <tr className="bg-[#cbe4fc] font-bold text-[#1e3a8a] border-t border-b border-[#a6c8ea]">
+                              <td className="py-2 px-4 border-r border-[#a6c8ea] text-left">
+                                <span className="opacity-0">{group.customer_name}</span>
+                              </td>
+                              <td className="py-2 px-4 border-r border-[#a6c8ea] font-black text-[#1e3a8a]">
+                                Total Nama Barang
+                              </td>
+                              <td className="py-2 px-4 text-right font-mono border-r border-[#a6c8ea] text-[#be185d]">
+                                {group.total_modal > 0 ? `${Math.round(group.total_modal).toLocaleString('id-ID')},` : ''}
+                              </td>
+                              <td className="py-2 px-4 text-right font-mono border-r border-[#a6c8ea] font-black text-[#1e3a8a]">
+                                {`${group.total_qty.toLocaleString('id-ID')},`}
+                              </td>
+                              <td className="py-2 px-4 text-right border-r border-[#a6c8ea]"></td>
+                              <td className="py-2 px-4 text-right font-mono font-black text-[#1e3a8a]">
+                                {`${Math.round(group.total_sales).toLocaleString('id-ID')},`}
+                              </td>
+                            </tr>
+                          </React.Fragment>
+                        ))
+                      )}
+                    </tbody>
+                    {filteredCustomerReportGroups.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-[#93c5fd] font-black text-[#1e3a8a] border-t-2 border-[#1e40af]">
+                          <td className="py-3 px-4 uppercase text-xs tracking-wider border-r border-[#60a5fa]">
+                            GRAND TOTAL
+                          </td>
+                          <td className="py-3 px-4 text-xs border-r border-[#60a5fa]">
+                            {filteredCustomerReportGroups.length} Pelanggan
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-[#9d174d] border-r border-[#60a5fa]">
+                            {customerGrandTotals.modal > 0 ? `${Math.round(customerGrandTotals.modal).toLocaleString('id-ID')},` : ''}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono border-r border-[#60a5fa]">
+                            {`${customerGrandTotals.qty.toLocaleString('id-ID')},`}
+                          </td>
+                          <td className="py-3 px-4 text-right border-r border-[#60a5fa]">-</td>
+                          <td className="py-3 px-4 text-right font-mono text-sm">
+                            {`${Math.round(customerGrandTotals.sales).toLocaleString('id-ID')},`}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </div>

@@ -105,7 +105,7 @@ export const App: React.FC = () => {
   const [isShiftReportOpen, setIsShiftReportOpen] = useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = useState(false);
   const [isFullReportsOpen, setIsFullReportsOpen] = useState(false);
-  const [fullReportsInitialTab, setFullReportsInitialTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment'>('sales');
+  const [fullReportsInitialTab, setFullReportsInitialTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items'>('sales');
   const [isOmsetChartOpen, setIsOmsetChartOpen] = useState(false);
   const [isBarcodeLabelOpen, setIsBarcodeLabelOpen] = useState(false);
   const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false);
