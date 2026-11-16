@@ -1,11 +1,21 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { CartItem, Product } from '../types';
+import type { CartItem, Product, Customer } from '../types';
 import { db } from '../db';
+import {
+  checkCustomerBranchAccess,
+  getCurrentActiveStoreId,
+  type BranchAccessCheckResult
+} from '../utils/customerAccess';
 
-export function useCart() {
+export interface MemberBlockedState extends BranchAccessCheckResult {
+  customer: Customer;
+}
+
+export function useCart(activeStoreId?: string) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [memberId, setMemberIdState] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const [memberBlockedInfo, setMemberBlockedInfo] = useState<MemberBlockedState | null>(null);
   const [memberDiscountPercent, setMemberDiscountPercent] = useState<number>(0);
   const [taxEnabled, setTaxEnabled] = useState<boolean>(true);
   const [taxRate, setTaxRateState] = useState<number>(() => {
@@ -105,73 +115,184 @@ export function useCart() {
     setItems((prevItems) => prevItems.filter((item) => String(item.product_id).trim() !== cleanId));
   }, []);
 
+  const clearMemberBlockedInfo = useCallback(() => {
+    setMemberBlockedInfo(null);
+  }, []);
+
   const setMemberId = useCallback((id: string, nameOrDiscount?: string | number) => {
     const cleanId = (id || '').trim();
+    const resolvedStoreId = activeStoreId || getCurrentActiveStoreId();
     setMemberIdState(cleanId);
+    setMemberDiscountPercent(0);
+
     if (!cleanId) {
       setCustomerName('');
-      setMemberDiscountPercent(0);
+      setMemberBlockedInfo(null);
       return;
     }
-    if (typeof nameOrDiscount === 'string' && nameOrDiscount.trim()) {
-      setCustomerName(nameOrDiscount.trim());
-    } else {
-      db.customers.get(cleanId).then((cust) => {
-        if (cust && cust.name) {
-          setCustomerName(cust.name);
-        } else {
-          db.customers.where('code').equalsIgnoreCase(cleanId).first().then((c2) => {
-            if (c2 && c2.name) {
-              setCustomerName(c2.name);
-            } else {
-              db.customers.where('phone').equalsIgnoreCase(cleanId).first().then((c3) => {
-                if (c3 && c3.name) {
-                  setCustomerName(c3.name);
-                }
-              }).catch(() => {});
-            }
-          }).catch(() => {});
+
+    const applyResolvedCustomer = (cust: Customer, explicitSelect: boolean) => {
+      const access = checkCustomerBranchAccess(cust, resolvedStoreId);
+      if (!access.allowed) {
+        setCustomerName('');
+        setMemberBlockedInfo({ ...access, customer: cust });
+        if (explicitSelect) {
+          setMemberIdState('');
         }
-      }).catch(() => {});
+        return false;
+      }
+      setMemberBlockedInfo(null);
+      setCustomerName(cust.name);
+      return true;
+    };
+
+    if (typeof nameOrDiscount === 'string' && nameOrDiscount.trim()) {
+      const fallbackName = nameOrDiscount.trim();
+      (async () => {
+        try {
+          const custById = await db.customers.get(cleanId);
+          if (custById) {
+            applyResolvedCustomer(custById, true);
+            return;
+          }
+        } catch {}
+        setMemberBlockedInfo(null);
+        setCustomerName(fallbackName);
+      })();
+      return;
     }
-    // Diskon pelanggan dihilangkan sesuai permintaan
-    setMemberDiscountPercent(0);
-  }, []);
+
+    setMemberBlockedInfo(null);
+
+    // Resolusi cerdas identitas pelanggan (ID, Kode, No HP, atau Nama)
+    (async () => {
+      try {
+        // 1. Cari via ID eksak
+        const custById = await db.customers.get(cleanId);
+        if (custById && custById.name) {
+          applyResolvedCustomer(custById, false);
+          return;
+        }
+
+        // 2. Cari via Kode Pelanggan (case-insensitive)
+        const custByCode = await db.customers.where('code').equalsIgnoreCase(cleanId).first();
+        if (custByCode && custByCode.name) {
+          applyResolvedCustomer(custByCode, false);
+          return;
+        }
+
+        // 3. Cari via No HP
+        const custByPhone = await db.customers.where('phone').equalsIgnoreCase(cleanId).first();
+        if (custByPhone && custByPhone.name) {
+          applyResolvedCustomer(custByPhone, false);
+          return;
+        }
+
+        // 4. Cari via Nama Pelanggan (case-insensitive)
+        const custByName = await db.customers.where('name').equalsIgnoreCase(cleanId).first();
+        if (custByName && custByName.name) {
+          applyResolvedCustomer(custByName, false);
+          return;
+        }
+
+        // 5. In-Memory Search: Hanya kunci otomatis jika benar-benar identik (exact match) dengan kode, nama lengkap, atau nomor HP
+        const allCusts = await db.customers.toArray();
+        const lower = cleanId.toLowerCase();
+        const cleanDigits = cleanId.replace(/[^0-9]/g, '');
+        const exactMatch = allCusts.find(c => {
+          const cName = (c.name || '').trim().toLowerCase();
+          const cCode = (c.code || '').trim().toLowerCase();
+          const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+          return (
+            cName === lower ||
+            cCode === lower ||
+            (cleanDigits.length >= 7 && cPhone === cleanDigits)
+          );
+        });
+
+        if (exactMatch && exactMatch.name) {
+          applyResolvedCustomer(exactMatch, false);
+          return;
+        }
+
+        // Jika hanya mengetik sebagian kata (query parsial untuk dropdown suggestions):
+        // Biarkan customerName kosong agar kasir bebas melihat dan memilih daftar member di dropdown autocomplete
+        setCustomerName('');
+      } catch (err) {
+        console.warn('[useCart] Gagal mencari data pelanggan:', err);
+      }
+    })();
+  }, [activeStoreId]);
 
   // Sinkronisasi otomatis data pelanggan yang sedang dipilih jika terjadi pembaruan di latar belakang
   useEffect(() => {
-    if (!memberId) return;
+    const resolvedStoreId = activeStoreId || getCurrentActiveStoreId();
+    const handleCustUpdated = (cust: any) => {
+      if (!cust) return;
+      const cleanMember = (memberId || '').trim().toLowerCase();
+      const cleanCustName = (customerName || '').trim().toLowerCase();
+      const matches =
+        (cleanMember && (
+          cust.id?.toLowerCase() === cleanMember ||
+          cust.code?.toLowerCase() === cleanMember ||
+          cust.phone?.toLowerCase() === cleanMember
+        )) ||
+        (cleanCustName && cust.name?.toLowerCase() === cleanCustName);
 
-    const handleCustUpdated = (e: any) => {
-      const cust = e?.detail;
-      if (cust && (cust.id === memberId || cust.code === memberId || cust.phone === memberId)) {
-        if (cust.name) {
-          setCustomerName(cust.name);
+      if (matches && cust.name) {
+        const access = checkCustomerBranchAccess(cust, resolvedStoreId);
+        if (!access.allowed) {
+          setMemberIdState('');
+          setCustomerName('');
+          setMemberBlockedInfo({ ...access, customer: cust });
+          return;
         }
+        setMemberBlockedInfo(null);
+        setCustomerName(cust.name);
       }
     };
 
-    const handleCustDeleted = (e: any) => {
-      const id = e?.detail?.id;
-      if (id && id === memberId) {
+    const handleCustDeleted = (id: string) => {
+      if (!id) return;
+      const cleanMember = (memberId || '').trim().toLowerCase();
+      if (cleanMember && (id.toLowerCase() === cleanMember)) {
         setMemberIdState('');
         setCustomerName('');
       }
     };
 
-    window.addEventListener('ketoko_customer_updated', handleCustUpdated);
-    window.addEventListener('ketoko_customer_deleted', handleCustDeleted);
+    const onDomUpdate = (e: any) => handleCustUpdated(e?.detail);
+    const onDomDelete = (e: any) => handleCustDeleted(e?.detail?.id);
+
+    window.addEventListener('ketoko_customer_updated', onDomUpdate);
+    window.addEventListener('ketoko_customer_deleted', onDomDelete);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'CUSTOMER_UPDATED' && event.data.customer) {
+            handleCustUpdated(event.data.customer);
+          } else if (event.data?.type === 'CUSTOMER_DELETED' && event.data.id) {
+            handleCustDeleted(event.data.id);
+          }
+        };
+      }
+    } catch {}
 
     return () => {
-      window.removeEventListener('ketoko_customer_updated', handleCustUpdated);
-      window.removeEventListener('ketoko_customer_deleted', handleCustDeleted);
+      window.removeEventListener('ketoko_customer_updated', onDomUpdate);
+      window.removeEventListener('ketoko_customer_deleted', onDomDelete);
+      if (bc) bc.close();
     };
-  }, [memberId]);
+  }, [memberId, customerName]);
 
   const clearCart = useCallback(() => {
     setItems([]);
     setMemberIdState('');
     setCustomerName('');
+    setMemberBlockedInfo(null);
     setMemberDiscountPercent(0);
   }, []);
 
@@ -207,12 +328,42 @@ export function useCart() {
     };
   }, [items, taxEnabled, taxRate]);
 
+  // Broadcast cart changes in real-time to Customer Facing Display
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('ketoko_customer_display');
+        channel.postMessage({
+          type: 'CART_UPDATE',
+          items: items.map(it => ({
+            name: it.product_name,
+            qty: it.qty,
+            price: it.price_applied,
+            subtotal: it.subtotal_item,
+            unit: it.unit || 'Pcs'
+          })),
+          customerName,
+          memberId,
+          discount: discountAmount,
+          tax: taxAmount,
+          subtotal,
+          grandTotal
+        });
+        channel.close();
+      }
+    } catch (e) {
+      // Ignore broadcast errors
+    }
+  }, [items, customerName, memberId, discountAmount, taxAmount, subtotal, grandTotal]);
+
   return {
     items,
     memberId,
     customerName,
     setCustomerName,
     setMemberId,
+    memberBlockedInfo,
+    clearMemberBlockedInfo,
     memberDiscountPercent,
     setMemberDiscountPercent,
     taxEnabled,

@@ -239,6 +239,11 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
       status: newStatus
     });
 
+    syncService.syncDebtsAndReceivables().catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_debt_receivable_updated'));
+    }
+
     setPayingDebt(null);
     setPaymentAmount(0);
     loadData();
@@ -256,6 +261,24 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
       remaining_amount: newRemaining,
       status: newStatus
     });
+
+    // Update current_debt pelanggan secara otomatis
+    try {
+      if (payingReceivable.customer_id) {
+        const remainingRecs = await db.receivables.where('customer_id').equals(payingReceivable.customer_id).toArray();
+        const newTotalDebt = remainingRecs.filter(r => r.status !== 'PAID').reduce((sum, r) => sum + (Number(r.remaining_amount) || 0), 0);
+        await db.customers.update(payingReceivable.customer_id, { current_debt: newTotalDebt });
+        const updatedCust = await db.customers.get(payingReceivable.customer_id);
+        if (updatedCust) {
+          syncService.syncCustomerChange(updatedCust).catch(() => {});
+        }
+      }
+    } catch {}
+
+    syncService.syncDebtsAndReceivables().catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_debt_receivable_updated'));
+    }
 
     setPayingReceivable(null);
     setPaymentAmount(0);

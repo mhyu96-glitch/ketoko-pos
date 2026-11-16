@@ -61,7 +61,7 @@ export interface Transaction {
   discount_amount: number;
   tax_amount: number;
   grand_total: number;
-  payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO';
+  payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO';
   cash_given: number;
   change_returned: number;
   customer_name?: string;
@@ -134,14 +134,36 @@ export interface Customer {
   phone: string;
   address: string;
   store_id?: string;
+  store_name?: string;
+  access_scope?: 'HOME_ONLY' | 'ALL_STORES';
   type?: 'RETAIL' | 'WHOLESALE' | 'MEMBER';
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
+  deposit_balance?: number; // Saldo Simpanan / Deposit Anggota Terpusat
   discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
   notes?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface MemberDepositMutation {
+  id: string;
+  customer_id: string;
+  customer_name?: string;
+  customer_code?: string;
+  type: 'TOPUP' | 'PAYMENT' | 'REFUND' | 'ADJUSTMENT';
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  payment_method?: 'CASH' | 'TRANSFER' | 'QRIS' | 'DEBIT';
+  store_id: string;
+  store_name?: string;
+  cashier_id?: string;
+  cashier_name?: string;
+  receipt_number?: string;
+  notes?: string;
+  created_at: string;
 }
 
 export interface Supplier {

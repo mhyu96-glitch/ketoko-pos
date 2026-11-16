@@ -20,13 +20,26 @@ import {
   Bell, 
   MoreVertical, 
   ChevronDown, 
+  ChevronUp,
+  ChevronRight,
+  Wifi,
+  HardDrive,
   LayoutDashboard, 
   CheckCircle, 
   Lightbulb,
-  Globe
+  Globe,
+  Activity,
+  AlertTriangle,
+  MessageSquare,
+  Download,
+  Copy,
+  Check,
+  Zap,
+  Terminal
 } from 'lucide-react';
 import type { User } from '../types';
 import { generateSuperAdminKey } from '../services/licenseService';
+import { errorTracker, type ErrorLogItem, type SystemHealthReport } from '../services/errorTracker';
 import { 
   getSupabaseClusters, 
   saveSupabaseCluster, 
@@ -178,8 +191,99 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
   activeStoreId = 'store-01',
   activeStoreName = 'CV. Tumbuh Makmur Air Conindo'
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'topology' | 'keygen' | 'cloud'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'topology' | 'keygen' | 'cloud' | 'monitoring'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const t = p.get('tab');
+      if (t === 'monitoring' || t === 'tenants' || t === 'topology' || t === 'keygen' || t === 'cloud') {
+        return t;
+      }
+    }
+    return 'dashboard';
+  });
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Monitoring & Bug Tracker State (Vendor Telemetry)
+  const [errorLogs, setErrorLogs] = useState<ErrorLogItem[]>(() => errorTracker.getLogs());
+  const [systemHealth, setSystemHealth] = useState<SystemHealthReport | null>(null);
+  const [unresolvedBugCount, setUnresolvedBugCount] = useState<number>(() => errorTracker.getUnresolvedCount());
+  const [monitoringFilterModule, setMonitoringFilterModule] = useState<string>('ALL');
+  const [monitoringFilterSeverity, setMonitoringFilterSeverity] = useState<string>('ALL');
+  const [monitoringFilterStore, setMonitoringFilterStore] = useState<string>('ALL');
+  const [monitoringSearch, setMonitoringSearch] = useState<string>('');
+  const [expandedBugId, setExpandedBugId] = useState<string | null>(null);
+  const [copiedBugId, setCopiedBugId] = useState<string | null>(null);
+  const [copiedAllReport, setCopiedAllReport] = useState(false);
+  const [isLoadingHealth, setIsLoadingHealth] = useState(false);
+
+  useEffect(() => {
+    const unsub = errorTracker.subscribe((logs) => {
+      setErrorLogs(logs);
+      setUnresolvedBugCount(errorTracker.getUnresolvedCount());
+    });
+    errorTracker.checkSystemHealth().then(setSystemHealth);
+    return () => unsub();
+  }, []);
+
+  const handleRefreshHealth = async () => {
+    setIsLoadingHealth(true);
+    try {
+      const report = await errorTracker.checkSystemHealth();
+      setSystemHealth(report);
+    } finally {
+      setIsLoadingHealth(false);
+    }
+  };
+
+  const handleCopySingleBug = (item: ErrorLogItem) => {
+    const text = `[${item.timestamp}] [${item.severity}] [${item.module}] [Toko: ${item.storeName || 'N/A'}] [Kasir: ${item.userName || 'N/A'}]\n` +
+      `Pesan: ${item.message}\n` +
+      (item.stack ? `Stack Trace:\n${item.stack}\n` : '') +
+      (item.context ? `Konteks:\n${JSON.stringify(item.context, null, 2)}\n` : '');
+    navigator.clipboard.writeText(text);
+    setCopiedBugId(item.id);
+    setTimeout(() => setCopiedBugId(null), 2000);
+  };
+
+  const handleCopyAllDiagnosticReport = async () => {
+    await errorTracker.copyDiagnosticSummary();
+    setCopiedAllReport(true);
+    setTimeout(() => setCopiedAllReport(false), 2500);
+  };
+
+  const handleSimulateStoreBug = () => {
+    errorTracker.captureError(
+      new Error(`[Simulasi QA Superadmin] Gangguan kasir terdeteksi pada ${new Date().toLocaleTimeString('id-ID')}`),
+      {
+        simulatedBy: 'Superadmin Developer',
+        activeStore: activeStoreName,
+        url: window.location.href,
+        userAgent: navigator.userAgent
+      },
+      'CRITICAL',
+      'KASIR'
+    );
+  };
+
+  // Filtered error logs
+  const filteredErrorLogs = errorLogs.filter((l) => {
+    if (monitoringFilterSeverity !== 'ALL' && l.severity !== monitoringFilterSeverity) return false;
+    if (monitoringFilterModule !== 'ALL' && l.module !== monitoringFilterModule) return false;
+    if (monitoringFilterStore !== 'ALL') {
+      const storeName = l.storeName || '';
+      if (!storeName.toLowerCase().includes(monitoringFilterStore.toLowerCase())) return false;
+    }
+    if (monitoringSearch.trim()) {
+      const q = monitoringSearch.toLowerCase();
+      const matchMsg = l.message.toLowerCase().includes(q);
+      const matchMod = l.module.toLowerCase().includes(q);
+      const matchStore = (l.storeName || '').toLowerCase().includes(q);
+      const matchUser = (l.userName || '').toLowerCase().includes(q);
+      const matchStack = l.stack ? l.stack.toLowerCase().includes(q) : false;
+      return matchMsg || matchMod || matchStore || matchUser || matchStack;
+    }
+    return true;
+  });
 
   // Generator Lisensi State
   const [targetStoreName, setTargetStoreName] = useState('CV. Tumbuh Makmur Air Conindo');
@@ -601,6 +705,31 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                 <span>Supabase & Cloudflare</span>
               </button>
 
+              {/* Tab: Monitoring & Bug Tracker Toko (Vendor Telemetry) */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('monitoring')}
+                className={`w-full px-4 py-3 rounded-2xl font-black text-xs flex items-center justify-between transition-all duration-200 ${
+                  activeTab === 'monitoring'
+                    ? 'bg-[#6C5CE7] text-white shadow-[0_8px_20px_rgba(108,92,231,0.35)]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-bold'
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <Activity className="w-4 h-4 shrink-0" />
+                  <span>Monitoring & Bug Toko</span>
+                </div>
+                {unresolvedBugCount > 0 ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-500 text-white animate-pulse">
+                    {unresolvedBugCount} Bug
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                    Sehat
+                  </span>
+                )}
+              </button>
+
               {/* Action: Pengaturan LAN */}
               <button
                 type="button"
@@ -727,6 +856,44 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           {activeTab === 'dashboard' && (
             <div className="space-y-5">
               
+              {/* Telemetry & Health Alert Quick Banner (Superadmin Hub) */}
+              <div className="bg-white rounded-[24px] p-4 shadow-[0_6px_20px_rgba(160,150,140,0.06)] border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
+                <div className="flex items-center space-x-3.5">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                    unresolvedBugCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+                  }`}>
+                    {unresolvedBugCount > 0 ? <AlertTriangle className="w-5 h-5 animate-pulse" /> : <Activity className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black text-slate-800">
+                        Telemetri & Bug Tracker Multi-Toko (Superadmin Developer)
+                      </h4>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                        unresolvedBugCount > 0 ? 'bg-rose-500 text-white animate-pulse' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {unresolvedBugCount > 0 ? `${unresolvedBugCount} Bug Terdeteksi` : 'Terminal Sehat (100% Normal)'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      {unresolvedBugCount > 0
+                        ? 'Ada gangguan operasional pada terminal kasir klien yang ditangkap secara senyap oleh sistem.'
+                        : 'Kasir POS, Customer Display, Sinkronisasi LAN (Port 5858), dan Printer di seluruh toko beroperasi lancar.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('monitoring')}
+                  className="flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shrink-0 active:scale-95 shadow-sm"
+                >
+                  <Activity className="w-3.5 h-3.5 text-[#A29BFE]" />
+                  <span>Buka Bug Tracker Toko</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
               {/* ROW 1: 4 METRIC CARDS (Exact Match to 4 Clay Cards) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 
@@ -1481,6 +1648,443 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* VIEW: 6. TAB MONITORING & BUG TRACKER TOKO (VENDOR TELEMETRY) */}
+          {activeTab === 'monitoring' && (
+            <div className="space-y-6">
+              
+              {/* Top Banner / Heading */}
+              <div className="bg-white rounded-[32px] p-6 shadow-[0_12px_36px_rgba(160,150,140,0.1)] border border-white/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#6C5CE7] to-[#4834D4] text-white flex items-center justify-center shadow-lg shadow-[#6C5CE7]/30 shrink-0">
+                    <Activity className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                        Pusat Monitoring & Telemetri Toko
+                      </h3>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border flex items-center gap-1.5 ${
+                        systemHealth?.overall === 'HEALTHY'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : systemHealth?.overall === 'DEGRADED'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />
+                        {systemHealth?.overall || 'CHECKING'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Eror dari kasir, customer display, LAN sync, dan printer ditangkap secara senyap tanpa mengganggu kasir.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRefreshHealth}
+                    disabled={isLoadingHealth}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all active:scale-95"
+                    title="Periksa Ulang Kesehatan Runtime"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingHealth ? 'animate-spin text-[#6C5CE7]' : ''}`} />
+                    <span>Cek Ulang</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSimulateStoreBug}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-xs transition-all active:scale-95"
+                    title="Kirim simulasi eror untuk menguji penangkapan telemetri"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Tes Simulasi Bug</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Clay Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                
+                {/* Card 1: Total Bug Terdeteksi */}
+                <div className="bg-white rounded-[28px] p-5 shadow-[0_10px_30px_rgba(160,150,140,0.08)] border border-white/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                    <span>Total Bug Terdeteksi</span>
+                    <Terminal className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <div className="text-2xl font-black text-slate-900 tracking-tight">
+                    {errorLogs.length} <span className="text-xs font-bold text-slate-400">Kejadian</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 text-[11px] font-bold">
+                    <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
+                      {errorLogs.filter(l => l.severity === 'CRITICAL').length} Kritis
+                    </span>
+                    <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                      {errorLogs.filter(l => l.severity === 'WARNING').length} Warning
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card 2: Bug Belum Ditangani */}
+                <div className="bg-white rounded-[28px] p-5 shadow-[0_10px_30px_rgba(160,150,140,0.08)] border border-white/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                    <span>Belum Ditangani</span>
+                    <AlertTriangle className={`w-4 h-4 ${unresolvedBugCount > 0 ? 'text-rose-500' : 'text-slate-400'}`} />
+                  </div>
+                  <div className={`text-2xl font-black tracking-tight ${unresolvedBugCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                    {unresolvedBugCount} <span className="text-xs font-bold text-slate-400">Bug Aktif</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-medium">Perlu Review Superadmin</span>
+                    {unresolvedBugCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => errorTracker.markAllAsResolved()}
+                        className="text-[10px] font-black text-[#6C5CE7] hover:underline"
+                      >
+                        Selesaikan Semua
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card 3: LAN Server & Jaringan Kasir */}
+                <div className="bg-white rounded-[28px] p-5 shadow-[0_10px_30px_rgba(160,150,140,0.08)] border border-white/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                    <span>Server LAN (Port 5858)</span>
+                    <Wifi className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>PORT 5858</span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  </div>
+                  <div className="flex items-center space-x-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full w-max">
+                    ✓ Multi-Kasir SSE Aktif
+                  </div>
+                </div>
+
+                {/* Card 4: Database & Resource RAM */}
+                <div className="bg-white rounded-[28px] p-5 shadow-[0_10px_30px_rgba(160,150,140,0.08)] border border-white/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                    <span>Database & Heap RAM</span>
+                    <HardDrive className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="text-2xl font-black text-slate-900 tracking-tight">
+                    {systemHealth?.memoryUsageMb ? `${systemHealth.memoryUsageMb} MB` : 'Ringan'}
+                  </div>
+                  <div className="flex items-center space-x-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full w-max">
+                    ✓ IndexedDB + Supabase
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Filter Toolbar */}
+              <div className="bg-white rounded-[28px] p-4 shadow-[0_8px_24px_rgba(160,150,140,0.08)] border border-white/80 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+                  
+                  {/* Search Input */}
+                  <div className="relative min-w-[200px] flex-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={monitoringSearch}
+                      onChange={(e) => setMonitoringSearch(e.target.value)}
+                      placeholder="Cari pesan error, kasir, atau modul..."
+                      className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
+                    />
+                  </div>
+
+                  {/* Filter by Toko */}
+                  <select
+                    value={monitoringFilterStore}
+                    onChange={(e) => setMonitoringFilterStore(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
+                  >
+                    <option value="ALL">🏢 Semua Toko Klien</option>
+                    {registeredStores.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Filter by Module */}
+                  <select
+                    value={monitoringFilterModule}
+                    onChange={(e) => setMonitoringFilterModule(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
+                  >
+                    <option value="ALL">📦 Semua Modul</option>
+                    <option value="CHAT_KASIR">💬 Laporan Chat Kasir</option>
+                    <option value="KASIR">Kasir POS</option>
+                    <option value="CUSTOMER_DISPLAY">Customer Display (Layar Pembeli)</option>
+                    <option value="LAN_SERVER">LAN Server & Sinkronisasi</option>
+                    <option value="CLOUD_SYNC">Cloud Supabase</option>
+                    <option value="DATABASE">IndexedDB Database</option>
+                    <option value="PRINTER">Printer Kasir</option>
+                    <option value="BARCODE_SCANNER">Barcode Scanner</option>
+                    <option value="SYSTEM">Sistem Core</option>
+                  </select>
+
+                  {/* Filter by Severity */}
+                  <select
+                    value={monitoringFilterSeverity}
+                    onChange={(e) => setMonitoringFilterSeverity(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
+                  >
+                    <option value="ALL">⚠️ Semua Severity</option>
+                    <option value="CRITICAL">🔴 Kritis (Critical)</option>
+                    <option value="WARNING">🟠 Peringatan (Warning)</option>
+                    <option value="INFO">🔵 Informasi (Info)</option>
+                  </select>
+                </div>
+
+                <div className="text-[11px] font-bold text-slate-400">
+                  Menampilkan <span className="text-slate-800 font-black">{filteredErrorLogs.length}</span> dari {errorLogs.length} log
+                </div>
+              </div>
+
+              {/* Bug Logs Feed / List */}
+              <div className="space-y-3">
+                {filteredErrorLogs.length === 0 ? (
+                  <div className="bg-white rounded-[32px] p-12 text-center shadow-[0_12px_36px_rgba(160,150,140,0.08)] border border-white/80 space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
+                      <CheckCircle className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-base font-black text-slate-900">
+                      Sistem Kasir 100% Bersih & Sehat
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Tidak ada rekaman gangguan operasional dari kasir atau customer display toko klien.
+                    </p>
+                  </div>
+                ) : (
+                  filteredErrorLogs.map((item) => {
+                    const isExpanded = expandedBugId === item.id;
+                    const isCritical = item.severity === 'CRITICAL';
+                    const isWarning = item.severity === 'WARNING';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`bg-white rounded-[24px] p-4 sm:p-5 shadow-[0_6px_20px_rgba(160,150,140,0.06)] border transition-all ${
+                          item.isResolved
+                            ? 'border-slate-200/60 opacity-75'
+                            : isCritical
+                            ? 'border-rose-300 shadow-[0_8px_24px_rgba(244,63,94,0.12)]'
+                            : isWarning
+                            ? 'border-amber-300'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        {/* Header Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Severity / Chat Pill */}
+                            {item.isCashierReport || item.module === 'CHAT_KASIR' ? (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex items-center gap-1 shadow-sm">
+                                <MessageSquare className="w-3 h-3" />
+                                <span>CHAT KASIR</span>
+                              </span>
+                            ) : (
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  isCritical
+                                    ? 'bg-rose-500 text-white'
+                                    : isWarning
+                                    ? 'bg-amber-400 text-amber-950'
+                                    : 'bg-sky-500 text-white'
+                                }`}
+                              >
+                                {item.severity}
+                              </span>
+                            )}
+
+                            {/* Store Name Badge */}
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#6C5CE7]/10 text-[#6C5CE7] flex items-center gap-1">
+                              <Store className="w-3 h-3" />
+                              <span>{item.storeName || activeStoreName}</span>
+                            </span>
+
+                            {/* Cashier / User Badge */}
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              <span>{item.userName || 'Kasir Default'}</span>
+                            </span>
+
+                            {/* Module Badge / Category */}
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600">
+                              [{item.chatCategory || item.context?.category || item.module}]
+                            </span>
+
+                            {/* Timestamp */}
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {item.timestamp}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center space-x-1.5">
+                            {/* Resolved status button */}
+                            {item.isResolved ? (
+                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg flex items-center gap-1">
+                                <Check className="w-3 h-3 stroke-[3]" />
+                                <span>Terselesaikan</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => errorTracker.markAsResolved(item.id)}
+                                className="text-[10px] font-bold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded-lg border border-slate-200 transition-colors flex items-center gap-1"
+                                title="Tandai bug ini sudah diperbaiki"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Tandai Selesai</span>
+                              </button>
+                            )}
+
+                            {/* Copy single button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopySingleBug(item)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                              title="Salin Data Eror"
+                            >
+                              {copiedBugId === item.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+
+                            {/* Accordion toggle */}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedBugId(isExpanded ? null : item.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                              title="Buka / Tutup Detail Stack Trace"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Error Message / Cashier Chat */}
+                        <div className="pt-2.5">
+                          {item.isCashierReport || item.module === 'CHAT_KASIR' ? (
+                            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50/80 via-[#fcf8f4] to-indigo-50/50 border border-purple-200/80 space-y-1.5 shadow-2xs">
+                              <div className="flex items-center justify-between text-[11px] text-purple-950 font-black">
+                                <span className="flex items-center gap-1.5">
+                                  <MessageSquare className="w-3.5 h-3.5 text-[#6C5CE7]" />
+                                  <span>Laporan Masuk dari Kasir ({item.userName}):</span>
+                                </span>
+                                {item.context?.cartTotalFormatted && (
+                                  <span className="text-[10px] text-slate-500 font-bold bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                                    🛒 {item.context.cartItemCount} Item ({item.context.cartTotalFormatted})
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-bold text-slate-900 leading-relaxed italic">
+                                "{item.message.replace(/^\[Laporan Chat Kasir\]:\s*/, '')}"
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-xs font-black text-slate-900 leading-relaxed font-mono">
+                                {item.message}
+                              </p>
+                              {item.url && (
+                                <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+                                  Halaman: {item.url}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Expanded Stack Trace & Device Diagnostics */}
+                        {isExpanded && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5 animate-fadeIn">
+                            {item.stack && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  Stack Trace (Jejak Baris Kode):
+                                </div>
+                                <pre className="p-3 rounded-xl bg-slate-900 text-rose-300 font-mono text-[10px] leading-relaxed overflow-x-auto whitespace-pre-wrap max-h-48 border border-slate-800">
+                                  {item.stack}
+                                </pre>
+                              </div>
+                            )}
+
+                            {item.context && Object.keys(item.context).length > 0 && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                  Parameter Konteks Diagnostik:
+                                </div>
+                                <pre className="p-2.5 rounded-xl bg-slate-50 text-slate-700 font-mono text-[10px] border border-slate-200 overflow-x-auto">
+                                  {JSON.stringify(item.context, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[10px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+                              <span><strong>Browser:</strong> {item.userAgent || 'Chrome/Windows'}</span>
+                              <span><strong>Cabang:</strong> {item.branchName || 'Cabang Utama'}</span>
+                              <span><strong>User Role:</strong> {item.userRole || 'CASHIER'}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Bottom Action Footer */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs shadow-sm">
+                <div className="flex items-center space-x-2 text-slate-600 font-bold">
+                  <Activity className="w-4 h-4 text-[#6C5CE7]" />
+                  <span>Sistem Telemetri & Crash Reporting Vendor Ketoko POS</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyAllDiagnosticReport}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                  >
+                    {copiedAllReport ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedAllReport ? 'Laporan Disalin!' : 'Salin Laporan Lengkap'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => errorTracker.exportLogsJson()}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Ekspor JSON</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Hapus seluruh riwayat log eror dari memori?')) {
+                        errorTracker.clearLogs();
+                      }
+                    }}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Bersihkan Log</span>
+                  </button>
+                </div>
+              </div>
+
             </div>
           )}
 

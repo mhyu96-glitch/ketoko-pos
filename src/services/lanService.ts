@@ -112,6 +112,10 @@ class LanService {
     return this.config.mode === 'CLIENT';
   }
 
+  public isLanActive(): boolean {
+    return this.config.mode === 'CLIENT' || this.config.mode === 'SERVER' || this.isOnlineWithServer;
+  }
+
   public getIsConnected(): boolean {
     return this.isOnlineWithServer;
   }
@@ -382,6 +386,20 @@ class LanService {
         } catch {}
       });
 
+      es.addEventListener('member_deposit_updated', async (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.customer) {
+            await db.customers.put(data.customer).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: data.customer }));
+          }
+          if (data?.mutation) {
+            await db.memberDeposits.put(data.mutation).catch(() => {});
+          }
+          window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: data }));
+        } catch {}
+      });
+
       return () => {
         es.close();
         if (this.eventSource === es) {
@@ -448,6 +466,92 @@ class LanService {
           window.dispatchEvent(new CustomEvent('ketoko_customers_synced', { detail: { count: json.data.length } }));
           return json.data;
         }
+      }
+    } catch {}
+    return [];
+  }
+
+  /**
+   * Kirim Transaksi Top Up Saldo Member ke Server Terpusat
+   */
+  public async submitMemberTopup(payload: {
+    customer_id: string;
+    amount: number;
+    payment_method?: string;
+    store_id?: string;
+    store_name?: string;
+    cashier_id?: string;
+    cashier_name?: string;
+    notes?: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const candidates = [
+        this.config.serverUrl,
+        typeof window !== 'undefined' ? window.location.origin : '',
+        'http://127.0.0.1:5858',
+        'http://localhost:5858'
+      ].filter(u => u && !u.startsWith('file:') && u !== 'null');
+      const uniqueCandidates = Array.from(new Set(candidates.map(u => u.replace(/\/+$/, ''))));
+
+      for (const base of uniqueCandidates) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(`${base}/api/lan/members/topup`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const json = await res.json();
+            return { success: true, data: json.data };
+          } else {
+            const errJson = await res.json().catch(() => ({}));
+            return { success: false, error: errJson.error || 'Server menolak transaksi top up' };
+          }
+        } catch {}
+      }
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+    return { success: false, error: 'Tidak dapat terhubung ke server terpusat' };
+  }
+
+  /**
+   * Ambil Riwayat Mutasi Saldo Member dari Server
+   */
+  public async fetchMemberDeposits(customerId?: string): Promise<any[]> {
+    try {
+      const candidates = [
+        this.config.serverUrl,
+        typeof window !== 'undefined' ? window.location.origin : '',
+        'http://127.0.0.1:5858',
+        'http://localhost:5858'
+      ].filter(u => u && !u.startsWith('file:') && u !== 'null');
+      const uniqueCandidates = Array.from(new Set(candidates.map(u => u.replace(/\/+$/, ''))));
+      const query = customerId ? `?customer_id=${encodeURIComponent(customerId)}` : '';
+
+      for (const base of uniqueCandidates) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+          const res = await fetch(`${base}/api/lan/members/deposits${query}`, {
+            headers: { 'Cache-Control': 'no-cache' },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.data && Array.isArray(json.data)) {
+              return json.data;
+            }
+          }
+        } catch {}
       }
     } catch {}
     return [];

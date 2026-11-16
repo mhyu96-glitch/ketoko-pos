@@ -34,7 +34,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 }) => {
   const [items, setItems] = useState<TransactionItem[]>([]);
   const [customerName, setCustomerName] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO'>('CASH');
   const [cashGiven, setCashGiven] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [taxAmount, setTaxAmount] = useState<number>(0);
@@ -331,6 +331,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 className="w-full px-3 py-2 text-xs rounded-xl border border-[#ddc3aa] bg-[#fcf9f5] focus:outline-hidden focus:ring-2 focus:ring-[#96633b] text-[#3d271d] font-semibold"
               >
                 <option value="CASH">Tunai (CASH)</option>
+                <option value="SALDO">Saldo Member (Deposit)</option>
                 <option value="QRIS">QRIS</option>
                 <option value="TRANSFER">Transfer Bank</option>
                 <option value="DEBIT">Kartu Debit</option>

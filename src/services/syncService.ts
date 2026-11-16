@@ -2,10 +2,55 @@ import { db, type PendingSyncItem } from '../db';
 import { api } from '../api/client';
 import { getSupabaseClient, getSupabaseConfig } from '../api/supabaseClient';
 import { INITIAL_PRODUCTS } from '../api/mockData';
-import type { Transaction, Product, Customer } from '../types';
+import type { Transaction, Product, Customer, MemberDepositMutation } from '../types';
 import { lanService } from './lanService';
 import { notifySaleToTelegram } from './telegramService';
 import { resolveStoreFromCurrentHost } from './storeRegistry';
+import { normalizeStoreId, normalizeAccessScope, getStoreDisplayName } from '../utils/customerAccess';
+
+function buildCustomerCloudPayload(c: Customer, fallbackStoreId: string, includeExtended: boolean) {
+  const storeId = normalizeStoreId(c.store_id || fallbackStoreId);
+  const core = {
+    id: String(c.id).trim(),
+    store_id: storeId,
+    code: c.code || '',
+    name: c.name,
+    phone: c.phone || '-',
+    address: c.address || '-',
+    type: c.type || 'RETAIL',
+    credit_limit: Number(c.credit_limit) || 0,
+    current_debt: Number(c.current_debt) || 0,
+    deposit_balance: Number(c.deposit_balance !== undefined ? c.deposit_balance : 0),
+    created_at: c.created_at || new Date().toISOString(),
+    updated_at: c.updated_at || new Date().toISOString()
+  };
+  if (!includeExtended) return core;
+  return {
+    ...core,
+    store_name: getStoreDisplayName(storeId, c.store_name),
+    access_scope: normalizeAccessScope(c.access_scope),
+    notes: c.notes || ''
+  };
+}
+
+async function upsertCustomerBatchWithFallback(supabase: any, rows: Customer[], fallbackStoreId: string) {
+  const extendedPayload = rows.map((c) => buildCustomerCloudPayload(c, fallbackStoreId, true));
+  const { error } = await supabase.from('customers').upsert(extendedPayload, { onConflict: 'id' });
+  if (!error) return { error: null };
+
+  const msg = String(error.message || '');
+  const code = String(error.code || '');
+  const isMissingCol =
+    code === 'PGRST204' ||
+    code === '42703' ||
+    /column|schema cache/i.test(msg);
+
+  if (isMissingCol) {
+    const corePayload = rows.map((c) => buildCustomerCloudPayload(c, fallbackStoreId, false));
+    return await supabase.from('customers').upsert(corePayload, { onConflict: 'id' });
+  }
+  return { error };
+}
 
 export interface SyncStatusInfo {
   isConfigured: boolean;
@@ -62,136 +107,148 @@ export class SyncService {
     const ch = supabase.channel(`ketoko_live_${activeStoreId}`, {
       config: { broadcast: { self: false } }
     });
-
-    ch.on('broadcast', { event: 'product_updated' }, ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const prod = payload as Product;
-      if (prod && prod.id) {
-        if (this.getDeletedProductIds().has(String(prod.id))) return;
-        db.products.put(prod).catch(() => {});
-        this.realtimeCallbacks.onProductUpdated?.(prod);
-      }
-    })
-    .on('broadcast', { event: 'product_deleted' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const prodId = String(payload?.id || payload?.product_id || '').trim();
-      if (prodId) {
-        this.markProductDeletedLocally(prodId);
-        await db.products.delete(prodId).catch(() => {});
-        this.realtimeCallbacks.onProductDeleted?.(prodId);
-      }
-    })
-    .on('broadcast', { event: 'catalog_refreshed' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      console.log('[SyncService] Katalog diperbarui di Cloud oleh komputer lain:', payload);
-      await this.pullFromSupabase().catch(() => {});
-      this.realtimeCallbacks.onCatalogRefreshed?.(payload);
-    })
-    .on('broadcast', { event: 'purchase_created' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      if (payload && payload.id) {
-        await db.purchases.put(payload).catch(() => {});
-        this.realtimeCallbacks.onPurchaseCreated?.(payload);
-      }
-    })
-    .on('broadcast', { event: 'transaction_created' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const trx = payload?.transaction || (payload?.items ? payload : null);
-      if (trx && trx.id) {
-        if (trx.store_id && trx.store_id !== activeStore) return;
-        await db.transactions.put(trx).catch(() => {});
-      }
-      if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
-        for (const s of payload.updated_stocks) {
-          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-        }
-      }
-      this.realtimeCallbacks.onTransactionCreated?.(payload);
-    })
-    .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const trxId = payload?.transaction_id || payload?.id;
-      if (trxId) {
-        this.markTransactionDeletedLocally(trxId);
-        await db.transactions.delete(trxId).catch(() => {});
-        await db.syncQueue.delete(trxId).catch(() => {});
-      }
-      if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
-        for (const s of payload.updated_stocks) {
-          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-        }
-      }
-      this.realtimeCallbacks.onTransactionDeleted?.(payload);
-    })
-    .on('broadcast', { event: 'stock_updated' }, ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const items = Array.isArray(payload) ? payload : payload?.stocks;
-      if (Array.isArray(items)) {
-        for (const s of items) {
-          db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
-        }
-        this.realtimeCallbacks.onStockUpdated?.(items);
-      }
-    })
-    .on('broadcast', { event: 'debt_receivable_updated' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      await this.syncDebtsAndReceivables().catch(() => {});
-      this.realtimeCallbacks.onDebtReceivableUpdated?.();
-    })
-    .on('broadcast', { event: 'receivable_created' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      if (payload && payload.id) {
-        await db.receivables.put(payload).catch(() => {});
-        this.realtimeCallbacks.onReceivableCreated?.(payload);
-      }
-    })
-    .on('broadcast', { event: 'customer_updated' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const cust = payload as Customer;
-      if (cust && cust.id) {
-        await db.customers.put(cust).catch(() => {});
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: cust }));
-        }
-        try {
-          if (typeof BroadcastChannel !== 'undefined') {
-            const bc = new BroadcastChannel('ketoko_customer_sync');
-            bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: cust });
-            bc.close();
-          }
-        } catch {}
-        this.realtimeCallbacks.onCustomerUpdated?.(cust);
-      }
-    })
-    .on('broadcast', { event: 'customer_deleted' }, async ({ payload }) => {
-      const activeStore = this.getActiveStoreId();
-      if (payload?.store_id && payload.store_id !== activeStore) return;
-      const custId = String(payload?.id || '').trim();
-      if (custId) {
-        await db.customers.delete(custId).catch(() => {});
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: custId } }));
-        }
-        try {
-          if (typeof BroadcastChannel !== 'undefined') {
-            const bc = new BroadcastChannel('ketoko_customer_sync');
-            bc.postMessage({ type: 'CUSTOMER_DELETED', id: custId });
-            bc.close();
-          }
-        } catch {}
-        this.realtimeCallbacks.onCustomerDeleted?.(custId);
-      }
+    const coopCh = supabase.channel('ketoko_live_coop_central', {
+      config: { broadcast: { self: false } }
     });
+
+    const setupChannelListeners = (targetChannel: any) => {
+      targetChannel.on('broadcast', { event: 'product_updated' }, ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const prod = payload as Product;
+        if (prod && prod.id) {
+          if (this.getDeletedProductIds().has(String(prod.id))) return;
+          db.products.put(prod).catch(() => {});
+          this.realtimeCallbacks.onProductUpdated?.(prod);
+        }
+      })
+      .on('broadcast', { event: 'product_deleted' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const prodId = String(payload?.id || payload?.product_id || '').trim();
+        if (prodId) {
+          this.markProductDeletedLocally(prodId);
+          await db.products.delete(prodId).catch(() => {});
+          this.realtimeCallbacks.onProductDeleted?.(prodId);
+        }
+      })
+      .on('broadcast', { event: 'catalog_refreshed' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        console.log('[SyncService] Katalog diperbarui di Cloud oleh komputer lain:', payload);
+        await this.pullFromSupabase().catch(() => {});
+        this.realtimeCallbacks.onCatalogRefreshed?.(payload);
+      })
+      .on('broadcast', { event: 'purchase_created' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        if (payload && payload.id) {
+          await db.purchases.put(payload).catch(() => {});
+          this.realtimeCallbacks.onPurchaseCreated?.(payload);
+        }
+      })
+      .on('broadcast', { event: 'transaction_created' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const trx = payload?.transaction || (payload?.items ? payload : null);
+        if (trx && trx.id) {
+          if (trx.store_id && trx.store_id !== activeStore) return;
+          await db.transactions.put(trx).catch(() => {});
+        }
+        if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+          for (const s of payload.updated_stocks) {
+            db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+          }
+        }
+        this.realtimeCallbacks.onTransactionCreated?.(payload);
+      })
+      .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const trxId = payload?.transaction_id || payload?.id;
+        if (trxId) {
+          this.markTransactionDeletedLocally(trxId);
+          await db.transactions.delete(trxId).catch(() => {});
+          await db.syncQueue.delete(trxId).catch(() => {});
+        }
+        if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+          for (const s of payload.updated_stocks) {
+            db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+          }
+        }
+        this.realtimeCallbacks.onTransactionDeleted?.(payload);
+      })
+      .on('broadcast', { event: 'stock_updated' }, ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const items = Array.isArray(payload) ? payload : payload?.stocks;
+        if (Array.isArray(items)) {
+          for (const s of items) {
+            db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+          }
+          this.realtimeCallbacks.onStockUpdated?.(items);
+        }
+      })
+      .on('broadcast', { event: 'debt_receivable_updated' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        await this.syncDebtsAndReceivables().catch(() => {});
+        this.realtimeCallbacks.onDebtReceivableUpdated?.();
+      })
+      .on('broadcast', { event: 'receivable_created' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && payload.store_id !== activeStore) return;
+        if (payload && payload.id) {
+          await db.receivables.put(payload).catch(() => {});
+          this.realtimeCallbacks.onReceivableCreated?.(payload);
+        }
+      })
+      .on('broadcast', { event: 'customer_updated' }, async ({ payload }: any) => {
+        const cust = payload as Customer;
+        if (cust && cust.id) {
+          const normalizedCust: Customer = {
+            ...cust,
+            store_id: normalizeStoreId(cust.store_id),
+            store_name: getStoreDisplayName(cust.store_id, cust.store_name),
+            access_scope: normalizeAccessScope(cust.access_scope),
+          };
+          await db.customers.put(normalizedCust).catch(() => {});
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: normalizedCust }));
+          }
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              const bc = new BroadcastChannel('ketoko_customer_sync');
+              bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: normalizedCust });
+              bc.close();
+            }
+          } catch {}
+          this.realtimeCallbacks.onCustomerUpdated?.(normalizedCust);
+        }
+      })
+      .on('broadcast', { event: 'customer_deleted' }, async ({ payload }: any) => {
+        const custId = String(payload?.id || '').trim();
+        if (custId) {
+          await db.customers.delete(custId).catch(() => {});
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: custId } }));
+          }
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              const bc = new BroadcastChannel('ketoko_customer_sync');
+              bc.postMessage({ type: 'CUSTOMER_DELETED', id: custId });
+              bc.close();
+            }
+          } catch {}
+          this.realtimeCallbacks.onCustomerDeleted?.(custId);
+        }
+      });
+    };
+
+    setupChannelListeners(ch);
+    setupChannelListeners(coopCh);
+
+    coopCh.subscribe();
 
     ch.subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
@@ -200,6 +257,7 @@ export class SyncService {
       }
     });
 
+    (this as any).coopChannel = coopCh;
     this.cloudLiveChannel = ch;
     return ch;
   }
@@ -243,12 +301,27 @@ export class SyncService {
         }
       }
 
-      const res = await ch.send({
-        type: 'broadcast',
-        event,
-        payload: finalPayload
-      });
-      return res === 'ok';
+      const sendPromises = [
+        ch.send({
+          type: 'broadcast',
+          event,
+          payload: finalPayload
+        })
+      ];
+
+      const coopCh = (this as any).coopChannel;
+      if (coopCh) {
+        sendPromises.push(
+          coopCh.send({
+            type: 'broadcast',
+            event,
+            payload: finalPayload
+          }).catch(() => {})
+        );
+      }
+
+      const results = await Promise.allSettled(sendPromises);
+      return results.some((r) => r.status === 'fulfilled' && (r.value === 'ok' || r.value === undefined));
     } catch (err) {
       console.warn('[Sync] Broadcast cloud event error:', err);
       return false;
@@ -330,6 +403,34 @@ export class SyncService {
     });
   }
 
+  /**
+   * Pre-flight health check cepat (maksimal 3.5 detik).
+   * Mencegah sinkronisasi macet / loading berjam-jam saat server cloud Supabase 522/offline.
+   */
+  async isSupabaseReachable(): Promise<boolean> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await supabase
+        .from('store_settings')
+        .select('id', { count: 'exact', head: true })
+        .abortSignal(controller.signal);
+      clearTimeout(timeoutId);
+
+      // Tangani error status server (522 Connection Timed Out, 502 Bad Gateway, 503 Unavailable)
+      if (res.error && (res.status === 522 || res.status === 503 || res.status === 502 || res.status === 0)) {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async initCatalog(force = false): Promise<number> {
     const existingCount = await db.products.count();
     const EXPECTED_COUNT = 24531;
@@ -393,7 +494,10 @@ export class SyncService {
     return await db.products.count();
   }
 
-  async saveTransactionOffline(transaction: Transaction): Promise<void> {
+  async saveTransactionOffline(
+    transaction: Transaction,
+    knownUpdatedStocks?: Array<{ id: string; stock: number }>
+  ): Promise<void> {
     const updatedStocks: Array<{ id: string; stock: number }> = [];
     const activeStoreId = this.getActiveStoreId();
     const trxToSave: Transaction = {
@@ -401,13 +505,22 @@ export class SyncService {
       store_id: transaction.store_id || activeStoreId
     };
 
+    const knownMap = knownUpdatedStocks && knownUpdatedStocks.length > 0
+      ? new Map(knownUpdatedStocks.map((s) => [s.id, s.stock]))
+      : null;
+
     await db.transaction('rw', db.transactions, db.products, db.syncQueue, async () => {
       await db.transactions.put(trxToSave);
 
       for (const item of trxToSave.items) {
         const prod = await db.products.get(item.product_id);
         if (prod) {
-          const newStock = Math.max(0, prod.stock - item.qty);
+          // Jika stok sudah dihitung pasti oleh LAN Server, gunakan nilai tersebut.
+          // Cegah pengurangan ganda (double-deduct) saat checkout.
+          const newStock = knownMap && knownMap.has(item.product_id)
+            ? knownMap.get(item.product_id)!
+            : Math.max(0, prod.stock - item.qty);
+
           await db.products.update(item.product_id, {
             stock: newStock
           });
@@ -695,6 +808,7 @@ export class SyncService {
   async pushLocalTransactionsToSupabase(): Promise<{ pushedCount: number }> {
     const supabase = getSupabaseClient();
     if (!supabase || !navigator.onLine) return { pushedCount: 0 };
+    if (!(await this.isSupabaseReachable())) return { pushedCount: 0 };
 
     try {
       const storeId = this.getActiveStoreId();
@@ -746,7 +860,12 @@ export class SyncService {
       if (toPush.length === 0) return { pushedCount: 0 };
 
       let pushed = 0;
+      let consecutiveErrors = 0;
       for (const trx of toPush) {
+        if (consecutiveErrors >= 2) {
+          console.warn('[SyncService] Cloud server offline/unreachable, menghentikan sisa antrean push.');
+          break;
+        }
         try {
           let validCustomerId: string | null = null;
           if (trx.member_id) {
@@ -806,8 +925,10 @@ export class SyncService {
             });
             await db.syncQueue.delete(trx.id).catch(() => {});
             pushed++;
+            consecutiveErrors = 0;
           }
         } catch (err) {
+          consecutiveErrors++;
           console.warn('[SyncService] Gagal push transaksi ke Supabase:', trx.id, err);
         }
       }
@@ -825,6 +946,9 @@ export class SyncService {
 
   async reconcileQueue(branchId = 'BR-01'): Promise<{ syncedCount: number; failedCount: number }> {
     if (this.isSyncing) return { syncedCount: 0, failedCount: 0 };
+    if (!(await this.isSupabaseReachable())) {
+      return { syncedCount: 0, failedCount: 0 };
+    }
 
     this.isSyncing = true;
     this.lastError = null;
@@ -878,8 +1002,13 @@ export class SyncService {
       let syncedIds: string[] = [];
       let failedIds: string[] = [];
 
+      let consecutiveErrors = 0;
       if (supabase) {
         for (const trx of transactionsToSync) {
+          if (consecutiveErrors >= 2) {
+            console.warn('[SupabaseSync] Cloud server offline/unreachable, menghentikan sisa antrean queue.');
+            break;
+          }
           try {
             let validCustomerId: string | null = null;
             if (trx.member_id) {
@@ -939,7 +1068,9 @@ export class SyncService {
             }
 
             syncedIds.push(trx.id);
+            consecutiveErrors = 0;
           } catch (err: any) {
+            consecutiveErrors++;
             console.error(`[SupabaseSync] Gagal upload transaksi ${trx.receipt_number}:`, err);
             failedIds.push(trx.id);
           }
@@ -1341,7 +1472,7 @@ export class SyncService {
       updated_at: new Date().toISOString()
     };
 
-    // 1. Simpan langsung ke IndexedDB lokal (Dexie)
+    // 1. Simpan langsung ke IndexedDB lokal (Dexie) - Eksekusi instan (< 5ms)
     await db.products.put(updatedProd);
 
     // 1.b Dispatch DOM event lokal seketika (0ms delay) agar UI langsung menampilkan produk baru/diubah
@@ -1358,62 +1489,71 @@ export class SyncService {
       }
     } catch {}
 
-    // 3. Kirim ke LAN Server terpusat (jika aktif)
-    await lanService.submitProduct(updatedProd).catch(() => {});
-
-    // 4. Kirim ke Supabase Cloud & Broadcast ke seluruh komputer kasir/admin (berbeda jaringan)
-    if (navigator.onLine) {
+    // 3 & 4. Jalankan sinkronisasi LAN & Cloud Supabase di latar belakang (NON-BLOCKING)
+    // agar modal simpan di UI selesai seketika (< 20ms) tanpa menunggu respon jaringan / cloud
+    void (async () => {
       try {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          // Bersihkan tombstone dari sync_logs jika produk ini pernah dihapus sebelumnya
-          Promise.resolve(
-            supabase
-              .from('sync_logs')
-              .delete()
-              .eq('operation_type', 'DELETE_PRODUCT')
-              .eq('error_message', cleanId)
-          ).catch(() => {});
+        await lanService.submitProduct(updatedProd).catch(() => {});
+      } catch {}
 
-          // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
-          const cloudPayload = {
-            id: String(updatedProd.id),
-            store_id: updatedProd.store_id || storeId,
-            barcode: updatedProd.barcode || String(updatedProd.id),
-            name: updatedProd.name,
-            category: updatedProd.category || 'Kebutuhan Umum',
-            buy_price: Number(updatedProd.buy_price) || 0,
-            retail_price: Number(updatedProd.retail_price) || 0,
-            wholesale_price: Number(updatedProd.wholesale_price) || 0,
-            stock: Number(updatedProd.stock) || 0,
-            unit: updatedProd.unit || 'Pcs',
-            rack_location: updatedProd.rack_location || 'Rak Utama',
-            image_url: updatedProd.image_url || '',
-            updated_at: updatedProd.updated_at
-          };
+      if (navigator.onLine) {
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            // Bersihkan tombstone dari sync_logs jika produk ini pernah dihapus sebelumnya
+            Promise.resolve(
+              supabase
+                .from('sync_logs')
+                .delete()
+                .eq('operation_type', 'DELETE_PRODUCT')
+                .eq('error_message', cleanId)
+            ).catch(() => {});
 
-          let { error: upsertErr } = await supabase
-            .from('products')
-            .upsert(cloudPayload, { onConflict: 'id' });
+            // Bersihkan payload agar cocok 100% dengan kolom tabel Supabase
+            const cloudPayload = {
+              id: String(updatedProd.id),
+              store_id: updatedProd.store_id || storeId,
+              barcode: updatedProd.barcode || String(updatedProd.id),
+              name: updatedProd.name,
+              category: updatedProd.category || 'Kebutuhan Umum',
+              buy_price: Number(updatedProd.buy_price) || 0,
+              retail_price: Number(updatedProd.retail_price) || 0,
+              wholesale_price: Number(updatedProd.wholesale_price) || 0,
+              stock: Number(updatedProd.stock) || 0,
+              unit: updatedProd.unit || 'Pcs',
+              rack_location: updatedProd.rack_location || 'Rak Utama',
+              image_url: updatedProd.image_url || '',
+              updated_at: updatedProd.updated_at
+            };
 
-          if (upsertErr && cloudPayload.image_url) {
-            const retryRes = await supabase
+            const upsertPromise = supabase
               .from('products')
-              .upsert({ ...cloudPayload, image_url: '' }, { onConflict: 'id' });
-            upsertErr = retryRes.error;
-          }
+              .upsert(cloudPayload, { onConflict: 'id' });
+            const timeoutPromise = new Promise<{ error: any }>((_, reject) =>
+              setTimeout(() => reject(new Error('Cloud upsert timeout')), 4000)
+            );
 
-          if (upsertErr) {
-            console.warn('[Sync] Gagal upsert produk ke Supabase:', upsertErr.message);
-          }
+            let { error: upsertErr } = await Promise.race([upsertPromise, timeoutPromise]).catch((e) => ({ error: e }));
 
-          // Siarkan langsung event real-time ke seluruh komputer kasir di jaringan mana saja
-          this.broadcastCloudEvent('product_updated', { ...updatedProd, store_id: updatedProd.store_id || storeId });
+            if (upsertErr && cloudPayload.image_url) {
+              const retryRes = await supabase
+                .from('products')
+                .upsert({ ...cloudPayload, image_url: '' }, { onConflict: 'id' });
+              upsertErr = retryRes.error;
+            }
+
+            if (upsertErr) {
+              console.warn('[Sync] Gagal upsert produk ke Supabase:', upsertErr.message);
+            }
+
+            // Siarkan langsung event real-time ke seluruh komputer kasir di jaringan mana saja
+            this.broadcastCloudEvent('product_updated', { ...updatedProd, store_id: updatedProd.store_id || storeId });
+          }
+        } catch (e) {
+          console.warn('[Sync] Gagal push produk ke Supabase:', e);
         }
-      } catch (e) {
-        console.warn('[Sync] Gagal push produk ke Supabase:', e);
       }
-    }
+    })();
   }
 
   /**
@@ -1423,11 +1563,14 @@ export class SyncService {
   async syncCustomerChange(customer: Customer): Promise<Customer> {
     const storeId = this.getActiveStoreId();
     const cleanId = String(customer.id).trim();
+    const assignedStoreId = normalizeStoreId(customer.store_id || storeId);
 
     const updatedCust: Customer = {
       ...customer,
       id: cleanId,
-      store_id: customer.store_id || storeId,
+      store_id: assignedStoreId,
+      store_name: getStoreDisplayName(assignedStoreId, customer.store_name),
+      access_scope: normalizeAccessScope(customer.access_scope),
       code: customer.code?.trim() || cleanId,
       name: customer.name.trim(),
       phone: customer.phone?.trim() || '-',
@@ -1435,10 +1578,11 @@ export class SyncService {
       type: customer.type || 'RETAIL',
       credit_limit: Number(customer.credit_limit) || 0,
       current_debt: Number(customer.current_debt) || 0,
+      deposit_balance: Number(customer.deposit_balance !== undefined ? customer.deposit_balance : 0),
       updated_at: new Date().toISOString()
     };
 
-    // 1. Simpan ke IndexedDB lokal (Dexie)
+    // 1. Simpan ke IndexedDB lokal (Dexie) seketika
     await db.customers.put(updatedCust);
 
     // 2. Dispatch DOM event lokal seketika (0ms delay)
@@ -1455,52 +1599,39 @@ export class SyncService {
       }
     } catch {}
 
-    // 4. Kirim ke LAN Server terpusat (jika aktif)
-    await lanService.submitCustomer(updatedCust).catch(() => {});
-
-    // 5. Kirim ke Supabase Cloud & Broadcast ke seluruh komputer kasir/admin
-    if (navigator.onLine) {
+    // 4 & 5. Kirim ke LAN Server terpusat & Supabase Cloud di latar belakang (non-blocking)
+    void (async () => {
       try {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          // Bersihkan tombstone dari sync_logs jika pelanggan ini pernah dihapus sebelumnya
-          Promise.resolve(
-            supabase
-              .from('sync_logs')
-              .delete()
-              .eq('operation_type', 'DELETE_CUSTOMER')
-              .eq('error_message', cleanId)
-          ).catch(() => {});
+        await lanService.submitCustomer(updatedCust).catch(() => {});
+      } catch {}
 
-          const cloudPayload = {
-            id: String(updatedCust.id),
-            store_id: updatedCust.store_id || storeId,
-            code: updatedCust.code || '',
-            name: updatedCust.name,
-            phone: updatedCust.phone || '-',
-            address: updatedCust.address || '-',
-            type: updatedCust.type || 'RETAIL',
-            credit_limit: Number(updatedCust.credit_limit) || 0,
-            current_debt: Number(updatedCust.current_debt) || 0,
-            created_at: updatedCust.created_at || new Date().toISOString(),
-            updated_at: updatedCust.updated_at
-          };
+      if (navigator.onLine) {
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            // Bersihkan tombstone dari sync_logs jika pelanggan ini pernah dihapus sebelumnya
+            Promise.resolve(
+              supabase
+                .from('sync_logs')
+                .delete()
+                .eq('operation_type', 'DELETE_CUSTOMER')
+                .eq('error_message', cleanId)
+            ).catch(() => {});
 
-          const { error: upsertErr } = await supabase
-            .from('customers')
-            .upsert(cloudPayload, { onConflict: 'id' });
+            const upsertPromise = upsertCustomerBatchWithFallback(supabase, [updatedCust], assignedStoreId);
+            const timeoutPromise = new Promise<{ error: any }>((_, reject) =>
+              setTimeout(() => reject(new Error('Customer upsert timeout')), 4000)
+            );
+            await Promise.race([upsertPromise, timeoutPromise]).catch(() => {});
 
-          if (upsertErr) {
-            console.warn('[Sync] Gagal upsert pelanggan ke Supabase:', upsertErr.message);
+            // Siarkan realtime broadcast ke semua terminal kasir & admin lintas cabang
+            this.broadcastCloudEvent('customer_updated', updatedCust);
           }
-
-          // Siarkan realtime broadcast ke semua terminal kasir & admin
-          this.broadcastCloudEvent('customer_updated', updatedCust);
+        } catch (e) {
+          console.warn('[Sync] Gagal push pelanggan ke Supabase:', e);
         }
-      } catch (e) {
-        console.warn('[Sync] Gagal push pelanggan ke Supabase:', e);
       }
-    }
+    })();
 
     return updatedCust;
   }
@@ -1529,35 +1660,140 @@ export class SyncService {
       }
     } catch {}
 
-    // 4. Hapus dari LAN Server terpusat
-    await lanService.deleteCustomerFromLan(cleanId).catch(() => {});
-
-    // 5. Hapus dari Cloud Supabase & Catat Tombstone di sync_logs
-    if (navigator.onLine) {
+    // 4 & 5. Hapus dari LAN Server & Cloud Supabase di latar belakang (non-blocking)
+    void (async () => {
       try {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          const storeId = this.getActiveStoreId();
-          await Promise.allSettled([
-            supabase.from('customers').delete().eq('id', cleanId).eq('store_id', storeId),
-            supabase.from('sync_logs').insert({
-              branch_id: 'BR-01',
-              operation_type: 'DELETE_CUSTOMER',
-              error_message: cleanId,
-              status: 'DELETED',
-              synced_at: new Date().toISOString()
-            })
-          ]);
-        }
-      } catch (err) {
-        console.warn('[Sync] Gagal hapus pelanggan dari Supabase:', err);
-      }
-    }
+        await lanService.deleteCustomerFromLan(cleanId).catch(() => {});
+      } catch {}
 
-    // 6. Siarkan realtime broadcast ke semua terminal kasir & admin
-    await this.broadcastCloudEvent('customer_deleted', { id: cleanId, store_id: this.getActiveStoreId() });
+      if (navigator.onLine) {
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const storeId = this.getActiveStoreId();
+            await Promise.allSettled([
+              supabase.from('customers').delete().eq('id', cleanId),
+              supabase.from('sync_logs').insert({
+                branch_id: storeId,
+                operation_type: 'DELETE_CUSTOMER',
+                error_message: cleanId,
+                status: 'DELETED',
+                synced_at: new Date().toISOString()
+              })
+            ]);
+          }
+        } catch (err) {
+          console.warn('[Sync] Gagal hapus pelanggan dari Supabase:', err);
+        }
+      }
+
+      // Siarkan realtime broadcast ke semua terminal kasir & admin
+      this.broadcastCloudEvent('customer_deleted', { id: cleanId, store_id: this.getActiveStoreId() });
+    })();
 
     return true;
+  }
+
+  /**
+   * Top-Up Saldo Simpanan / Deposit Member Terpusat (Bisa dari Toko A maupun Toko B)
+   */
+  async syncMemberTopup(payload: {
+    customer_id: string;
+    amount: number;
+    payment_method?: string;
+    store_id?: string;
+    store_name?: string;
+    cashier_id?: string;
+    cashier_name?: string;
+    notes?: string;
+  }): Promise<{ success: boolean; customer?: Customer; mutation?: MemberDepositMutation; error?: string }> {
+    const cust = await db.customers.get(payload.customer_id);
+    if (!cust) {
+      return { success: false, error: 'Member tidak ditemukan di database' };
+    }
+
+    const amount = Math.abs(Number(payload.amount) || 0);
+    if (amount <= 0) {
+      return { success: false, error: 'Nominal top up harus lebih besar dari 0' };
+    }
+
+    const balanceBefore = Number(cust.deposit_balance) || 0;
+    const balanceAfter = balanceBefore + amount;
+    const now = new Date().toISOString();
+    const activeStoreId = payload.store_id || this.getActiveStoreId();
+    const activeStoreName = payload.store_name || getStoreDisplayName(activeStoreId);
+
+    const updatedCust: Customer = {
+      ...cust,
+      deposit_balance: balanceAfter,
+      updated_at: now
+    };
+
+    const mutId = `topup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const mutationRecord: MemberDepositMutation = {
+      id: mutId,
+      customer_id: cust.id,
+      customer_name: cust.name,
+      customer_code: cust.code,
+      type: 'TOPUP',
+      amount,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      payment_method: (payload.payment_method as any) || 'CASH',
+      store_id: activeStoreId,
+      store_name: activeStoreName,
+      cashier_id: payload.cashier_id || 'KASIR',
+      cashier_name: payload.cashier_name || 'Kasir',
+      receipt_number: mutId,
+      notes: payload.notes || `Top Up Saldo di ${activeStoreName}`,
+      created_at: now
+    };
+
+    // 1. Simpan ke IndexedDB lokal seketika (< 5ms)
+    await db.customers.put(updatedCust);
+    await db.memberDeposits.put(mutationRecord);
+
+    // 2. Dispatch DOM events
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedCust }));
+      window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: updatedCust, mutation: mutationRecord } }));
+    }
+
+    // 3. Siarkan via BroadcastChannel
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: updatedCust });
+        bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: updatedCust, mutation: mutationRecord });
+        bc.close();
+      }
+    } catch {}
+
+    // 4. Background Sync ke Central Server LAN & Cloud
+    void (async () => {
+      try {
+        await lanService.submitMemberTopup({
+          customer_id: cust.id,
+          amount,
+          payment_method: payload.payment_method,
+          store_id: activeStoreId,
+          store_name: activeStoreName,
+          cashier_id: payload.cashier_id,
+          cashier_name: payload.cashier_name,
+          notes: payload.notes
+        }).catch(() => {});
+      } catch {}
+
+      try {
+        await this.broadcastCloudEvent('member_deposit_updated', {
+          customer: updatedCust,
+          mutation: mutationRecord,
+          store_id: activeStoreId
+        });
+      } catch {}
+    })();
+
+    return { success: true, customer: updatedCust, mutation: mutationRecord };
   }
 
   /**
@@ -1568,10 +1804,11 @@ export class SyncService {
     if (!supabase) {
       return { count: 0, error: 'Supabase belum dikonfigurasi.' };
     }
+    if (!(await this.isSupabaseReachable())) {
+      return { count: 0, error: 'Cloud offline' };
+    }
 
     try {
-      const storeId = this.getActiveStoreId();
-
       // 1. Tarik log pelanggan yang telah dihapus (Tombstone)
       try {
         const { data: remoteDeleted } = await supabase
@@ -1593,7 +1830,15 @@ export class SyncService {
         console.warn('[Sync] Gagal tarik tombstone pelanggan:', err);
       }
 
-      // 2. Tarik SELURUH pelanggan aktif dari Supabase untuk store aktif ini
+      // 2. Tarik SELURUH pelanggan aktif dari DB terpusat Koperasi (lintas cabang agar penguncian cabang bisa mendeteksi kartu member cabang lain)
+      const localMap = new Map<string, Customer>();
+      try {
+        const existingLocal = await db.customers.toArray();
+        for (const lc of existingLocal) {
+          localMap.set(String(lc.id).trim(), lc);
+        }
+      } catch {}
+
       let allCloudCustomers: Customer[] = [];
       let fromCust = 0;
       const stepCust = 1000;
@@ -1601,14 +1846,24 @@ export class SyncService {
         const { data: cloudBatch, error: custErr } = await supabase
           .from('customers')
           .select('*')
-          .eq('store_id', storeId)
           .order('name', { ascending: true })
           .range(fromCust, fromCust + stepCust - 1);
 
         if (custErr) throw custErr;
         if (!cloudBatch || cloudBatch.length === 0) break;
 
-        allCloudCustomers = allCloudCustomers.concat(cloudBatch as Customer[]);
+        const normalizedBatch: Customer[] = (cloudBatch as Customer[]).map((c) => {
+          const existing = localMap.get(String(c.id).trim());
+          const sid = normalizeStoreId(c.store_id);
+          return {
+            ...c,
+            store_id: sid,
+            store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
+            access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
+          };
+        });
+
+        allCloudCustomers = allCloudCustomers.concat(normalizedBatch);
         fromCust += stepCust;
         if (cloudBatch.length < stepCust) break;
       }
@@ -1647,25 +1902,11 @@ export class SyncService {
       const valid = allLocal.filter((c) => c && c.id && c.name);
       if (valid.length === 0) return { count: 0 };
 
-      const batch = valid.map((c) => ({
-        id: String(c.id).trim(),
-        store_id: c.store_id || storeId,
-        code: c.code || '',
-        name: c.name,
-        phone: c.phone || '-',
-        address: c.address || '-',
-        type: c.type || 'RETAIL',
-        credit_limit: Number(c.credit_limit) || 0,
-        current_debt: Number(c.current_debt) || 0,
-        created_at: c.created_at || new Date().toISOString(),
-        updated_at: c.updated_at || new Date().toISOString()
-      }));
-
       const chunkSize = 100;
       let pushed = 0;
-      for (let i = 0; i < batch.length; i += chunkSize) {
-        const slice = batch.slice(i, i + chunkSize);
-        const { error } = await supabase.from('customers').upsert(slice, { onConflict: 'id' });
+      for (let i = 0; i < valid.length; i += chunkSize) {
+        const slice = valid.slice(i, i + chunkSize);
+        const { error } = await upsertCustomerBatchWithFallback(supabase, slice, storeId);
         if (!error) pushed += slice.length;
       }
 
@@ -1681,28 +1922,27 @@ export class SyncService {
     if (!supabase) {
       return { count: 0, error: 'Supabase belum dikonfigurasi.' };
     }
+    if (!(await this.isSupabaseReachable())) {
+      return { count: 0, error: 'Cloud offline' };
+    }
 
     try {
       this.isSyncing = true;
       this.notifyStatusChange();
       const storeId = this.getActiveStoreId();
 
-      // 1. Tarik SELURUH log produk terhapus dari Supabase sync_logs (Tombstone)
+      // 1. Tarik log produk terhapus terbaru dari Supabase sync_logs (Tombstone)
       const deletedProductIds = this.getDeletedProductIds();
       if (storeId === 'store-01') {
         try {
-          let fromLog = 0;
-          const stepLog = 1000;
-          while (true) {
-            const { data: remoteDeleted, error: logErr } = await supabase
-              .from('sync_logs')
-              .select('error_message')
-              .eq('operation_type', 'DELETE_PRODUCT')
-              .order('synced_at', { ascending: false })
-              .range(fromLog, fromLog + stepLog - 1);
+          const { data: remoteDeleted, error: logErr } = await supabase
+            .from('sync_logs')
+            .select('error_message')
+            .eq('operation_type', 'DELETE_PRODUCT')
+            .order('synced_at', { ascending: false })
+            .limit(500);
 
-            if (logErr || !remoteDeleted || remoteDeleted.length === 0) break;
-
+          if (!logErr && remoteDeleted && remoteDeleted.length > 0) {
             for (const item of remoteDeleted) {
               if (item.error_message) {
                 const pId = String(item.error_message).trim();
@@ -1716,9 +1956,6 @@ export class SyncService {
                 await db.products.delete(pId).catch(() => {});
               }
             }
-
-            fromLog += stepLog;
-            if (remoteDeleted.length < stepLog) break;
           }
         } catch (err) {
           console.warn('[Sync] Gagal tarik tombstone sync_logs:', err);
@@ -1936,6 +2173,7 @@ export class SyncService {
   async pullTransactionsFromSupabase(limit = 200): Promise<{ count: number; error?: string; transactions?: Transaction[] }> {
     const supabase = getSupabaseClient();
     if (!supabase) return { count: 0, error: 'Supabase tidak aktif' };
+    if (!(await this.isSupabaseReachable())) return { count: 0, error: 'Cloud offline' };
 
     try {
       const storeId = this.getActiveStoreId();
@@ -2099,6 +2337,7 @@ export class SyncService {
   async pullPurchasesFromSupabase(limit = 100): Promise<{ count: number }> {
     const supabase = getSupabaseClient();
     if (!supabase) return { count: 0 };
+    if (!(await this.isSupabaseReachable())) return { count: 0 };
 
     try {
       const storeId = this.getActiveStoreId();
@@ -2143,6 +2382,7 @@ export class SyncService {
   async syncDebtsAndReceivables(): Promise<void> {
     const supabase = getSupabaseClient();
     if (!supabase) return;
+    if (!(await this.isSupabaseReachable())) return;
 
     try {
       const storeId = this.getActiveStoreId();
@@ -2267,6 +2507,16 @@ export class SyncService {
     try {
       this.isSyncing = true;
       this.notifyStatusChange();
+
+      // 0. Pre-flight health check (maks 3.5 detik). Jika cloud mati/522/kuota habis, langsung lewati tanpa macet!
+      const isAlive = await this.isSupabaseReachable();
+      if (!isAlive) {
+        console.warn('[Sync] Server Supabase Cloud sedang tidak merespons (522/offline). Mode lokal aktif.');
+        return { 
+          success: false, 
+          message: 'Server Cloud tidak merespons (Offline / Kuota Terlampaui). Transaksi tersimpan aman di database lokal kasir.' 
+        };
+      }
 
       // Jalankan seluruh modul sinkronisasi tanpa saling memblokir jika salah satu gagal
       await this.pushLocalTransactionsToSupabase().catch((err) => console.warn('[Sync] pushLocal failed:', err));

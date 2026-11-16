@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Ketoko POS - Layar Pelanggan (Customer Facing Display)</title>
+  
+  <!-- Google Fonts & Material Symbols -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800;900&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24..48,100..700,0..1,-50..200&display=swap" rel="stylesheet"/>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b'
+            },
+            amber: {
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309'
+            }
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background-color: #F8FAFC;
+      color: #0F172A;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    }
+
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @keyframes pulseGreenRow {
+      0%, 100% { background-color: #f0fdf4; border-color: #86efac; }
+      50% { background-color: #dcfce7; border-color: #22c55e; }
+    }
+
+    .row-highlight-new {
+      animation: pulseGreenRow 2.2s infinite ease-in-out;
+    }
+
+    @keyframes marqueeScroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+
+    .animate-marquee {
+      display: inline-block;
+      white-space: nowrap;
+      animation: marqueeScroll 32s linear infinite;
+    }
+
+    .animate-marquee:hover {
+      animation-play-state: paused;
+    }
+
+    .custom-scroll::-webkit-scrollbar {
+      width: 7px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #F1F5F9;
+      border-radius: 8px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 8px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+  </style>
+</head>
+
+<body class="h-screen w-screen flex flex-col justify-between p-3.5 lg:p-5 antialiased overflow-hidden selection:bg-emerald-500 selection:text-white">
+
+  <!-- ============================================================== -->
+  <!-- 0. TOP SIMULATION & OPERATIONAL TOOLBAR                        -->
+  <!-- ============================================================== -->
+  <div id="simToolbar" class="bg-white border border-slate-200/90 rounded-2xl px-5 py-2 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-3 shrink-0 transition-all text-xs sm:text-sm">
+    <div class="flex items-center space-x-3">
+      <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold text-xs">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span id="connStatus">● Layar Siap (Cross-Tab & LAN)</span>
+      </div>
+      <span class="text-slate-300">|</span>
+      <span class="text-slate-500 font-bold hidden sm:inline">Uji Coba Tampilan:</span>
+    </div>
+
+    <!-- Quick State Switchers -->
+    <div class="flex flex-wrap items-center gap-2">
+      <button onclick="setUiState('scanning')" id="btnStateScanning" class="px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5">
+        <span>🛒</span>
+        <span>1. Scan Barang</span>
+      </button>
+      <button onclick="setUiState('card')" id="btnStateCard" class="px-3.5 py-1.5 rounded-xl font-bold bg-indigo-600 text-white shadow-xs transition-all active:scale-95 flex items-center gap-1.5">
+        <span>💳</span>
+        <span>2. Kartu ATM Koperasi (Tap)</span>
+      </button>
+      <button onclick="setUiState('cash')" id="btnStateCash" class="px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5">
+        <span>💵</span>
+        <span>3. Tunai & Kembalian</span>
+      </button>
+      <button onclick="setUiState('qris')" id="btnStateQris" class="px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5">
+        <span>📱</span>
+        <span>4. Bayar QRIS</span>
+      </button>
+      <button onclick="setUiState('standby')" id="btnStateStandby" class="px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5">
+        <span>🏠</span>
+        <span>5. Standby</span>
+      </button>
+      <button onclick="setUiState('success')" id="btnStateSuccess" class="px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5">
+        <span>✓</span>
+        <span>6. Selesai</span>
+      </button>
+      <button onclick="toggleToolbar()" title="Sembunyikan toolbar ini" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold ml-1 transition-all">
+        ✕ Sembunyikan
+      </button>
+    </div>
+  </div>
+
+  <button id="btnShowToolbar" onclick="toggleToolbar()" class="hidden fixed top-4 right-4 z-50 bg-white/95 backdrop-blur-md text-emerald-800 text-xs font-black px-4 py-2 rounded-full shadow-lg border border-slate-300 hover:bg-slate-50 transition-all">
+    ⚙️ Menu Uji Coba
+  </button>
+
+
+  <!-- ============================================================== -->
+  <!-- 1. HEADER UTAMA (MODERN CLEAN WHITE WITH SUBTLE BORDER)         -->
+  <!-- ============================================================== -->
+  <header class="w-full bg-white text-slate-900 rounded-3xl px-6 py-4 shadow-sm flex flex-wrap items-center justify-between gap-4 border border-slate-200/90 shrink-0 mb-3.5">
+    <div class="flex items-center gap-4 flex-wrap">
+      <div class="flex items-center gap-3.5">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-md font-black text-2xl">
+          K
+        </div>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-2.5">
+            <span class="font-black text-xl sm:text-2xl text-slate-900 tracking-tight" id="storeNameHeader">TOKO BERKAH JAYA</span>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">KASIR UTAMA</span>
+          </div>
+          <span class="text-xs sm:text-sm text-slate-500 flex items-center gap-1.5 mt-0.5">
+            <span class="material-symbols-outlined text-[16px] text-emerald-600">store</span>
+            Cabang Samarinda Kota • Terminal Kasir #01
+          </span>
+        </div>
+      </div>
+
+      <div class="h-8 w-px bg-slate-200 hidden md:block"></div>
+
+      <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span class="text-xs uppercase font-black tracking-wider">KASIR SIAP MELAYANI</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2.5 bg-slate-50 border border-slate-200/90 px-4 py-2 rounded-2xl">
+        <span class="material-symbols-outlined text-slate-400 text-[20px]">schedule</span>
+        <span class="font-mono-num text-sm sm:text-base text-slate-800 font-extrabold" id="live-clock">12:15:30 WITA</span>
+      </div>
+      <div class="flex items-center gap-2.5 bg-slate-50 border border-slate-200/90 px-4 py-2 rounded-2xl text-slate-700">
+        <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-black text-xs">
+          👤
+        </div>
+        <span class="text-xs sm:text-sm font-semibold">
+          Petugas: <strong class="text-slate-900 font-bold" id="dispCashierName">Suciawati</strong>
+        </span>
+      </div>
+    </div>
+  </header>
+
+
+  <!-- ============================================================== -->
+  <!-- 2. MAIN CORE (65% : 35% ASYMMETRIC TWO-PANE LAYOUT)            -->
+  <!-- ============================================================== -->
+  <div class="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
+
+    <!-- ============================================================ -->
+    <!-- VIEW A: ACTIVE SESSION (SCANNING / QRIS / CASH)              -->
+    <!-- ============================================================ -->
+    <div id="viewActiveSession" class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 w-full items-stretch overflow-hidden">
+      
+      <!-- ---------------------------------------------------------- -->
+      <!-- 2.1 LEFT PANE (65% / col-span-8): LIVE CART TABLE          -->
+      <!-- ---------------------------------------------------------- -->
+      <section class="lg:col-span-8 h-full flex flex-col justify-between gap-2.5 overflow-hidden">
+        
+        <div class="bg-white rounded-3xl shadow-sm border border-slate-200/90 p-4 lg:p-5 flex-1 min-h-0 flex flex-col overflow-hidden">
+          
+          <!-- Cart Header Bar -->
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
+            <div class="flex items-center gap-3">
+              <div class="h-10 w-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                <span class="material-symbols-outlined text-[24px]">shopping_basket</span>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-xl sm:text-2xl text-slate-900 tracking-tight font-black">DAFTAR BELANJA ANDA</h2>
+                  <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    <span class="material-symbols-outlined text-[13px]">sensors</span> Real-time Sync
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400">Pemindaian otomatis optik kasir • Periksa daftar belanjaan Anda</p>
+              </div>
+            </div>
+
+            <!-- Dynamic Cart Count Pill -->
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-800">
+              <span class="material-symbols-outlined text-emerald-700 text-[20px]">inventory_2</span>
+              <span class="font-mono-num text-sm sm:text-base font-extrabold text-slate-800" id="badgeItemCount">3 Produk <span class="text-slate-400 font-medium">(5 Pcs)</span></span>
+            </div>
+          </div>
+
+          <!-- TABLE HEADER 5 KOLOM RAPI & JELAS -->
+          <div class="grid grid-cols-12 gap-3 px-4 py-2.5 bg-slate-100/90 rounded-xl mt-2.5 text-slate-700 font-black text-xs sm:text-sm uppercase tracking-wider shrink-0 border border-slate-200/70">
+            <div class="col-span-1 text-center">No</div>
+            <div class="col-span-5">Deskripsi Produk & Kemasan</div>
+            <div class="col-span-2 text-center">Harga Satuan</div>
+            <div class="col-span-2 text-center">Kuantitas (Qty)</div>
+            <div class="col-span-2 text-right">Subtotal</div>
+          </div>
+
+          <!-- SCROLLABLE CART ITEMS LIST (MAKSIMALKAN TINGGI VERTICAL AGAR TIDAK KECIL) -->
+          <div id="cartItemsList" class="flex-1 min-h-0 overflow-y-auto custom-scroll mt-2 space-y-2 pr-1.5">
+            <!-- Dynamic Items Injected Here by JS -->
+          </div>
+
+          <!-- Cart Bottom Loyalty & Member Ribbon (COMPACT & SLEEK) -->
+          <div class="mt-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-50 via-amber-50/50 to-emerald-50 border border-amber-200/80 flex items-center justify-between gap-3 shrink-0 shadow-xs">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-xs text-sm">
+                ★
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-black text-slate-900" id="dispCustomerName">Bpk. Bambang Suherman</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900">MEMBER GOLD</span>
+                <span class="text-xs text-slate-400 hidden sm:inline">• Poin: <strong class="text-amber-700 font-extrabold">1.450</strong></span>
+              </div>
+            </div>
+
+            <!-- Savings Banner -->
+            <div class="flex items-center gap-2 bg-emerald-600 text-white px-3 py-1 rounded-xl shadow-xs shrink-0">
+              <span class="material-symbols-outlined text-white text-[18px]">redeem</span>
+              <span class="font-mono-num text-xs sm:text-sm font-black text-white" id="dispMemberSaving">Hemat: Rp 5.000</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ---------------------------------------------------------- -->
+      <!-- 2.2 RIGHT PANE (35% / col-span-4): PAYMENT CONSOLE         -->
+      <!-- ---------------------------------------------------------- -->
+      <section class="lg:col-span-4 h-full flex flex-col justify-between gap-2.5 overflow-hidden">
+        
+        <!-- HERO GRAND TOTAL CARD (DIPADUKAN DENGAN SUBTOTAL & DISKON - COMPACT & ELEGAN) -->
+        <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 rounded-2xl p-2.5 sm:p-3 text-white shadow-md flex flex-col gap-1 relative overflow-hidden border border-slate-700 shrink-0">
+          <div class="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-emerald-500/10 pointer-events-none blur-lg"></div>
+          
+          <!-- Top Row: Badge & Subtotal/Diskon Summary Ringkas -->
+          <div class="flex items-center justify-between relative z-10 text-xs">
+            <span class="text-[10px] uppercase tracking-widest text-emerald-300 font-black">TOTAL HARGA BELANJA</span>
+            <span class="px-2 py-0.5 rounded-full bg-white/10 text-white text-[10px] font-black uppercase tracking-wider border border-white/20" id="dispPaymentBadge">
+              KARTU KOPERASI (ATM)
+            </span>
+          </div>
+
+          <!-- Hero Number (Compact 30-34px) -->
+          <div class="relative z-10 flex items-baseline justify-between">
+            <span class="font-mono-num text-2xl sm:text-3xl lg:text-[34px] leading-tight text-white font-black tracking-tight drop-shadow-md" id="dispGrandTotal">
+              Rp 114.000
+            </span>
+            <div class="text-right text-[11px] space-y-0.5 hidden sm:block">
+              <div class="text-slate-300 font-semibold" id="dispSummaryQty">Subtotal: <span class="font-mono font-bold text-white" id="dispSubtotal">Rp 119.000</span></div>
+              <div class="text-emerald-300 font-bold">Diskon: <span class="font-mono font-black" id="dispDiscount">-Rp 5.000</span></div>
+            </div>
+          </div>
+
+          <!-- Terbilang Indonesia -->
+          <div class="bg-black/30 rounded-lg px-2.5 py-0.5 border border-white/10 relative z-10">
+            <p class="text-[10px] sm:text-[10.5px] text-emerald-200 italic font-semibold leading-relaxed truncate" id="dispSpelledAmount">
+              “Seratus Empat Belas Ribu Rupiah”
+            </p>
+          </div>
+        </div>
+
+        <!-- DYNAMIC PAYMENT ACTION CONTAINER -->
+        <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+          
+          <!-- OPTION 1: KARTU ATM / KOPERASI KARYAWAN (TAP RFID/NFC/QR) -->
+          <div id="subCardPanel" class="hidden bg-white rounded-3xl p-2.5 sm:p-3 shadow-sm border border-slate-200/90 flex-1 min-h-0 flex flex-col justify-between gap-1.5 overflow-hidden">
+            
+            <!-- 1. Header Konsol & Model Switcher -->
+            <div class="flex items-center justify-between pb-1 border-b border-slate-100 shrink-0">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black tracking-wide flex items-center gap-1.5 shadow-2xs">
+                  <span class="material-symbols-outlined text-[15px]">credit_card</span> KARTU KOPERASI
+                </span>
+                <span class="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> TAP BERHASIL
+                </span>
+              </div>
+              
+              <!-- Toggle Model: Saldo Dompet vs Potong Gaji -->
+              <div class="flex items-center bg-slate-100 p-0.5 rounded-xl text-[10px] font-extrabold text-slate-600 border border-slate-200/80">
+                <button type="button" onclick="setCardModel('prepaid')" id="btnModelPrepaid" class="px-2 py-0.5 rounded-md bg-white text-indigo-900 shadow-2xs transition-all font-extrabold">Saldo Dompet</button>
+                <button type="button" onclick="setCardModel('payroll')" id="btnModelPayroll" class="px-2 py-0.5 rounded-md text-slate-500 hover:text-slate-800 transition-all font-bold">Potong Gaji</button>
+              </div>
+            </div>
+
+            <!-- 2. VIRTUAL SMART CARD ATM KOPERASI (PROPORSI CR80 PROPORSIONAL & LEGA) -->
+            <div class="bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 rounded-2xl p-2.5 sm:p-3 text-white shadow-md border border-indigo-700/40 relative overflow-hidden shrink-0 flex flex-col justify-between h-[126px]">
+              <div class="absolute -right-8 -bottom-8 w-24 h-24 rounded-full bg-indigo-500/15 pointer-events-none blur-lg"></div>
+
+              <!-- Top Row: Chip + Brand -->
+              <div class="flex items-center justify-between relative z-10">
+                <div class="flex items-center gap-2">
+                  <div class="w-5.5 h-4 rounded bg-gradient-to-tr from-amber-300 via-yellow-400 to-amber-500 border border-amber-200 shadow-2xs flex items-center justify-center">
+                    <div class="w-4 h-2.5 border border-amber-800/30 rounded-xs grid grid-cols-2 gap-0.5">
+                      <div class="border-b border-r border-amber-800/30"></div>
+                      <div class="border-b border-amber-800/30"></div>
+                      <div class="border-r border-amber-800/30"></div>
+                      <div></div>
+                    </div>
+                  </div>
+                  <span class="material-symbols-outlined text-white/80 text-[15px]">contactless</span>
+                </div>
+                <div class="text-right">
+                  <span class="text-[10.5px] font-black tracking-wider text-emerald-300 uppercase block">KOPKAR SEJAHTERA</span>
+                  <span class="text-[7.5px] text-white/60 tracking-widest block uppercase font-semibold">SMART CARD ANGGOTA</span>
+                </div>
+              </div>
+
+              <!-- Middle Row: Member Details + QR Code Box -->
+              <div class="flex items-center justify-between gap-2.5 my-auto relative z-10">
+                <div class="flex-1 min-w-0">
+                  <span class="text-[7.5px] text-white/50 block uppercase tracking-wider font-bold">Pemilik Kartu</span>
+                  <h4 class="font-black text-white text-xs sm:text-sm truncate tracking-wide leading-tight" id="dispCardHolder">
+                    Bpk. Bambang Suherman
+                  </h4>
+                  <div class="flex items-center gap-1.5 mt-0.5">
+                    <span class="font-mono text-emerald-300 font-black text-[11px] bg-black/40 px-1.5 py-0.2 rounded border border-white/10 tracking-wider" id="dispCardNik">
+                      MBR-06892
+                    </span>
+                    <span class="text-[7.5px] text-amber-300 font-bold px-1.5 py-0.2 rounded bg-amber-400/20 border border-amber-400/30">
+                      MEMBER GOLD
+                    </span>
+                  </div>
+                </div>
+
+                <!-- QR Code Box (Sharp & Clear) -->
+                <div class="bg-white p-0.5 rounded-lg shadow-sm border border-white/40 shrink-0 flex flex-col items-center">
+                  <img id="dispCardQrImg" src="" alt="QR Member" class="w-9 h-9 sm:w-10 sm:h-10 object-contain" />
+                  <span class="text-[6px] font-mono font-black text-slate-800 leading-none mt-0.5 tracking-wider">SCAN QR</span>
+                </div>
+              </div>
+
+              <!-- Bottom Row: 1D Barcode Strip & Scanner Guide -->
+              <div class="pt-1 border-t border-white/15 flex items-center justify-between gap-2 relative z-10">
+                <div class="bg-white px-1.5 py-0.5 rounded shadow-2xs max-w-[120px] overflow-hidden" id="dispCardBarcodeWrap">
+                  <div id="dispCardBarcodeSvg" class="h-2 flex items-center"></div>
+                </div>
+                <div class="text-[8px] text-emerald-200 font-bold text-right flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[11px] text-emerald-400">qr_code_scanner</span>
+                  <span>Siap Scan di Kasir</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. RINCIAN SALDO KOPERASI (ALL-IN-ONE EMERALD FINANCIAL CARD) -->
+            <div class="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-2 sm:p-2.5 shadow-md border border-emerald-500/30 flex flex-col justify-between gap-1 shrink-0">
+              <!-- Top Row: Saldo Awal & Potongan -->
+              <div class="flex items-center justify-between text-[10.5px] pb-1 border-b border-white/15">
+                <div class="flex items-center gap-1">
+                  <span class="text-emerald-200 text-[9.5px]" id="labelSaldoAwal">Saldo Awal:</span>
+                  <strong class="font-mono-num text-white text-xs font-black" id="dispSaldoAwal">Rp 500.000</strong>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span class="text-rose-200 text-[9.5px]">Dipotong:</span>
+                  <strong class="font-mono-num text-rose-300 text-xs font-black" id="dispPotonganBelanja">-Rp 114.000</strong>
+                </div>
+              </div>
+
+              <!-- Main Hero Row: Sisa Saldo -->
+              <div class="flex items-center justify-between py-0.5">
+                <div>
+                  <span class="text-[9px] uppercase tracking-wider text-emerald-100 font-black block" id="labelSisaSaldo">
+                    SISA SALDO SIMPANAN
+                  </span>
+                  <p class="text-[9.5px] text-emerald-100/90 font-medium italic truncate max-w-[150px] sm:max-w-[170px]" id="dispSisaSaldoSpelled">
+                    (Tiga Ratus Delapan Puluh Enam Ribu Rupiah)
+                  </p>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono-num text-lg sm:text-xl font-black text-white tracking-tight drop-shadow-xs" id="dispSisaSaldo">
+                    Rp 386.000
+                  </span>
+                </div>
+              </div>
+
+              <!-- Verification Note -->
+              <div class="pt-0.5 border-t border-white/10 flex items-center justify-between text-[9px] text-emerald-100/80">
+                <span class="flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[12px] text-emerald-300">verified</span>
+                  <span id="dispCardNote">Otomatis Terpotong • Struk Resmi</span>
+                </span>
+                <span class="px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-200 font-bold text-[8.5px] border border-emerald-400/30">LUNAS</span>
+              </div>
+            </div>
+
+            <!-- 4. Shortcut Navigasi Cepat -->
+            <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-100 shrink-0 font-bold px-1">
+              <button onclick="setUiState('cash')" class="text-slate-500 hover:text-slate-800 flex items-center gap-1 hover:underline text-[11px]">
+                <span class="material-symbols-outlined text-[14px]">payments</span> Bayar Tunai
+              </button>
+              <button onclick="setUiState('qris')" class="text-red-600 hover:text-red-800 flex items-center gap-1 hover:underline text-[11px]">
+                <span class="material-symbols-outlined text-[14px]">qr_code_2</span> Bayar QRIS →
+              </button>
+            </div>
+          </div>
+          </div>
+
+          <!-- OPTION A: CASH & CHANGE BOX -->
+          <div id="subCashPanel" class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200/90 flex flex-col justify-between gap-3 h-full overflow-hidden">
+            <!-- Uang Diterima -->
+            <div class="flex items-center justify-between bg-slate-50 border border-slate-200 p-3.5 rounded-2xl shrink-0">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-700 shadow-xs">
+                  <span class="material-symbols-outlined text-[24px]">payments</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-xs sm:text-sm font-bold text-slate-800">Uang Diterima Kasir</span>
+                  <span class="text-[11px] text-slate-400">Pembayaran Tunai Fisik</span>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="font-mono-num text-xl sm:text-2xl font-black text-slate-900" id="dispCashTendered">Rp 150.000</span>
+              </div>
+            </div>
+
+            <!-- HERO EMERALD CHANGE BOX (54px) -->
+            <div class="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-5 shadow-lg shadow-emerald-700/20 flex flex-col items-center justify-center text-center gap-1 relative overflow-hidden flex-1 min-h-[150px]">
+              <div class="flex items-center gap-2 text-emerald-100 font-extrabold">
+                <span class="material-symbols-outlined text-[22px]">change_circle</span>
+                <span class="text-xs uppercase tracking-widest">UANG KEMBALIAN ANDA</span>
+              </div>
+              
+              <!-- NOMINAL KEMBALIAN 52px -->
+              <div class="my-1">
+                <span class="font-mono-num text-4xl sm:text-5xl lg:text-[52px] leading-none font-black tracking-tight text-white drop-shadow-md" id="dispCashChange">
+                  Rp 36.000
+                </span>
+              </div>
+              
+              <p class="text-xs text-emerald-100/90 font-bold italic" id="dispChangeSpelled">
+                (Tiga Puluh Enam Ribu Rupiah)
+              </p>
+              
+              <div class="mt-2 bg-black/20 rounded-xl w-full py-1.5 px-3 border border-white/10 text-center">
+                <span class="text-xs text-emerald-50 font-bold flex items-center justify-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">check_circle</span> Mohon hitung kembali uang kembalian Anda di meja kasir
+                </span>
+              </div>
+            </div>
+
+            <!-- QRIS SWITCH BANNER -->
+            <div onclick="setUiState('qris')" class="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer group shrink-0">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-red-50 border border-red-200 p-1 shadow-xs flex items-center justify-center">
+                  <span class="material-symbols-outlined text-red-600 text-[22px]">qr_code_2</span>
+                </div>
+                <div class="flex flex-col text-left">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs sm:text-sm font-bold text-slate-900">Ingin Bayar Non-Tunai QRIS?</span>
+                    <span class="px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-black">INSTAN</span>
+                  </div>
+                  <span class="text-[11px] text-slate-400">Scan via BCA, Mandiri, Dana, GoPay, OVO, ShopeePay</span>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-slate-400 group-hover:text-slate-800 transition-colors text-[20px]">chevron_right</span>
+            </div>
+          </div>
+
+          <!-- OPTION B: QRIS MODE -->
+          <div id="subQrisPanel" class="hidden bg-white rounded-3xl p-5 shadow-sm border-2 border-red-500 flex flex-col justify-between items-center text-center gap-2.5 h-full overflow-hidden">
+            <div class="flex items-center justify-between w-full pb-2 border-b border-slate-100 shrink-0">
+              <span class="bg-red-600 text-white font-black px-2.5 py-0.5 rounded text-xs tracking-wider">QRIS DINAMIS</span>
+              <span class="text-xs font-bold text-slate-700">Scan QR Code untuk Membayar</span>
+              <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">Semua Bank / E-Wallet</span>
+            </div>
+
+            <!-- Crisp QR Vector -->
+            <div class="bg-white p-3 rounded-2xl border-2 border-slate-200 shadow-inner my-auto">
+              <svg class="w-40 h-40 sm:w-48 sm:h-48" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" fill="white"/>
+                <rect x="8" y="8" width="26" height="26" fill="#0F172A" rx="3"/>
+                <rect x="12" y="12" width="18" height="18" fill="white" rx="1.5"/>
+                <rect x="16" y="16" width="10" height="10" fill="#0F172A"/>
+                <rect x="66" y="8" width="26" height="26" fill="#0F172A" rx="3"/>
+                <rect x="70" y="12" width="18" height="18" fill="white" rx="1.5"/>
+                <rect x="74" y="16" width="10" height="10" fill="#0F172A"/>
+                <rect x="8" y="66" width="26" height="26" fill="#0F172A" rx="3"/>
+                <rect x="12" y="70" width="18" height="18" fill="white" rx="1.5"/>
+                <rect x="16" y="74" width="10" height="10" fill="#0F172A"/>
+                <rect x="40" y="10" width="8" height="14" fill="#0F172A"/>
+                <rect x="52" y="16" width="8" height="20" fill="#0F172A"/>
+                <rect x="40" y="32" width="18" height="8" fill="#0F172A"/>
+                <rect x="10" y="42" width="14" height="8" fill="#0F172A"/>
+                <rect x="28" y="42" width="10" height="20" fill="#0F172A"/>
+                <rect x="44" y="44" width="12" height="12" fill="#059669"/>
+                <rect x="60" y="42" width="28" height="8" fill="#0F172A"/>
+                <rect x="68" y="54" width="20" height="8" fill="#0F172A"/>
+                <rect x="40" y="66" width="10" height="24" fill="#0F172A"/>
+                <rect x="54" y="66" width="14" height="12" fill="#0F172A"/>
+                <rect x="72" y="68" width="18" height="20" fill="#0F172A"/>
+                <rect x="54" y="82" width="16" height="8" fill="#0F172A"/>
+              </svg>
+            </div>
+
+            <div class="w-full bg-slate-50 rounded-2xl p-2.5 border border-slate-200 shrink-0">
+              <div class="flex justify-between items-center text-xs">
+                <span class="text-slate-500 font-bold">Nominal Pembayaran Pas:</span>
+                <span class="font-mono-num font-black text-lg text-emerald-800" id="dispQrisNominal">Rp 114.000</span>
+              </div>
+            </div>
+
+            <button onclick="setUiState('cash')" class="text-xs text-slate-600 hover:text-slate-900 underline font-bold shrink-0">
+              ← Kembali ke Pembayaran Tunai
+            </button>
+          </div>
+
+          <!-- OPTION C: SCANNING MODE IN PROGRESS (RICH LIVELY STATUS - NO DEAD WHITE VOID!) -->
+          <div id="subScanningPanel" class="hidden bg-white rounded-3xl p-5 shadow-sm border border-slate-200/90 flex flex-col justify-between h-full overflow-hidden">
+            <div class="flex flex-col items-center justify-center text-center my-auto space-y-3">
+              <div class="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-700 border-2 border-emerald-200 flex items-center justify-center text-3xl shadow-xs animate-bounce">
+                🛒
+              </div>
+              <div>
+                <h4 class="font-black text-lg text-slate-900">Menghitung Belanjaan</h4>
+                <p class="text-xs text-slate-500 max-w-xs mt-1">Kasir sedang memindai barcode produk Anda. Total tagihan otomatis diperbarui secara instan.</p>
+              </div>
+            </div>
+
+            <!-- Accepted Payment Methods Logos Preview -->
+            <div class="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl space-y-2 shrink-0">
+              <div class="flex items-center justify-between text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                <span>Metode Pembayaran Tersedia:</span>
+                <span class="text-emerald-700">Bebas Biaya Admin</span>
+              </div>
+              <div class="grid grid-cols-4 gap-2 text-center text-[10px] font-extrabold text-slate-600">
+                <div class="bg-white py-1.5 px-1 rounded-xl border border-slate-200">💵 Tunai</div>
+                <div class="bg-white py-1.5 px-1 rounded-xl border border-slate-200 text-red-600">📱 QRIS</div>
+                <div class="bg-white py-1.5 px-1 rounded-xl border border-slate-200">💳 Debit</div>
+                <div class="bg-white py-1.5 px-1 rounded-xl border border-slate-200">🏦 Transfer</div>
+              </div>
+            </div>
+
+            <!-- Member Tip Banner -->
+            <div class="bg-gradient-to-r from-emerald-50 to-teal-50 p-3.5 rounded-2xl border border-emerald-200 text-left space-y-0.5 shrink-0">
+              <span class="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider">💡 Tips Hemat Hari Ini</span>
+              <p class="text-xs text-emerald-950 font-medium">Sebutkan nomor HP Anda kepada kasir untuk akumulasi poin diskon belanja.</p>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+
+
+    <!-- ============================================================ -->
+    <!-- VIEW B: STANDBY / IDLE (PROMO HERO & GREETING)               -->
+    <!-- ============================================================ -->
+    <div id="viewStandby" class="hidden flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 w-full overflow-hidden">
+      
+      <!-- Left (Col-span-5): Welcome & Store Greeting Card -->
+      <section class="lg:col-span-5 bg-white rounded-3xl p-6 lg:p-8 shadow-sm border border-slate-200/90 flex flex-col justify-between overflow-hidden">
+        <div>
+          <div class="w-16 h-16 rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white text-3xl shadow-lg mb-6">
+            🏪
+          </div>
+          <span class="px-3.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-xs font-black tracking-wider uppercase">
+            SELAMAT DATANG DI TOKO BERKAH JAYA
+          </span>
+          <h2 class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-4 leading-tight">
+            Belanja Nyaman, Lengkap & Terjangkau
+          </h2>
+          <p class="text-slate-500 text-sm mt-3 leading-relaxed">
+            Silakan letakkan barang belanjaan Anda di meja kasir. Petugas kami siap melayani Anda dengan ramah, cepat, dan teliti.
+          </p>
+        </div>
+
+        <div class="space-y-3 pt-6 border-t border-slate-100">
+          <div class="flex items-center gap-3 text-xs text-slate-700 font-bold">
+            <span class="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">✓</span>
+            <span>Menerima Pembayaran QRIS Semua Bank & E-Wallet</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-700 font-bold">
+            <span class="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">✓</span>
+            <span>Diskon Khusus Member & Gratis Poin Belanja</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-700 font-bold">
+            <span class="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">✓</span>
+            <span>Buka Setiap Hari Pukul 07.00 - 22.00 WITA</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right (Col-span-7): 4 Promotion Cards Showcase -->
+      <section class="lg:col-span-7 bg-white rounded-3xl p-6 lg:p-8 shadow-sm border border-slate-200/90 flex flex-col justify-between overflow-hidden">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-200 mb-4 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <span class="text-2xl">🔥</span>
+            <h3 class="font-black text-lg text-slate-900">PROMO SPESIAL HARI INI</h3>
+          </div>
+          <span class="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+            ● BERLAKU HARI INI
+          </span>
+        </div>
+
+        <!-- 4 Promo Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 flex-1 min-h-0 overflow-y-auto custom-scroll">
+          <!-- Promo 1 -->
+          <div class="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start">
+                <span class="text-3xl">🍾</span>
+                <span class="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-black uppercase">HEMAT 15%</span>
+              </div>
+              <h4 class="font-black text-slate-900 mt-2 text-sm">Minyak Goreng Bimoli 2L</h4>
+              <p class="text-xs text-slate-500 mt-0.5">Beli 2 Pcs Gratis 1 Gula Gulaku 500g!</p>
+            </div>
+            <div class="pt-2 flex items-baseline gap-2 font-mono-num">
+              <span class="text-lg font-black text-emerald-800">Rp 38.000</span>
+              <span class="text-xs text-slate-400 line-through">Rp 44.000</span>
+            </div>
+          </div>
+
+          <!-- Promo 2 -->
+          <div class="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start">
+                <span class="text-3xl">☕</span>
+                <span class="px-2 py-0.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase">MEMBER ONLY</span>
+              </div>
+              <h4 class="font-black text-slate-900 mt-2 text-sm">Kopi Kapal Api Mix 10s</h4>
+              <p class="text-xs text-slate-500 mt-0.5">Diskon langsung Rp 2.000 per renceng.</p>
+            </div>
+            <div class="pt-2 flex items-baseline gap-2 font-mono-num">
+              <span class="text-lg font-black text-emerald-800">Rp 10.000</span>
+              <span class="text-xs text-slate-400 line-through">Rp 12.000</span>
+            </div>
+          </div>
+
+          <!-- Promo 3 -->
+          <div class="bg-blue-50/70 p-4 rounded-2xl border border-blue-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start">
+                <span class="text-3xl">🌾</span>
+                <span class="px-2 py-0.5 bg-blue-700 text-white rounded text-[10px] font-black uppercase">BEST SELLER</span>
+              </div>
+              <h4 class="font-black text-slate-900 mt-2 text-sm">Beras Pandan Wangi 5kg</h4>
+              <p class="text-xs text-slate-500 mt-0.5">Pulen, wangi alami, kemasan higienis.</p>
+            </div>
+            <div class="pt-2 flex items-baseline gap-2 font-mono-num">
+              <span class="text-lg font-black text-emerald-800">Rp 74.500</span>
+              <span class="text-xs text-slate-400 line-through">Rp 79.000</span>
+            </div>
+          </div>
+
+          <!-- Promo 4 -->
+          <div class="bg-purple-50/70 p-4 rounded-2xl border border-purple-200/80 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start">
+                <span class="text-3xl">🥚</span>
+                <span class="px-2 py-0.5 bg-purple-700 text-white rounded text-[10px] font-black uppercase">HARGA GROSIR</span>
+              </div>
+              <h4 class="font-black text-slate-900 mt-2 text-sm">Telur Ayam Negeri 1 Piring</h4>
+              <p class="text-xs text-slate-500 mt-0.5">Segar pilihan peternakan lokal terpercaya.</p>
+            </div>
+            <div class="pt-2 flex items-baseline gap-2 font-mono-num">
+              <span class="text-lg font-black text-emerald-800">Rp 52.000</span>
+              <span class="text-xs text-slate-400 line-through">Rp 56.000</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+
+    <!-- ============================================================ -->
+    <!-- VIEW C: SUCCESS / TRANSAKSI SELESAI                          -->
+    <!-- ============================================================ -->
+    <div id="viewSuccess" class="hidden flex-1 min-h-0 bg-white rounded-3xl p-8 shadow-sm border border-slate-200/90 flex flex-col items-center justify-center text-center space-y-5">
+      <div class="w-24 h-24 rounded-full bg-emerald-100 border-4 border-emerald-500 flex items-center justify-center text-5xl text-emerald-600 shadow-md animate-bounce">
+        ✓
+      </div>
+      <div>
+        <h2 class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">Transaksi Selesai!</h2>
+        <p class="text-base text-slate-600 mt-1">Terima kasih telah berbelanja di <strong class="text-emerald-800 font-black">Toko Berkah Jaya</strong>.</p>
+      </div>
+
+      <div class="w-full max-w-md bg-slate-50 border border-slate-200 rounded-3xl p-6 text-sm space-y-3 text-left shadow-xs">
+        <div class="flex justify-between border-b border-slate-200 pb-2">
+          <span class="text-slate-500">Nomor Nota Struk:</span>
+          <span class="font-mono-num font-bold text-slate-900" id="dispSuccessInvoice">INV-20261110-0089</span>
+        </div>
+        <div class="flex justify-between border-b border-slate-200 pb-2">
+          <span class="text-slate-500">Total Pembayaran:</span>
+          <span class="font-mono-num font-black text-slate-900 text-xl" id="dispSuccessTotal">Rp 114.000</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Status Pembayaran:</span>
+          <span class="font-black text-emerald-700" id="dispSuccessMethod">LUNAS - Tunai (Kembali Rp 36.000)</span>
+        </div>
+      </div>
+
+      <div class="text-sm text-slate-500 pt-2">
+        Layar akan kembali otomatis ke tampilan awal dalam <span id="successCountdown" class="font-black text-emerald-700 text-base">6</span> detik...
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ============================================================== -->
+  <!-- 3. RUNNING MARQUEE FOOTER TICKER                               -->
+  <!-- ============================================================== -->
+  <footer class="mt-3 w-full bg-white rounded-2xl p-3 shadow-sm border border-slate-200/90 flex items-center gap-4 shrink-0">
+    <div class="flex items-center gap-2 bg-emerald-700 text-white px-4 py-2 rounded-xl shrink-0 shadow-xs">
+      <span class="material-symbols-outlined text-[20px] text-emerald-200">campaign</span>
+      <span class="text-xs uppercase tracking-wider font-black">INFO PROMO</span>
+    </div>
+    
+    <div class="relative w-full overflow-hidden whitespace-nowrap">
+      <div class="animate-marquee">
+        <span class="text-sm font-semibold text-slate-800 tracking-wide">
+          📢 Buka Setiap Hari Pukul 07.00 - 22.00 WITA • Melayani Grosir & Eceran • Belanja Hemat Poin Berlimpah Bersama Member Toko Berkah Jaya! • Bebas Biaya Transaksi QRIS Semua Bank & E-Wallet • Layanan WhatsApp Kasir: 0812-5555-8900
+        </span>
+      </div>
+    </div>
+  </footer>
+
+
+  <!-- ============================================================== -->
+  <!-- 4. JAVASCRIPT: REALTIME SYNC & DEMO ENGINE                     -->
+  <!-- ============================================================== -->
+  <script>
+    // ==============================================================
+    // 0. TELEMETRY & ERROR TRACKING FOR CUSTOMER DISPLAY
+    // ==============================================================
+    window.addEventListener('error', function(event) {
+      console.error('[CustomerDisplay Error]', event.message, event.filename, event.lineno);
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          var errChannel = new BroadcastChannel('ketoko_error_channel');
+          errChannel.postMessage({
+            type: 'NEW_ERROR',
+            payload: {
+              id: 'err-cd-' + Date.now(),
+              timestamp: new Date().toLocaleTimeString('id-ID', { hour12: false }) + ' WITA',
+              timeEpoch: Date.now(),
+              severity: 'CRITICAL',
+              module: 'CUSTOMER_DISPLAY',
+              message: event.message || 'Customer Display Runtime Error',
+              stack: event.error ? event.error.stack : (event.filename + ':' + event.lineno),
+              url: window.location.href,
+              userAgent: navigator.userAgent,
+              isResolved: false
+            }
+          });
+          errChannel.close();
+        }
+      } catch (e) {}
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+      console.error('[CustomerDisplay UnhandledRejection]', event.reason);
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          var errChannel = new BroadcastChannel('ketoko_error_channel');
+          errChannel.postMessage({
+            type: 'NEW_ERROR',
+            payload: {
+              id: 'err-cd-rej-' + Date.now(),
+              timestamp: new Date().toLocaleTimeString('id-ID', { hour12: false }) + ' WITA',
+              timeEpoch: Date.now(),
+              severity: 'WARNING',
+              module: 'CUSTOMER_DISPLAY',
+              message: String(event.reason || 'Unhandled Promise in Customer Display'),
+              url: window.location.href,
+              userAgent: navigator.userAgent,
+              isResolved: false
+            }
+          });
+          errChannel.close();
+        }
+      } catch (e) {}
+    });
+
+    const demoItems = [
+      { name: "Minyak Goreng Bimoli Spesial 2L", qty: 2, price: 38000, subtotal: 76000, unit: "Pcs", code: "899234510023", desc: "Pouch Refill 2 Liter", icon: "shopping_bag" },
+      { name: "Gula Pasir Gulaku Tebu Murni 1kg", qty: 2, price: 16500, subtotal: 33000, unit: "Bks", code: "899554320119", desc: "Kemasan Hijau Premium", icon: "nutrition" },
+      { name: "Kopi Kapal Api Spesial Mix 10×25g", qty: 1, price: 10000, subtotal: 10000, unit: "Bks", code: "899120938411", desc: "Renceng Praktis Ekonomis", icon: "coffee" }
+    ];
+
+    let currentSession = {
+      state: 'cash',
+      items: demoItems,
+      customerName: 'Bpk. Bambang Suherman',
+      discount: 5000,
+      tax: 0,
+      tendered: 150000,
+      invoiceNo: 'INV-20261110-0089',
+      paymentMethod: 'CASH'
+    };
+
+    let countdownTimer = null;
+
+    function formatRupiah(num) {
+      return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+    }
+
+    function terbilangRupiah(angka) {
+      const bilangan = ['', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+      angka = Math.floor(Math.abs(angka));
+
+      function sebut(x) {
+        if (x < 12) return bilangan[x];
+        if (x < 20) return sebut(x - 10) + ' Belas';
+        if (x < 100) return sebut(Math.floor(x / 10)) + ' Puluh ' + sebut(x % 10);
+        if (x < 200) return 'Seratus ' + sebut(x - 100);
+        if (x < 1000) return sebut(Math.floor(x / 100)) + ' Ratus ' + sebut(x % 100);
+        if (x < 2000) return 'Seribu ' + sebut(x - 1000);
+        if (x < 1000000) return sebut(Math.floor(x / 1000)) + ' Ribu ' + sebut(x % 1000);
+        if (x < 1000000000) return sebut(Math.floor(x / 1000000)) + ' Juta ' + sebut(x % 1000000);
+        return String(x);
+      }
+
+      if (angka === 0) return '“Nol Rupiah”';
+      const hasil = sebut(angka).replace(/\s+/g, ' ').trim();
+      return `“${hasil} Ribu Rupiah”`.replace('Ribu Ribu', 'Ribu');
+    }
+
+    function renderCartTable() {
+      const container = document.getElementById('cartItemsList');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let totalQty = 0;
+      let subtotal = 0;
+
+      currentSession.items.forEach((item, index) => {
+        totalQty += Number(item.qty || 1);
+        const itemSubtotal = item.subtotal || (item.qty * item.price);
+        subtotal += itemSubtotal;
+
+        const isLastItem = index === currentSession.items.length - 1;
+        const iconName = item.icon || (index % 2 === 0 ? 'shopping_bag' : 'nutrition');
+
+        const rowCard = document.createElement('div');
+        rowCard.className = `grid grid-cols-12 gap-3 px-4 py-3.5 rounded-2xl items-center transition-all border ${
+          isLastItem 
+            ? 'border-2 border-emerald-500 row-highlight-new shadow-xs' 
+            : 'border-slate-200/80 bg-white hover:bg-slate-50'
+        }`;
+
+        rowCard.innerHTML = `
+          <!-- 1. Nomor Urut -->
+          <div class="col-span-1 text-center">
+            <span class="inline-flex w-8 h-8 rounded-full items-center justify-center font-mono-num font-black text-xs sm:text-sm ${isLastItem ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}">
+              ${index + 1}
+            </span>
+          </div>
+
+          <!-- 2. Deskripsi Produk -->
+          <div class="col-span-5 flex items-center gap-3.5">
+            <div class="w-11 h-11 rounded-xl ${isLastItem ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-emerald-800'} flex items-center justify-center shrink-0 shadow-xs">
+              <span class="material-symbols-outlined text-[24px]">${iconName}</span>
+            </div>
+            <div class="flex flex-col min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-black text-base sm:text-lg text-slate-900 truncate leading-snug">${item.name}</span>
+                ${isLastItem ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider">BARU DI-SCAN</span>' : ''}
+              </div>
+              <div class="flex items-center gap-2 mt-0.5 text-xs sm:text-sm text-slate-400 font-medium">
+                <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-bold text-xs">${item.code || item.barcode || 'SKU-00' + (index + 1)}</span>
+                <span>• ${item.desc || 'Kemasan ' + (item.unit || 'Pcs')}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Harga Satuan -->
+          <div class="col-span-2 text-center font-mono-num font-bold text-slate-700 text-sm sm:text-base">
+            ${formatRupiah(item.price)}
+          </div>
+
+          <!-- 4. Kuantitas (Badge Pill) -->
+          <div class="col-span-2 text-center">
+            <span class="inline-block px-3.5 py-1.5 rounded-xl font-mono-num font-black text-sm sm:text-base ${isLastItem ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-slate-100 text-slate-800 border border-slate-200'}">
+              ${item.qty} ${item.unit || 'Pcs'}
+            </span>
+          </div>
+
+          <!-- 5. Subtotal -->
+          <div class="col-span-2 text-right">
+            <span class="font-mono-num font-black text-lg sm:text-xl ${isLastItem ? 'text-emerald-700' : 'text-slate-900'}">
+              ${formatRupiah(itemSubtotal)}
+            </span>
+          </div>
+        `;
+
+        container.appendChild(rowCard);
+      });
+
+      // Update counters & totals
+      document.getElementById('badgeItemCount').innerHTML = `${currentSession.items.length} Produk <span class="text-slate-400 font-normal">(${totalQty} Pcs)</span>`;
+      document.getElementById('dispSummaryQty').innerText = `Subtotal Belanja (${totalQty} Pcs)`;
+      document.getElementById('dispSubtotal').innerText = formatRupiah(subtotal);
+      document.getElementById('dispDiscount').innerText = '-' + formatRupiah(currentSession.discount);
+      document.getElementById('dispTax').innerText = formatRupiah(currentSession.tax);
+
+      const grandTotal = Math.max(0, subtotal - currentSession.discount + currentSession.tax);
+      document.getElementById('dispGrandTotal').innerText = formatRupiah(grandTotal);
+      document.getElementById('dispSpelledAmount').innerText = terbilangRupiah(grandTotal);
+      document.getElementById('dispQrisNominal').innerText = formatRupiah(grandTotal);
+
+      // Cash calculations
+      const tendered = currentSession.tendered || grandTotal;
+      const change = Math.max(0, tendered - grandTotal);
+      document.getElementById('dispCashTendered').innerText = formatRupiah(tendered);
+      document.getElementById('dispCashChange').innerText = formatRupiah(change);
+      document.getElementById('dispChangeSpelled').innerText = `(${terbilangRupiah(change).replace(/[“”]/g, '')})`;
+
+      // Update card balances
+      updateCardBalances(grandTotal);
+
+      // Customer name
+      if (currentSession.customerName) {
+        document.getElementById('dispCustomerName').innerText = currentSession.customerName;
+      }
+
+      // Success screen
+      document.getElementById('dispSuccessTotal').innerText = formatRupiah(grandTotal);
+      document.getElementById('dispSuccessInvoice').innerText = currentSession.invoiceNo;
+      document.getElementById('dispSuccessMethod').innerText = currentSession.paymentMethod === 'QRIS' 
+        ? 'LUNAS - QRIS Dinamis' 
+        : `LUNAS - Tunai (Kembali ${formatRupiah(change)})`;
+    }
+
+    let activeCardModel = 'prepaid'; // 'prepaid' (Saldo Dompet) or 'payroll' (Plafon Gaji)
+    const cardData = {
+      prepaidBalance: 500000,
+      payrollLimit: 1500000,
+      holderName: 'Bpk. Bambang Suherman',
+      nik: 'MBR-06892',
+      qrDataUrl: ''
+    };
+
+    const CODE128_PATTERNS = [
+      212222, 222122, 222221, 121223, 121322, 131222, 122213, 122312, 132212, 221213,
+      221312, 231212, 112232, 122132, 122231, 113222, 123122, 123221, 223211, 221132,
+      221231, 213212, 223112, 312131, 311222, 321122, 321221, 312212, 322112, 322211,
+      212123, 212321, 232121, 111323, 131123, 131321, 112313, 132113, 132311, 211313,
+      231113, 231311, 112133, 112331, 132131, 113123, 113321, 133121, 313121, 211331,
+      231131, 213113, 213311, 213131, 311123, 311321, 331121, 312113, 312311, 332111,
+      314111, 221411, 431111, 111224, 111422, 121124, 121421, 141122, 141221, 112214,
+      112412, 122114, 122411, 142112, 142211, 241211, 221114, 413111, 241112, 134111,
+      111242, 121142, 121241, 114212, 124112, 124211, 411212, 421112, 421211, 212141,
+      214121, 412121, 111143, 111341, 131141, 114113, 114311, 411113, 411311, 113141,
+      114131, 311141, 411131, 211412, 211214, 211232, 2331112
+    ];
+
+    function generateCode128Svg(code, height = 18) {
+      const cleanCode = (code || 'MBR-001').trim();
+      const patternIndices = [104];
+      let checkSum = 104;
+
+      for (let i = 0; i < cleanCode.length; i++) {
+        const charCode = cleanCode.charCodeAt(i) - 32;
+        const val = Math.max(0, Math.min(charCode, 95));
+        patternIndices.push(val);
+        checkSum += val * (i + 1);
+      }
+
+      const checkDigit = checkSum % 103;
+      patternIndices.push(checkDigit);
+      patternIndices.push(106);
+
+      let binaryBars = '';
+      for (const idx of patternIndices) {
+        const pattern = CODE128_PATTERNS[idx] || CODE128_PATTERNS[0];
+        const digits = String(pattern);
+        for (let d = 0; d < digits.length; d++) {
+          const width = Number(digits[d]);
+          const isBar = d % 2 === 0;
+          binaryBars += (isBar ? '1' : '0').repeat(width);
+        }
+      }
+
+      const barWidth = 1.2;
+      const totalWidth = binaryBars.length * barWidth;
+      let paths = '';
+
+      for (let i = 0; i < binaryBars.length; i++) {
+        if (binaryBars[i] === '1') {
+          const x = i * barWidth;
+          paths += `<rect x="${x}" y="0" width="${barWidth}" height="${height}" fill="#000000" />`;
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${height}" style="height: 100%; width: 100%; display: block;" preserveAspectRatio="none">${paths}</svg>`;
+    }
+
+    function generateDefaultQrSvg(label) {
+      return "data:image/svg+xml;utf8," + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges">
+          <rect width="29" height="29" fill="#ffffff"/>
+          <rect x="2" y="2" width="7" height="7" fill="#0f172a"/>
+          <rect x="3" y="3" width="5" height="5" fill="#ffffff"/>
+          <rect x="4" y="4" width="3" height="3" fill="#0f172a"/>
+          <rect x="20" y="2" width="7" height="7" fill="#0f172a"/>
+          <rect x="21" y="3" width="5" height="5" fill="#ffffff"/>
+          <rect x="22" y="4" width="3" height="3" fill="#0f172a"/>
+          <rect x="2" y="20" width="7" height="7" fill="#0f172a"/>
+          <rect x="3" y="21" width="5" height="5" fill="#ffffff"/>
+          <rect x="4" y="22" width="3" height="3" fill="#0f172a"/>
+          <rect x="10" y="4" width="8" height="1" fill="#0f172a"/>
+          <rect x="4" y="10" width="1" height="8" fill="#0f172a"/>
+          <rect x="11" y="11" width="3" height="3" fill="#0f172a"/>
+          <rect x="15" y="11" width="2" height="4" fill="#0f172a"/>
+          <rect x="11" y="15" width="4" height="2" fill="#0f172a"/>
+          <rect x="18" y="14" width="3" height="5" fill="#0f172a"/>
+          <rect x="14" y="20" width="4" height="2" fill="#0f172a"/>
+          <rect x="20" y="20" width="3" height="3" fill="#0f172a"/>
+          <rect x="24" y="11" width="3" height="4" fill="#0f172a"/>
+          <rect x="11" y="23" width="5" height="2" fill="#0f172a"/>
+          <rect x="23" y="23" width="4" height="4" fill="#0f172a"/>
+        </svg>
+      `);
+    }
+
+    function updateCardVisuals() {
+      const elHolder = document.getElementById('dispCardHolder');
+      const elNik = document.getElementById('dispCardNik');
+      const elBarcodeSvg = document.getElementById('dispCardBarcodeSvg');
+      const elQrImg = document.getElementById('dispCardQrImg');
+
+      if (elHolder) elHolder.innerText = cardData.holderName || 'Bpk. Bambang Suherman';
+      if (elNik) elNik.innerText = cardData.nik || 'MBR-06892';
+      if (elBarcodeSvg) elBarcodeSvg.innerHTML = generateCode128Svg(cardData.nik || 'MBR-06892', 18);
+      if (elQrImg) {
+        elQrImg.src = cardData.qrDataUrl || generateDefaultQrSvg(cardData.nik || 'MBR-06892');
+      }
+    }
+
+    function updateCardBalances(grandTotalVal) {
+      const gTotal = grandTotalVal !== undefined ? grandTotalVal : 114000;
+      const elSaldoAwal = document.getElementById('dispSaldoAwal');
+      const elLabelAwal = document.getElementById('labelSaldoAwal');
+      const elPotongan = document.getElementById('dispPotonganBelanja');
+      const elSisa = document.getElementById('dispSisaSaldo');
+      const elLabelSisa = document.getElementById('labelSisaSaldo');
+      const elSpelled = document.getElementById('dispSisaSaldoSpelled');
+      const elNote = document.getElementById('dispCardNote');
+
+      if (!elSisa) return;
+
+      elPotongan.innerText = '-' + formatRupiah(gTotal);
+
+      if (activeCardModel === 'prepaid') {
+        const sisa = Math.max(0, cardData.prepaidBalance - gTotal);
+        elLabelAwal.innerText = "Saldo Simpanan Awal:";
+        elSaldoAwal.innerText = formatRupiah(cardData.prepaidBalance);
+        elLabelSisa.innerText = "SISA SALDO SIMPANAN ANDA";
+        elSisa.innerText = formatRupiah(sisa);
+        elSpelled.innerText = `(${terbilangRupiah(sisa).replace(/[“”]/g, '')})`;
+        elNote.innerText = "Otomatis Terpotong • Struk Resmi Tercetak";
+      } else {
+        const sisaPlafon = Math.max(0, cardData.payrollLimit - gTotal);
+        elLabelAwal.innerText = "Plafon Belanja Bulanan:";
+        elSaldoAwal.innerText = formatRupiah(cardData.payrollLimit);
+        elLabelSisa.innerText = "SISA PLAFON BELANJA BULAN INI";
+        elSisa.innerText = formatRupiah(sisaPlafon);
+        elSpelled.innerText = `(${terbilangRupiah(sisaPlafon).replace(/[“”]/g, '')})`;
+        elNote.innerText = "Akan dipotong otomatis pada Payroll Gaji akhir bulan";
+      }
+    }
+
+    function setCardModel(model) {
+      activeCardModel = model;
+      const btnPre = document.getElementById('btnModelPrepaid');
+      const btnPay = document.getElementById('btnModelPayroll');
+      if (model === 'prepaid') {
+        btnPre.className = "px-2.5 py-1 rounded-lg bg-white text-indigo-900 shadow-2xs transition-all font-extrabold";
+        btnPay.className = "px-2.5 py-1 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+      } else {
+        btnPay.className = "px-2.5 py-1 rounded-lg bg-white text-indigo-900 shadow-2xs transition-all font-extrabold";
+        btnPre.className = "px-2.5 py-1 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+      }
+      const totalText = document.getElementById('dispGrandTotal')?.innerText?.replace(/[^0-9]/g, '');
+      const grandTotal = parseInt(totalText || '114000', 10);
+      updateCardBalances(grandTotal);
+    }
+
+    function setUiState(state) {
+      currentSession.state = state;
+      clearInterval(countdownTimer);
+
+      const vActive = document.getElementById('viewActiveSession');
+      const vStandby = document.getElementById('viewStandby');
+      const vSuccess = document.getElementById('viewSuccess');
+
+      const pScan = document.getElementById('subScanningPanel');
+      const pCard = document.getElementById('subCardPanel');
+      const pQris = document.getElementById('subQrisPanel');
+      const pCash = document.getElementById('subCashPanel');
+      const pBadge = document.getElementById('dispPaymentBadge');
+
+      // Reset state buttons
+      const stateBtns = ['btnStateScanning', 'btnStateCard', 'btnStateCash', 'btnStateQris', 'btnStateStandby', 'btnStateSuccess'];
+      stateBtns.forEach(id => {
+        const b = document.getElementById(id);
+        if (b) {
+          b.className = "px-3.5 py-1.5 rounded-xl font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all active:scale-95 flex items-center gap-1.5";
+        }
+      });
+
+      // Highlight active button
+      const activeBtnId = 'btnState' + state.charAt(0).toUpperCase() + state.slice(1);
+      const activeBtn = document.getElementById(activeBtnId);
+      if (activeBtn) {
+        const isCard = state === 'card';
+        activeBtn.className = `px-3.5 py-1.5 rounded-xl font-bold ${isCard ? 'bg-indigo-600' : 'bg-emerald-600'} text-white shadow-xs transition-all active:scale-95 flex items-center gap-1.5`;
+      }
+
+      // Hide all main containers
+      vActive.classList.add('hidden');
+      vStandby.classList.add('hidden');
+      vSuccess.classList.add('hidden');
+
+      // Hide subpanels
+      pScan.classList.add('hidden');
+      if (pCard) pCard.classList.add('hidden');
+      pQris.classList.add('hidden');
+      pCash.classList.add('hidden');
+
+      if (state === 'card') {
+        vActive.classList.remove('hidden');
+        if (pCard) pCard.classList.remove('hidden');
+        pBadge.innerText = "KARTU KOPERASI (ATM)";
+        renderCartTable();
+      } else if (state === 'scanning') {
+        vActive.classList.remove('hidden');
+        pScan.classList.remove('hidden');
+        pBadge.innerText = "SEDANG SCAN";
+        renderCartTable();
+      } else if (state === 'cash') {
+        vActive.classList.remove('hidden');
+        pCash.classList.remove('hidden');
+        pBadge.innerText = "TUNAI / CASH";
+        renderCartTable();
+      } else if (state === 'qris') {
+        vActive.classList.remove('hidden');
+        pQris.classList.remove('hidden');
+        pBadge.innerText = "QRIS DINAMIS";
+        renderCartTable();
+      } else if (state === 'standby') {
+        vStandby.classList.remove('hidden');
+      } else if (state === 'success') {
+        vSuccess.classList.remove('hidden');
+        let count = 6;
+        document.getElementById('successCountdown').innerText = count;
+        countdownTimer = setInterval(() => {
+          count--;
+          document.getElementById('successCountdown').innerText = count;
+          if (count <= 0) {
+            clearInterval(countdownTimer);
+            setUiState('standby');
+          }
+        }, 1000);
+      }
+    }
+
+    function toggleToolbar() {
+      const tb = document.getElementById('simToolbar');
+      const btnShow = document.getElementById('btnShowToolbar');
+      if (tb.classList.contains('hidden')) {
+        tb.classList.remove('hidden');
+        btnShow.classList.add('hidden');
+      } else {
+        tb.classList.add('hidden');
+        btnShow.classList.remove('hidden');
+      }
+    }
+
+    function updateLiveClock() {
+      const clockEl = document.getElementById('live-clock');
+      if (!clockEl) return;
+      const now = new Date();
+      
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      
+      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      
+      const dayName = days[now.getDay()];
+      const dayNum = now.getDate();
+      const monthName = months[now.getMonth()];
+      const year = now.getFullYear();
+      
+      clockEl.textContent = `${hours}:${minutes}:${seconds} WITA • ${dayName}, ${dayNum} ${monthName} ${year}`;
+    }
+    setInterval(updateLiveClock, 1000);
+    updateLiveClock();
+
+    // Cross-Tab Broadcast Synchronization
+    try {
+      const broadcastChannel = new BroadcastChannel('ketoko_customer_display');
+      broadcastChannel.onmessage = (event) => {
+        const data = event.data;
+        if (!data) return;
+
+        const statusEl = document.getElementById('connStatus');
+        if (statusEl) {
+          statusEl.innerText = "● Terhubung Live Kasir";
+          statusEl.className = "text-emerald-700 font-extrabold";
+        }
+
+        if (data.type === 'CART_UPDATE') {
+          currentSession.items = data.items || [];
+          currentSession.discount = data.discount || 0;
+          currentSession.tax = data.tax || 0;
+          currentSession.customerName = data.customerName || 'Pelanggan Umum';
+          if (data.memberId) {
+            cardData.nik = data.memberId;
+          }
+          if (data.customerName && data.customerName !== 'Pelanggan Umum') {
+            cardData.holderName = data.customerName;
+          }
+          updateCardVisuals();
+          if (currentSession.items.length > 0) {
+            setUiState('scanning');
+          } else {
+            setUiState('standby');
+          }
+        } else if (data.type === 'PAYMENT_START') {
+          if (data.method === 'QRIS') {
+            setUiState('qris');
+          } else if (data.method === 'CARD' || data.method === 'KOPERASI') {
+            if (data.card) {
+              if (data.card.holderName) cardData.holderName = data.card.holderName;
+              if (data.card.nik) cardData.nik = data.card.nik;
+              if (data.card.balance !== undefined) cardData.prepaidBalance = data.card.balance;
+              if (data.card.limit !== undefined) cardData.payrollLimit = data.card.limit;
+              if (data.card.qrDataUrl) cardData.qrDataUrl = data.card.qrDataUrl;
+            }
+            updateCardVisuals();
+            setUiState('card');
+          } else {
+            currentSession.tendered = data.tendered || 0;
+            setUiState('cash');
+          }
+        } else if (data.type === 'CARD_TAP') {
+          if (data.card) {
+            if (data.card.holderName) cardData.holderName = data.card.holderName;
+            if (data.card.nik) cardData.nik = data.card.nik;
+            if (data.card.balance !== undefined) cardData.prepaidBalance = data.card.balance;
+            if (data.card.limit !== undefined) cardData.payrollLimit = data.card.limit;
+            if (data.card.qrDataUrl) cardData.qrDataUrl = data.card.qrDataUrl;
+          }
+          updateCardVisuals();
+          setUiState('card');
+        } else if (data.type === 'TRANSACTION_SUCCESS') {
+          currentSession.invoiceNo = data.invoiceNo || 'INV-SUCCESS';
+          currentSession.paymentMethod = data.paymentMethod || 'CASH';
+          setUiState('success');
+        } else if (data.type === 'RESET') {
+          setUiState('standby');
+        }
+      };
+    } catch (e) {
+      console.warn('BroadcastChannel error:', e);
+    }
+
+    // Default start at Card mode for instant client demonstration
+    updateCardVisuals();
+    setUiState('card');
+  </script>
+</body>
+</html>

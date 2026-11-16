@@ -227,6 +227,18 @@ export function getSupabaseClient(customUrl?: string, customKey?: string): Supab
       auth: {
         persistSession: true,
         autoRefreshToken: true
+      },
+      global: {
+        fetch: (input, init) => {
+          // Timeout proteksi: Maksimal 8 detik per request HTTP ke Supabase
+          if (init?.signal) {
+            return fetch(input, init);
+          }
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          return fetch(input, { ...init, signal: controller.signal })
+            .finally(() => clearTimeout(timeoutId));
+        }
       }
     });
     clientCache.set(cacheKey, client);

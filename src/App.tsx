@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { KeyRound, ShieldAlert, X } from 'lucide-react';
+import { KeyRound, ShieldAlert, X, MessageSquare } from 'lucide-react';
 import { useCart } from './hooks/useCart';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
 import { api } from './api/client';
 import { syncService } from './services/syncService';
-import type { Product, Transaction, User, DebtItem, ReceivableItem } from './types';
+import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation } from './types';
+import { formatRupiah } from './services/escposService';
+import { getStoreDisplayName } from './utils/customerAccess';
 
 import { Navbar } from './components/Navbar';
 import { TopMenuBar, type NavView } from './components/TopMenuBar';
@@ -38,15 +40,50 @@ import { AppUpdateNotifierModal } from './components/AppUpdateNotifierModal';
 import { checkForAppUpdates, type AppVersionInfo } from './services/updateService';
 import { LanSettingsModal } from './components/LanSettingsModal';
 import { lanService } from './services/lanService';
+import QRCode from 'qrcode';
 import { SuperadminPortalView } from './components/SuperadminPortalView';
 import { usePWA } from './hooks/usePWA';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { ErrorMonitoringModal } from './components/ErrorMonitoringModal';
+import { CashierHelpChatModal } from './components/CashierHelpChatModal';
 import { 
   resolveStoreFromCurrentHost, 
   fetchStoresFromCloud, 
-  saveStoresList 
+  saveStoresList,
+  getStoredStores
 } from './services/storeRegistry';
+import { checkCustomerBranchAccess, normalizeStoreId } from './utils/customerAccess';
+
+function resolveInitialTerminalStore() {
+  const hostStore = resolveStoreFromCurrentHost();
+  const stores = getStoredStores();
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryStoreId = urlParams.get('store')?.trim();
+    if (queryStoreId) {
+      const matchedQuery = stores.find((s) => s.id === queryStoreId);
+      return matchedQuery || { ...hostStore, id: queryStoreId, name: queryStoreId, branch: queryStoreId };
+    }
+    const hostname = window.location.hostname.toLowerCase();
+    const isGenericHost =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.') ||
+      hostname.endsWith('.localhost');
+
+    if (isGenericHost && hostStore.id === 'store-01') {
+      const savedId = localStorage.getItem('ketoko_active_store_id')?.trim();
+      if (savedId && savedId !== 'store-01') {
+        const matchedSaved = stores.find((s) => s.id === savedId);
+        return matchedSaved || { ...hostStore, id: savedId, name: savedId, branch: savedId };
+      }
+    }
+  } catch {}
+  return hostStore;
+}
 
 export const App: React.FC = () => {
   // Navigation View ('pos' | 'dashboard' | 'inventory' | 'products' | 'settings' | 'superadmin')
@@ -121,12 +158,22 @@ export const App: React.FC = () => {
   const [devPinInput, setDevPinInput] = useState('');
   const [devPinError, setDevPinError] = useState('');
 
-  // Global Developer Shortcut: Ctrl + Shift + S to trigger Superadmin unlock
+  // Error Monitoring Modal State
+  const [isErrorMonitoringOpen, setIsErrorMonitoringOpen] = useState(false);
+
+  // Cashier Help & Bug Report Chat State
+  const [isHelpChatOpen, setIsHelpChatOpen] = useState(false);
+
+  // Global Developer Shortcut: Ctrl + Shift + S (Superadmin), Ctrl + Shift + E (Error Monitoring)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
         e.preventDefault();
         setIsDevPinModalOpen(true);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
+        e.preventDefault();
+        setIsErrorMonitoringOpen(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -149,9 +196,9 @@ export const App: React.FC = () => {
   const [isStoreSettingsOpen, setIsStoreSettingsOpen] = useState(false);
   const [storeSettingsTab, setStoreSettingsTab] = useState<'profile' | 'theme' | 'csv' | 'backup' | 'users'>('profile');
 
-  // Active Store Tracking (Dynamic Host Detection)
+  // Active Store Tracking (Dynamic Host Detection + Local Terminal Override)
   const [activeStoreId, setActiveStoreId] = useState<string>(() => {
-    const store = resolveStoreFromCurrentHost();
+    const store = resolveInitialTerminalStore();
     return store.id;
   });
 
@@ -163,7 +210,7 @@ export const App: React.FC = () => {
     owner_name?: string;
     phone?: string;
   }>(() => {
-    const store = resolveStoreFromCurrentHost();
+    const store = resolveInitialTerminalStore();
     try {
       localStorage.setItem('ketoko_active_store_id', store.id);
       localStorage.setItem('ketoko_is_clean_store', store.isClean ? 'true' : 'false');
@@ -235,7 +282,10 @@ export const App: React.FC = () => {
     items: cartItems,
     memberId,
     customerName,
+    setCustomerName,
     setMemberId,
+    memberBlockedInfo,
+    clearMemberBlockedInfo,
     taxEnabled,
     setTaxEnabled,
     taxRate,
@@ -250,7 +300,7 @@ export const App: React.FC = () => {
     taxAmount,
     grandTotal,
     totalItemCount
-  } = useCart();
+  } = useCart(activeStoreId);
 
   // Listen for global tax rate updates
   useEffect(() => {
@@ -262,6 +312,20 @@ export const App: React.FC = () => {
     window.addEventListener('ketoko_tax_rate_changed', handleTaxRateChanged);
     return () => window.removeEventListener('ketoko_tax_rate_changed', handleTaxRateChanged);
   }, [setTaxRate]);
+
+  // Listen for active terminal branch switch from StoreSettingsModal
+  useEffect(() => {
+    const handleStoreChanged = (e: any) => {
+      const nextStoreId = normalizeStoreId(e?.detail);
+      setActiveStoreId(nextStoreId);
+      try {
+        localStorage.setItem('ketoko_active_store_id', nextStoreId);
+      } catch {}
+      syncService.resetCloudLiveChannel();
+    };
+    window.addEventListener('ketoko_active_store_changed', handleStoreChanged);
+    return () => window.removeEventListener('ketoko_active_store_changed', handleStoreChanged);
+  }, []);
 
   // Auto-detect store from subdomain (e.g. https://tokoberkah.ketokopos.online)
   useEffect(() => {
@@ -322,6 +386,18 @@ export const App: React.FC = () => {
 
   const isSyncingRef = useRef(false);
 
+  // Safety watchdog: jika isSyncing aktif lebih dari 8 detik karena alasan apapun, paksa kembali ke normal (anti-nyangkut)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isSyncing) {
+      timer = setTimeout(() => {
+        setIsSyncing(false);
+        isSyncingRef.current = false;
+      }, 8000);
+    }
+    return () => clearTimeout(timer);
+  }, [isSyncing]);
+
   // Sync products from Central LAN Server (if client mode)
   const syncProductsFromLanServer = useCallback(async () => {
     try {
@@ -378,7 +454,7 @@ export const App: React.FC = () => {
         return;
       }
 
-      if (lanService.isClientMode()) {
+      if (lanService.isLanActive()) {
         try {
           const serverProds = await lanService.fetchCentralProducts();
           if (serverProds && serverProds.length > 0) {
@@ -525,27 +601,19 @@ export const App: React.FC = () => {
     try {
       const currentHostStore = resolveStoreFromCurrentHost();
       const activeStore = localStorage.getItem('ketoko_active_store_id') || currentHostStore.id;
-      const isCleanStore = localStorage.getItem('ketoko_is_clean_store') === 'true' || (activeStore !== 'store-01' && currentHostStore.isClean);
 
-      // Clean store strictly has 0 transactions
-      if (isCleanStore && activeStore !== 'store-01') {
-        setTransactions([]);
-        return [];
-      }
-
-      if (lanService.isClientMode()) {
-        try {
-          const centralTrx = await lanService.fetchCentralTransactions(100);
-          if (centralTrx && centralTrx.length > 0) {
-            await db.transactions.bulkPut(centralTrx);
-          }
-          await lanService.fetchCustomersFromLan().catch(() => {});
-        } catch (err) {
-          console.warn('[App] Gagal fetch transaksi dari LAN Server:', err);
+      // Always try to fetch transactions from central LAN server if accessible
+      try {
+        const centralTrx = await lanService.fetchCentralTransactions(100);
+        if (centralTrx && centralTrx.length > 0) {
+          await db.transactions.bulkPut(centralTrx);
         }
+        await lanService.fetchCustomersFromLan().catch(() => {});
+      } catch (err) {
+        // LAN offline or unreachable, fallback to local IndexedDB
       }
 
-      if (navigator.onLine && !isCleanStore) {
+      if (navigator.onLine && activeStore === 'store-01') {
         await Promise.allSettled([
           syncService.pushLocalTransactionsToSupabase(),
           syncService.pullTransactionsFromSupabase(100),
@@ -608,9 +676,10 @@ export const App: React.FC = () => {
       } catch {}
     }, 2500);
 
-    // 1. Listen to Real-time SSE Stock & Transaction Updates from Central LAN Server when in Client Mode
+    // 1. Listen to Real-time SSE Stock, Customer & Transaction Updates from Central LAN Server
     let unsubSse: (() => void) | null = null;
-    if (lanService.isClientMode()) {
+    const isDirectServerOrigin = typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.startsWith('file:') && window.location.origin !== 'null';
+    if (lanService.isLanActive() || isDirectServerOrigin) {
       unsubSse = lanService.initEventSource(
         // onStockUpdate
         (updatedStocks) => {
@@ -667,14 +736,38 @@ export const App: React.FC = () => {
           db.syncQueue.delete(trxId).catch(() => {});
           setTransactions((prev) => prev.filter((t) => t.id !== trxId));
           window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+        },
+        // onCustomerUpdate (Live customer sync across LAN cashiers)
+        (cust) => {
+          if (!cust) return;
+          db.customers.put(cust).catch(() => {});
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: cust }));
+        },
+        // onCustomerDelete (Live customer sync across LAN cashiers)
+        (custId) => {
+          if (!custId) return;
+          db.customers.delete(custId).catch(() => {});
+          window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: custId } }));
         }
       );
     }
 
     // 2. Multi-tab / Same-browser Real-time BroadcastChannel sync
     let bc: BroadcastChannel | null = null;
+    let bcCust: BroadcastChannel | null = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
+        bcCust = new BroadcastChannel('ketoko_customer_sync');
+        bcCust.onmessage = (event) => {
+          if (event.data?.type === 'CUSTOMER_UPDATED' && event.data.customer) {
+            db.customers.put(event.data.customer).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: event.data.customer }));
+          } else if (event.data?.type === 'CUSTOMER_DELETED' && event.data.id) {
+            db.customers.delete(event.data.id).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: event.data.id } }));
+          }
+        };
+
         bc = new BroadcastChannel('ketoko_product_sync');
         bc.onmessage = (event) => {
           if (event.data?.type === 'product_deleted') {
@@ -859,6 +952,16 @@ export const App: React.FC = () => {
           const overdueDebts = debts.filter((d: DebtItem) => d.status !== 'PAID' && d.due_date < nowStr).length;
           const overdueRecs = recs.filter((r: ReceivableItem) => r.status !== 'PAID' && r.due_date < nowStr).length;
           setOverdueCount(overdueDebts + overdueRecs);
+        },
+        onCustomerUpdated: (cust) => {
+          if (!cust) return;
+          db.customers.put(cust).catch(() => {});
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: cust }));
+        },
+        onCustomerDeleted: (custId) => {
+          if (!custId) return;
+          db.customers.delete(custId).catch(() => {});
+          window.dispatchEvent(new CustomEvent('ketoko_customer_deleted', { detail: { id: custId } }));
         }
       });
     } catch (err) {
@@ -906,6 +1009,9 @@ export const App: React.FC = () => {
       if (bc) {
         try { bc.close(); } catch {}
       }
+      if (bcCust) {
+        try { bcCust.close(); } catch {}
+      }
       window.removeEventListener('ketoko_catalog_synced', handleCatalogSynced);
       window.removeEventListener('ketoko_product_updated', handleLocalProductUpdated);
       window.removeEventListener('ketoko_product_deleted', handleLocalProductDeleted);
@@ -914,12 +1020,27 @@ export const App: React.FC = () => {
     };
   }, [loadLocalProducts, loadTransactions, sortProductsForDisplay]);
 
-  // Auto-refresh transactions whenever admin navigates to dashboard
+  // Auto-refresh transactions whenever admin navigates to dashboard (with 5s polling interval)
   useEffect(() => {
     if (currentView === 'dashboard') {
       loadTransactions();
+      const interval = setInterval(() => {
+        loadTransactions();
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [currentView, loadTransactions]);
+
+  // Cross-tab real-time sync via storage event
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'ketoko_last_trx_sync') {
+        loadTransactions();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [loadTransactions]);
 
   // Manual & Auto-sync trigger: synchronizes transactions, restocks, debts/receivables
   const handleManualSync = useCallback(async () => {
@@ -929,35 +1050,61 @@ export const App: React.FC = () => {
     isSyncingRef.current = true;
     setIsSyncing(true);
     try {
-      await syncService.syncAllData();
+      // Timeout maksimal 12 detik agar UI tidak pernah macet/berputar lama jika cloud bermasalah
+      const result: any = await Promise.race([
+        syncService.syncAllData(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Koneksi Cloud Timeout (12 detik)')), 12000))
+      ]);
+
       const updatedTrx = await loadTransactions();
       await loadLocalProducts();
       const count = await syncService.getPendingCount();
       setPendingSyncCount(count);
 
-      const trxCount = updatedTrx ? updatedTrx.length : 0;
-      setSyncToastMessage(`✅ Sinkron Cloud Berhasil! (${trxCount} Transaksi aktif)`);
-      setTimeout(() => setSyncToastMessage(null), 3500);
+      if (result && !result.success) {
+        setSyncToastMessage(`ℹ️ ${result.message || 'Mode lokal toko aktif'}`);
+      } else {
+        const trxCount = updatedTrx ? updatedTrx.length : 0;
+        setSyncToastMessage(`✅ Sinkron Selesai! (${trxCount} Transaksi aktif)`);
+      }
+      setTimeout(() => setSyncToastMessage(null), 4000);
     } catch (e: any) {
       console.warn('Manual sync deferred:', e);
       setSyncToastMessage(`⚠️ Sinkronisasi Cloud: ${e?.message || 'Gagal terhubung'}`);
-      setTimeout(() => setSyncToastMessage(null), 3500);
+      setTimeout(() => setSyncToastMessage(null), 4000);
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
   }, [isOnline, loadTransactions, loadLocalProducts]);
 
-  // Non-blocking background sync timer & mobile wake-up listener (every 12s and on tab focus)
+  // Non-blocking background sync timer (hemat Disk IO Cloud Supabase)
   useEffect(() => {
     if (!isOnline) return;
 
-    const interval = setInterval(() => {
-      handleManualSync();
-    }, 15000);
+    // 1. Cek dan dorong transaksi offline yang masih antre setiap 60 detik (sangat ringan)
+    const queueInterval = setInterval(async () => {
+      try {
+        const pending = await syncService.getPendingCount();
+        if (pending > 0 && navigator.onLine) {
+          await syncService.pushLocalTransactionsToSupabase();
+          await syncService.reconcileQueue();
+        }
+      } catch {}
+    }, 60000);
 
-    const handleVisibilityOrFocus = () => {
+    // 2. Sinkronisasi penuh berkala setiap 5 menit (mencegah penipisan Disk IO Supabase)
+    const fullSyncInterval = setInterval(() => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
+        handleManualSync();
+      }
+    }, 300000);
+
+    let lastFocusSync = Date.now();
+    const handleVisibilityOrFocus = () => {
+      // Hanya sinkron saat tab aktif jika sudah lewat minimal 2 menit sejak sinkronisasi terakhir
+      if (document.visibilityState === 'visible' && navigator.onLine && Date.now() - lastFocusSync > 120000) {
+        lastFocusSync = Date.now();
         handleManualSync();
       }
     };
@@ -1021,7 +1168,8 @@ export const App: React.FC = () => {
     window.addEventListener('ketoko_product_deleted', handleProductDeleted);
 
     return () => {
-      clearInterval(interval);
+      clearInterval(queueInterval);
+      clearInterval(fullSyncInterval);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
@@ -1052,6 +1200,63 @@ export const App: React.FC = () => {
       const raw = query.trim();
       const clean = raw.toLowerCase();
       if (!clean) return { found: false, latencyMs: 0 };
+
+      // 0. Auto-Detect Member / Customer QR or Barcode Scan
+      try {
+        const custs = await db.customers.toArray();
+        const queryClean = clean.replace(/^ketoko:member:/i, '');
+        const matchedCust = custs.find((c) => {
+          const cCode = (c.code || '').toLowerCase();
+          const cId = (c.id || '').toLowerCase();
+          const cName = (c.name || '').toLowerCase();
+          const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+          const queryDigits = queryClean.replace(/[^0-9]/g, '');
+          return (
+            cCode === queryClean ||
+            cId === queryClean ||
+            cName === queryClean ||
+            cName.includes(queryClean) ||
+            (queryDigits.length >= 8 && cPhone === queryDigits)
+          );
+        });
+
+        if (matchedCust) {
+          const access = checkCustomerBranchAccess(matchedCust, activeStoreId);
+          setMemberId(matchedCust.id, matchedCust.name);
+          if (!access.allowed) {
+            setSyncToastMessage(`🚫 ${access.reason || `Member "${matchedCust.name}" terdaftar di cabang lain`}`);
+            setTimeout(() => setSyncToastMessage(null), 5000);
+            return {
+              found: true,
+              latencyMs: performance.now() - start,
+              isMember: true,
+              branchBlocked: true,
+              blockedMessage: access.reason,
+              memberName: matchedCust.name
+            };
+          }
+          setCustomerName(matchedCust.name);
+          try {
+            if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const qrUrl = await QRCode.toDataURL(matchedCust.code || matchedCust.id, { width: 128, margin: 1 }).catch(() => '');
+              const channel = new BroadcastChannel('ketoko_customer_display');
+              channel.postMessage({
+                type: 'CARD_TAP',
+                customerName: matchedCust.name,
+                card: {
+                  holderName: matchedCust.name,
+                  nik: matchedCust.code || matchedCust.id,
+                  limit: matchedCust.credit_limit || 1500000,
+                  balance: 500000,
+                  qrDataUrl: qrUrl
+                }
+              });
+              channel.close();
+            }
+          } catch {}
+          return { found: true, latencyMs: performance.now() - start, isMember: true, memberName: matchedCust.name };
+        }
+      } catch {}
 
       // 1. Instant O(1) Barcode Map Lookup (< 0.05ms)
       let product = barcodeIndex.get(raw);
@@ -1093,7 +1298,7 @@ export const App: React.FC = () => {
 
   // Handle Payment Completion
   const handleProcessPayment = async (paymentData: {
-    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO';
+    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO';
     cash_given: number;
     change_returned: number;
     customer_name?: string;
@@ -1150,27 +1355,27 @@ export const App: React.FC = () => {
       created_at: now.toISOString()
     };
 
-    // Submit to Central LAN Server if running in CLIENT mode
-    if (lanService.isClientMode()) {
-      try {
-        const lanRes = await lanService.submitTransaction(newTrx);
-        if (lanRes.success) {
-          newTrx.synced = true;
-          if (lanRes.updatedStocks && lanRes.updatedStocks.length > 0) {
-            const stockMap = new Map(lanRes.updatedStocks.map(s => [s.id, s.stock]));
-            setProducts((prev) => prev.map(p => {
-              const updatedStock = stockMap.get(p.id);
-              return updatedStock !== undefined ? { ...p, stock: updatedStock } : p;
-            }));
-          }
+    // Submit to Central LAN Server if running in LAN mode or local server is active
+    let lanUpdatedStocks: Array<{ id: string; stock: number }> | undefined;
+    try {
+      const lanRes = await lanService.submitTransaction(newTrx);
+      if (lanRes && lanRes.success) {
+        newTrx.synced = true;
+        if (lanRes.updatedStocks && lanRes.updatedStocks.length > 0) {
+          lanUpdatedStocks = lanRes.updatedStocks;
+          const stockMap = new Map(lanRes.updatedStocks.map(s => [s.id, s.stock]));
+          setProducts((prev) => prev.map(p => {
+            const updatedStock = stockMap.get(p.id);
+            return updatedStock !== undefined ? { ...p, stock: updatedStock } : p;
+          }));
         }
-      } catch (err) {
-        console.warn('[App] Gagal kirim transaksi ke LAN Server, fallback ke offline syncQueue:', err);
       }
+    } catch (err) {
+      console.warn('[App] Gagal kirim transaksi ke LAN Server, fallback ke offline syncQueue:', err);
     }
 
     // 1. Record transaction into IndexedDB & SyncQueue (local offline resilience)
-    await syncService.saveTransactionOffline(newTrx);
+    await syncService.saveTransactionOffline(newTrx, lanUpdatedStocks);
 
     // 1.b Catat Piutang Pelanggan otomatis jika transaksi dibayar secara TEMPO / BON
     if (paymentData.payment_method === 'TEMPO') {
@@ -1217,17 +1422,99 @@ export const App: React.FC = () => {
       }
     }
 
-    // Update in-memory stock instantly without heavy full DB reload
-    setProducts((prev) => {
-      const soldMap = new Map(newTrx.items.map(i => [i.product_id, i.qty]));
-      return prev.map(p => {
-        const qtySold = soldMap.get(p.id);
-        return qtySold ? { ...p, stock: Math.max(0, p.stock - qtySold) } : p;
+    // 1.c Potong Saldo Simpanan Anggota secara lokal jika transaksi dibayar dengan SALDO
+    if (paymentData.payment_method === 'SALDO' && memberId) {
+      try {
+        const cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
+        if (cust) {
+          const oldBalance = Number(cust.deposit_balance) || 0;
+          const newBalance = Math.max(0, oldBalance - grandTotal);
+          const updatedCust: Customer = {
+            ...cust,
+            deposit_balance: newBalance,
+            updated_at: now.toISOString()
+          };
+          await db.customers.put(updatedCust);
+
+          const mutId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const mutationRecord: MemberDepositMutation = {
+            id: mutId,
+            customer_id: cust.id,
+            customer_name: cust.name,
+            customer_code: cust.code,
+            type: 'PAYMENT',
+            amount: grandTotal,
+            balance_before: oldBalance,
+            balance_after: newBalance,
+            payment_method: 'CASH',
+            store_id: activeStoreId || 'store-01',
+            store_name: getStoreDisplayName(activeStoreId),
+            cashier_id: currentUser?.id || 'USR-001',
+            cashier_name: currentUser?.name || 'Kasir',
+            receipt_number: receiptNumber,
+            notes: `Pembayaran Belanja Nota ${receiptNumber}`,
+            created_at: now.toISOString()
+          };
+          await db.memberDeposits.put(mutationRecord);
+
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedCust }));
+          window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: updatedCust, mutation: mutationRecord } }));
+          
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              const bc = new BroadcastChannel('ketoko_customer_sync');
+              bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: updatedCust });
+              bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: updatedCust, mutation: mutationRecord });
+              bc.close();
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.error('[App] Gagal potong saldo member di Dexie:', err);
+      }
+    }
+
+    // Update in-memory stock instantly without heavy full DB reload (only if not already updated by LAN server authoritative stock)
+    if (!lanUpdatedStocks) {
+      setProducts((prev) => {
+        const soldMap = new Map(newTrx.items.map(i => [i.product_id, i.qty]));
+        return prev.map(p => {
+          const qtySold = soldMap.get(p.id);
+          return qtySold ? { ...p, stock: Math.max(0, p.stock - qtySold) } : p;
+        });
       });
-    });
+    }
 
     // Update in-memory transactions state immediately
     setTransactions((prev) => [newTrx, ...prev]);
+
+    // Live broadcast to Admin views in this window (Dashboard, Reports, Recent Transactions)
+    window.dispatchEvent(new CustomEvent('ketoko_transaction_created', {
+      detail: { transaction: newTrx, updated_stocks: lanUpdatedStocks }
+    }));
+    window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed'));
+
+    // Cross-tab and cross-window real-time BroadcastChannel sync
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const prodBc = new BroadcastChannel('ketoko_product_sync');
+        prodBc.postMessage({
+          type: 'transaction_created',
+          transaction: newTrx,
+          updated_stocks: lanUpdatedStocks
+        });
+        prodBc.close();
+      }
+    } catch {}
+
+    // Storage event for fallback cross-tab reactivity
+    try {
+      localStorage.setItem('ketoko_last_trx_sync', JSON.stringify({
+        id: newTrx.id,
+        created_at: newTrx.created_at,
+        time: Date.now()
+      }));
+    } catch {}
 
     const pending = await syncService.getPendingCount();
     setPendingSyncCount(pending);
@@ -1237,14 +1524,50 @@ export const App: React.FC = () => {
     setIsPaymentOpen(false);
     setActiveReceipt(newTrx);
     setIsReceiptOpen(true);
+
+    // Notify Customer Facing Display of transaction completion
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('ketoko_customer_display');
+        channel.postMessage({
+          type: 'TRANSACTION_SUCCESS',
+          invoiceNo: newTrx.receipt_number,
+          paymentMethod: newTrx.payment_method,
+          grandTotal: newTrx.grand_total,
+          change: paymentData.change_returned
+        });
+        channel.close();
+      }
+    } catch (e) {}
   };
 
   // Handle Direct 1-Step Payment from POS Screen (Direct checkout, no duplicate modal)
   const handleDirectPayment = async (
-    method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER',
+    method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO',
     cashGiven?: number
   ) => {
     if (cartItems.length === 0) return;
+    if (memberBlockedInfo) {
+      setSyncToastMessage(`🚫 ${memberBlockedInfo.reason || 'Akses member ditolak untuk cabang ini. Batalkan pilihan member untuk melanjutkan sebagai Pembeli Umum.'}`);
+      setTimeout(() => setSyncToastMessage(null), 5000);
+      return;
+    }
+
+    if (method === 'SALDO') {
+      if (!memberId) {
+        setSyncToastMessage('⚠️ Pilih Anggota / Konsumen terlebih dahulu untuk pembayaran via Saldo.');
+        setTimeout(() => setSyncToastMessage(null), 4000);
+        return;
+      }
+      const cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
+      const currentBalance = Number(cust?.deposit_balance) || 0;
+      if (currentBalance < grandTotal) {
+        setSyncToastMessage(`⚠️ Saldo Anggota tidak mencukupi (Saldo: ${formatRupiah(currentBalance)} | Belanja: ${formatRupiah(grandTotal)}). Silakan Top Up terlebih dahulu.`);
+        setTimeout(() => setSyncToastMessage(null), 5000);
+        return;
+      }
+    }
+
     const finalCash = method === 'CASH' ? (cashGiven && cashGiven >= grandTotal ? cashGiven : grandTotal) : grandTotal;
     const change = method === 'CASH' ? Math.max(0, finalCash - grandTotal) : 0;
     await handleProcessPayment({
@@ -1710,6 +2033,8 @@ export const App: React.FC = () => {
           }}
           isPWAInstalled={isInstalled}
           onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
+          onOpenErrorMonitoring={() => setIsErrorMonitoringOpen(true)}
+          onOpenHelpChat={() => setIsHelpChatOpen(true)}
         />
       </div>
 
@@ -1764,6 +2089,8 @@ export const App: React.FC = () => {
             setIsStoreSettingsOpen(true);
           }}
           onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
+          onOpenErrorMonitoring={() => setIsErrorMonitoringOpen(true)}
+          onOpenHelpChat={() => setIsHelpChatOpen(true)}
           pendingSyncCount={pendingSyncCount}
           lowStockCount={lowStockCount}
           overdueCount={overdueCount}
@@ -1821,6 +2148,9 @@ export const App: React.FC = () => {
           memberId={memberId}
           customerName={customerName}
           setMemberId={setMemberId}
+          memberBlockedInfo={memberBlockedInfo}
+          onDismissMemberBlocked={clearMemberBlockedInfo}
+          activeStoreId={activeStoreId}
           taxEnabled={taxEnabled}
           setTaxEnabled={setTaxEnabled}
           taxRate={taxRate}
@@ -1841,6 +2171,7 @@ export const App: React.FC = () => {
           isCatalogSeeding={isCatalogSeeding}
           isTouchscreenMode={isTouchscreenMode}
           onOpenMemberModal={() => setIsMemberModalOpen(true)}
+          onOpenHelpChat={() => setIsHelpChatOpen(true)}
         />
       )}
 
@@ -1920,7 +2251,36 @@ export const App: React.FC = () => {
         <MemberModal
           isOpen={isMemberModalOpen}
           onClose={() => setIsMemberModalOpen(false)}
-          onSelectMember={(selectedId, member) => setMemberId(selectedId, member?.name)}
+          onSelectMember={async (selectedId, member) => {
+            if (member) {
+              const access = checkCustomerBranchAccess(member, activeStoreId);
+              if (!access.allowed) {
+                setMemberId(selectedId, member.name);
+                setSyncToastMessage(`🚫 ${access.reason || `Member "${member.name}" terdaftar di cabang lain`}`);
+                setTimeout(() => setSyncToastMessage(null), 5000);
+                return;
+              }
+            }
+            setMemberId(selectedId, member?.name);
+            if (member && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              try {
+                const qrUrl = await QRCode.toDataURL(member.code || member.id, { width: 128, margin: 1 }).catch(() => '');
+                const channel = new BroadcastChannel('ketoko_customer_display');
+                channel.postMessage({
+                  type: 'CARD_TAP',
+                  customerName: member.name,
+                  card: {
+                    holderName: member.name,
+                    nik: member.code || member.id,
+                    limit: member.credit_limit || 1500000,
+                    balance: 500000,
+                    qrDataUrl: qrUrl
+                  }
+                });
+                channel.close();
+              } catch {}
+            }
+          }}
           currentMemberId={memberId}
         />
       )}
@@ -2160,6 +2520,44 @@ export const App: React.FC = () => {
         onOpenModal={() => setIsPWAInstallOpen(true)}
         onInstall={installApp}
       />
+
+      {/* Pusat Monitoring & Tracking Eror Sistem */}
+      {isErrorMonitoringOpen && (
+        <ErrorMonitoringModal
+          isOpen={isErrorMonitoringOpen}
+          onClose={() => setIsErrorMonitoringOpen(false)}
+        />
+      )}
+
+      {/* Floating Cashier Assistance & Bug Report Pill (Visible for Cashier & Store Admin) */}
+      {currentUser && currentUser.role !== 'SUPERADMIN' && (
+        <div className="fixed bottom-4 right-4 z-40 print:hidden animate-fadeIn">
+          <button
+            type="button"
+            onClick={() => setIsHelpChatOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-[#7c4e2f] to-[#59351e] hover:from-[#633e26] hover:to-[#422919] text-white font-black text-xs shadow-lg shadow-[#7c4e2f]/30 transition-all hover:scale-105 active:scale-95 border-2 border-white/60"
+            title="Ada bug atau kendala di kasir? Chat bantuan & lapor langsung ke developer"
+          >
+            <MessageSquare className="w-4 h-4 text-amber-300" />
+            <span>Lapor Kendala</span>
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          </button>
+        </div>
+      )}
+
+      {/* Cashier Assistance & Bug Reporting Chat Modal */}
+      {isHelpChatOpen && (
+        <CashierHelpChatModal
+          isOpen={isHelpChatOpen}
+          onClose={() => setIsHelpChatOpen(false)}
+          storeName={storeProfile.name}
+          branchName={storeProfile.branch_name}
+          cashierName={currentUser?.name || 'Kasir Bertugas'}
+          activeCartTotal={grandTotal}
+          activeItemCount={cartItems.length}
+          supportPhone={storeProfile.phone || '081255558900'}
+        />
+      )}
 
     </div>
   );

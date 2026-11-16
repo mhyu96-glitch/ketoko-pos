@@ -16,11 +16,14 @@ import {
   Network,
   Server,
   Laptop,
-  Download
+  Download,
+  Activity,
+  MessageSquare
 } from 'lucide-react';
 import type { User } from '../types';
 import { licenseService, type LicenseStatus } from '../services/licenseService';
 import { lanService, type LanConfig } from '../services/lanService';
+import { errorTracker } from '../services/errorTracker';
 
 interface NavbarProps {
   cartCount: number;
@@ -44,6 +47,8 @@ interface NavbarProps {
   onSecretDevTrigger?: () => void;
   isPWAInstalled?: boolean;
   onOpenPWAInstall?: () => void;
+  onOpenErrorMonitoring?: () => void;
+  onOpenHelpChat?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = React.memo(({
@@ -67,12 +72,22 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   onOpenLanSettings,
   onSecretDevTrigger,
   isPWAInstalled = false,
-  onOpenPWAInstall
+  onOpenPWAInstall,
+  onOpenErrorMonitoring,
+  onOpenHelpChat
 }) => {
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin';
   const isAdmin = isSuperAdmin || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [errorCount, setErrorCount] = useState<number>(() => errorTracker.getUnresolvedCount());
+
+  useEffect(() => {
+    const unsub = errorTracker.subscribe(() => {
+      setErrorCount(errorTracker.getUnresolvedCount());
+    });
+    return () => unsub();
+  }, []);
 
   const [lanConfig, setLanConfig] = useState<LanConfig>(lanService.getConfig());
   const [isLanConnected, setIsLanConnected] = useState(true);
@@ -265,6 +280,39 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
               >
                 <Download className="w-3.5 h-3.5 text-emerald-600" />
                 <span className="hidden md:inline">Pasang PWA</span>
+              </button>
+            )}
+
+            {/* Tombol Chat Bantuan & Lapor Kendala Kasir */}
+            {onOpenHelpChat && (
+              <button
+                type="button"
+                onClick={onOpenHelpChat}
+                title="Ada kendala atau bug di kasir? Chat bantuan & lapor langsung ke developer"
+                className="flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 active:scale-95"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-700" />
+                <span className="hidden md:inline">Lapor Kendala</span>
+              </button>
+            )}
+
+            {/* Tombol Monitoring & Tracking Eror (HANYA UNTUK SUPERADMIN / VENDOR DEVELOPER) */}
+            {isSuperAdmin && onOpenErrorMonitoring && (
+              <button
+                type="button"
+                onClick={onOpenErrorMonitoring}
+                title={errorCount > 0 ? `${errorCount} Eror Terdeteksi - Klik untuk melihat monitoring sistem` : 'Status Sistem: Sehat & Normal (Klik untuk Diagnostik & Tracking)'}
+                className={`flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
+                  errorCount > 0
+                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                <Activity className={`w-3.5 h-3.5 ${errorCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`} />
+                <span className="hidden md:inline">{errorCount > 0 ? `${errorCount} Eror` : 'Monitoring'}</span>
+                {errorCount > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                )}
               </button>
             )}
 

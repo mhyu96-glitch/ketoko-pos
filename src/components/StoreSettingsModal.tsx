@@ -29,6 +29,8 @@ import { db } from '../db';
 import type { User, Product, StoreProfile } from '../types';
 import { useTheme, type ThemeCategory } from '../context/ThemeContext';
 import { CustomSelect } from './CustomSelect';
+import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import { getCurrentActiveStoreId, getStoreDisplayName, normalizeStoreId } from '../utils/customerAccess';
 
 interface StoreSettingsModalProps {
   isOpen: boolean;
@@ -76,6 +78,8 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
     return DEFAULT_STORE_PROFILE;
   });
   const [profileSaved, setProfileSaved] = useState(false);
+  const [terminalStoreId, setTerminalStoreId] = useState<string>(() => getCurrentActiveStoreId());
+  const [registeredStores, setRegisteredStores] = useState<RegisteredStoreInfo[]>(() => getStoredStores());
 
   // Users State
   const [users, setUsers] = useState<User[]>([]);
@@ -92,6 +96,8 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
+      setTerminalStoreId(getCurrentActiveStoreId());
+      setRegisteredStores(getStoredStores());
       loadUsers();
     }
   }, [isOpen, initialTab]);
@@ -127,6 +133,11 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
 
   // Save Store Profile
   const handleSaveProfile = () => {
+    const normalizedBranchId = normalizeStoreId(terminalStoreId);
+    try {
+      localStorage.setItem('ketoko_active_store_id', normalizedBranchId);
+      window.dispatchEvent(new CustomEvent('ketoko_active_store_changed', { detail: normalizedBranchId }));
+    } catch {}
     localStorage.setItem('ketoko_store_profile', JSON.stringify(storeProfile));
     const rateToSave = typeof storeProfile.tax_rate === 'number' ? storeProfile.tax_rate : 11;
     localStorage.setItem('ketoko_tax_rate', String(rateToSave));
@@ -750,6 +761,42 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                       <span className="absolute right-3 top-2 text-stone-500 font-bold text-xs">%</span>
                     </div>
                     <span className="text-[10px] text-[#8a6b53] mt-0.5 block">Bisa dimasukkan angka berapa saja (misal: 0, 10, 11, 12, dll).</span>
+                  </div>
+
+                  <div className="sm:col-span-2 p-3.5 rounded-2xl bg-[#fcf5ed] border border-[#eed7c4] space-y-1.5">
+                    <label className="font-black text-[#3d2617] flex items-center gap-1.5 text-xs">
+                      <Store className="w-3.5 h-3.5 text-[#7c4e2f]" />
+                      <span>Cabang Aktif Terminal Ini (Isolasi Member Koperasi):</span>
+                    </label>
+                    <select
+                      value={terminalStoreId}
+                      onChange={(e) => {
+                        const nextId = e.target.value;
+                        setTerminalStoreId(nextId);
+                        const found = registeredStores.find((s) => s.id === nextId);
+                        if (found) {
+                          setStoreProfile((prev) => ({
+                            ...prev,
+                            branch_name: found.branch || `${found.name} (${found.id})`
+                          }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-[#ddc3aa] rounded-xl bg-white text-xs font-bold text-[#3d2617] focus:border-[#96633b]"
+                    >
+                      {registeredStores.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.id}) {s.branch ? `— ${s.branch}` : ''}
+                        </option>
+                      ))}
+                      {!registeredStores.some((s) => s.id === terminalStoreId) && (
+                        <option value={terminalStoreId}>
+                          {getStoreDisplayName(terminalStoreId)} ({terminalStoreId})
+                        </option>
+                      )}
+                    </select>
+                    <p className="text-[11px] text-[#7c4e2f]">
+                      Pelanggan dengan izin <b>Khusus Cabang Terdaftar</b> hanya bisa melakukan transaksi member di terminal yang terhubung ke cabangnya masing-masing.
+                    </p>
                   </div>
 
                   <div className="sm:col-span-2">

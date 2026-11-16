@@ -269,15 +269,16 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
       await syncService.syncProductChange(updatedProduct);
 
       setSaveSuccessMsg(`Data produk "${editName}" berhasil diperbarui.`);
-      await onProductsUpdated();
+      // Jalankan refresh di background agar tidak mengunci modal simpan
+      onProductsUpdated?.().catch(() => {});
 
       setTimeout(() => {
         setSaveSuccessMsg(null);
         setEditingProduct(null);
-      }, 1000);
+        setIsSaving(false);
+      }, 350);
     } catch (err: any) {
       alert('Gagal memperbarui produk: ' + err.message);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -407,6 +408,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
       const rackIdx = headers.findIndex((h) => h.includes("rack") || h.includes("rak") || h.includes("lokasi"));
       const minStockAlertIdx = headers.findIndex((h) => h.includes("alert") || h.includes("min_stock"));
 
+      const existingMap = new Map(products.map((p) => [p.id, p]));
+      const existingBarcodeMap = new Map(products.map((p) => [p.barcode, p]));
+
       const parsed: Product[] = [];
       for (let i = 1; i < lines.length; i++) {
         const row = lines[i].split(sep).map((c) => c.trim().replace(/^["']|["']$/g, ""));
@@ -416,19 +420,23 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         if (!name) continue;
 
         const barcode = barcodeIdx !== -1 ? row[barcodeIdx] : row[0] || "";
-        const category = catIdx !== -1 ? row[catIdx] : "Sembako";
-        const buy_price = buyPriceIdx !== -1 ? parseIndonesianNumber(row[buyPriceIdx]) : 0;
-        const retail_price = retailPriceIdx !== -1 ? parseIndonesianNumber(row[retailPriceIdx]) : 0;
-        const wholesale_price = wholesaleIdx !== -1 ? parseIndonesianNumber(row[wholesaleIdx]) : retail_price;
-        const min_wholesale_qty = minWholesaleQtyIdx !== -1 ? parseIndonesianNumber(row[minWholesaleQtyIdx]) || 1 : 1;
-        const stock = stockIdx !== -1 ? parseIndonesianNumber(row[stockIdx]) : 0;
-        const unit = unitIdx !== -1 ? row[unitIdx] || "Pcs" : "Pcs";
-        const rack_location = rackIdx !== -1 ? row[rackIdx] || "Gudang Utama" : "Gudang Utama";
-        const min_stock_alert = minStockAlertIdx !== -1 ? parseIndonesianNumber(row[minStockAlertIdx]) || 5 : 5;
+        const existing = existingMap.get(barcode) || (barcode ? existingBarcodeMap.get(barcode) : undefined);
+
+        const category = catIdx !== -1 ? row[catIdx] : (existing?.category || "Sembako");
+        const buy_price = buyPriceIdx !== -1 ? parseIndonesianNumber(row[buyPriceIdx]) : (existing?.buy_price || 0);
+        const retail_price = retailPriceIdx !== -1 ? parseIndonesianNumber(row[retailPriceIdx]) : (existing?.retail_price || 0);
+        const wholesale_price = wholesaleIdx !== -1 ? parseIndonesianNumber(row[wholesaleIdx]) : (existing?.wholesale_price || retail_price);
+        const min_wholesale_qty = minWholesaleQtyIdx !== -1 ? parseIndonesianNumber(row[minWholesaleQtyIdx]) || 1 : (existing?.min_wholesale_qty || 1);
+        const stock = stockIdx !== -1 && row[stockIdx] !== undefined && row[stockIdx] !== '' 
+          ? parseIndonesianNumber(row[stockIdx]) 
+          : (existing ? existing.stock : 0);
+        const unit = unitIdx !== -1 ? row[unitIdx] || (existing?.unit || "Pcs") : (existing?.unit || "Pcs");
+        const rack_location = rackIdx !== -1 ? row[rackIdx] || (existing?.rack_location || "Gudang Utama") : (existing?.rack_location || "Gudang Utama");
+        const min_stock_alert = minStockAlertIdx !== -1 ? parseIndonesianNumber(row[minStockAlertIdx]) || 5 : (existing?.min_stock_alert || 5);
 
         parsed.push({
-          id: barcode || `PRD-${Date.now()}-${i}`,
-          barcode: barcode || `BC-${i}`,
+          id: existing?.id || barcode || `PRD-${Date.now()}-${i}`,
+          barcode: barcode || existing?.barcode || `BC-${i}`,
           name: name,
           category: category || "Umum",
           buy_price: buy_price,
@@ -439,7 +447,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
           unit: unit,
           rack_location: rack_location,
           min_stock_alert: min_stock_alert,
-          image_url: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80",
+          image_url: existing?.image_url || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80",
           updated_at: new Date().toISOString()
         });
       }

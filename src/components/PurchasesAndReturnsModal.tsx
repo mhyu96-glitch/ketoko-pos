@@ -134,8 +134,8 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
   }, [isOpen, initialTab]);
 
   const loadData = async () => {
-    // 1. Tarik dari LAN jika mode klien
-    if (lanService.isClientMode()) {
+    // 1. Tarik dari LAN jika mode klien / server aktif
+    if (lanService.isLanActive()) {
       try {
         const centralPurchases = await lanService.fetchCentralPurchases();
         if (centralPurchases && centralPurchases.length > 0) {
@@ -328,7 +328,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     }
 
     // 4. Sinkronisasi ke LAN Server (Multi-Kasir Terpusat)
-    if (lanService.isClientMode()) {
+    if (lanService.isLanActive()) {
       try {
         await lanService.submitPurchase(newPurchase);
       } catch (err) {

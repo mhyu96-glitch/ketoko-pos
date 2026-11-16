@@ -26,7 +26,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { db } from '../db';
-import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile } from '../types';
+import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile, Customer } from '../types';
 import { exportReportToPDF } from '../services/pdfReportService';
 import { 
   exportCustomerItemsToExcel, 
@@ -36,6 +36,7 @@ import {
 } from '../services/excelReportService';
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
+import { lanService } from '../services/lanService';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
@@ -60,6 +61,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items'>(initialTab);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all' | 'custom'>('all');
   
@@ -98,21 +100,44 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       // 1. Ambil data lokal seketika (instant 0ms)
       const allTrx = await db.transactions.toArray();
       const allProducts = await db.products.toArray();
+      const allCust = await db.customers.toArray();
       setTransactions(allTrx);
       setProducts(allProducts);
+      setCustomers(allCust);
 
-      // 2. Tarik update transaksi terbaru dari Supabase Cloud di background
+      // 2. Tarik update transaksi & pelanggan terbaru dari LAN Server jika aktif
+      if (lanService.isLanActive()) {
+        try {
+          const centralTrx = await lanService.fetchCentralTransactions(500);
+          if (centralTrx && centralTrx.length > 0) {
+            await db.transactions.bulkPut(centralTrx);
+          }
+          await lanService.fetchCustomersFromLan();
+          const freshCust = await db.customers.toArray();
+          setCustomers(freshCust);
+        } catch (lanErr) {
+          console.warn('[FullReports] LAN pull deferred:', lanErr);
+        }
+      }
+
+      // 3. Tarik update transaksi terbaru dari Supabase Cloud di background
       if (syncCloud && navigator.onLine) {
         setIsRefreshing(true);
         try {
           await syncService.pullTransactionsFromSupabase(500);
+          await syncService.pullCustomersFromSupabase();
           const freshTrx = await db.transactions.toArray();
+          const freshCust = await db.customers.toArray();
           setTransactions(freshTrx);
+          setCustomers(freshCust);
         } catch (err) {
           console.warn('[FullReports] Cloud pull deferred:', err);
         } finally {
           setIsRefreshing(false);
         }
+      } else if (lanService.isLanActive()) {
+        const freshTrx = await db.transactions.toArray();
+        setTransactions(freshTrx);
       }
     } catch (err) {
       console.error('[FullReports] Gagal load report data:', err);
@@ -427,12 +452,17 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     return 'Semua Periode Transaksi';
   }, [dateFilter, startDate, endDate]);
 
+  const customerMap = useMemo(() => new Map(customers.map((c) => [c.id, c.name])), [customers]);
+
   // Customer & Item Report Grouping
   const customerReportGroups = useMemo(() => {
     const map = new Map<string, Map<string, CustomerItemRowData>>();
 
     filteredTransactions.forEach((trx) => {
-      const rawName = (trx.customer_name || '').trim();
+      let rawName = (trx.customer_name || '').trim();
+      if (!rawName && trx.member_id) {
+        rawName = (customerMap.get(trx.member_id) || '').trim();
+      }
       const customer = rawName ? rawName.toUpperCase() : (trx.payment_method ? trx.payment_method.toUpperCase() : 'CASH');
 
       if (!map.has(customer)) {
@@ -496,7 +526,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     });
 
     return groups;
-  }, [filteredTransactions, productMap]);
+  }, [filteredTransactions, productMap, customerMap]);
 
   const allCustomerNames = useMemo(() => {
     return Array.from(new Set(customerReportGroups.map((g) => g.customer_name))).sort();
@@ -1021,6 +1051,18 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
             >
               <CreditCard className="w-3.5 h-3.5" />
               <span>Metode Pembayaran</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('customer_items')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border flex items-center space-x-1.5 shadow-2xs active:scale-95 ${
+                activeTab === 'customer_items'
+                  ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-xs'
+                  : 'bg-white text-[#543c2e] hover:bg-[#faebd7] border-[#dfcebe]'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>Laporan Pelanggan</span>
             </button>
           </div>
 

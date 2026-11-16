@@ -33,7 +33,9 @@ import {
   Tag,
   KeyRound,
   ShieldCheck,
-  Download
+  Download,
+  Activity,
+  MessageSquare
 } from 'lucide-react';
 import { resolveStoreFromCurrentHost } from '../services/storeRegistry';
 
@@ -60,6 +62,8 @@ interface TopMenuBarProps {
   onOpenStockAdjustments?: (tab?: 'in' | 'out' | 'opname') => void;
   onOpenStoreSettings?: (tab?: 'profile' | 'theme' | 'csv' | 'backup' | 'users') => void;
   onOpenPWAInstall?: () => void;
+  onOpenErrorMonitoring?: () => void;
+  onOpenHelpChat?: () => void;
   pendingSyncCount: number;
   lowStockCount: number;
   overdueCount?: number;
@@ -87,6 +91,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
   onOpenStockAdjustments,
   onOpenStoreSettings,
   onOpenPWAInstall,
+  onOpenErrorMonitoring,
+  onOpenHelpChat,
   lowStockCount,
   overdueCount = 0,
   userRole = 'CASHIER'
@@ -976,6 +982,25 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     </div>
                   </button>
 
+                  {/* Monitoring & Tracking Eror Sistem (Khusus Superadmin / Vendor) */}
+                  {isSuperAdmin && onOpenErrorMonitoring && (
+                    <button
+                      onClick={() => {
+                        onOpenErrorMonitoring();
+                        setOpenDropdown(null);
+                      }}
+                      className="w-full p-2 text-left rounded-xl text-indigo-900 bg-indigo-50/60 hover:bg-indigo-100 flex items-center space-x-3 transition-colors group border border-indigo-200/60"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-indigo-950 whitespace-nowrap">Monitoring & Tracking Eror</div>
+                        <div className="text-[10px] text-indigo-700 font-medium whitespace-nowrap">Diagnostik database, LAN & log runtime</div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Pasang Aplikasi PWA */}
                   {onOpenPWAInstall && (
                     <button
@@ -1079,6 +1104,18 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
 
         {/* Right Info Badges & Direct Cashier Printer Button */}
         <div className="flex items-center space-x-2 text-xs text-[#856b59] shrink-0">
+          {onOpenHelpChat && (
+            <button
+              type="button"
+              onClick={onOpenHelpChat}
+              className="inline-flex items-center space-x-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 px-2.5 py-1.5 rounded-xl border border-amber-300 font-black text-xs transition-all cursor-pointer shadow-2xs active:scale-95"
+              title="Lapor kendala atau chat bantuan kasir ke superadmin / developer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-amber-700" />
+              <span className="hidden sm:inline">Lapor Kendala</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onOpenPrinterSettings}

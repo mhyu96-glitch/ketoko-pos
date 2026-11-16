@@ -166,6 +166,11 @@ function initCentralDatabase(dataDir) {
       cashier_id TEXT,
       cashier_name TEXT,
       terminal_id TEXT DEFAULT 'SERVER',
+      customer_name TEXT,
+      member_id TEXT,
+      due_date TEXT,
+      notes TEXT,
+      store_id TEXT DEFAULT 'store-01',
       subtotal REAL DEFAULT 0,
       discount_amount REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -180,6 +185,28 @@ function initCentralDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS idx_trx_created_at ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_trx_receipt ON transactions(receipt_number);
   `);
+
+  // Safe migration for existing SQLite database
+  try {
+    const trxCols = sqliteDb.prepare("PRAGMA table_info(transactions)").all().map(c => c.name);
+    if (!trxCols.includes('customer_name')) {
+      sqliteDb.exec("ALTER TABLE transactions ADD COLUMN customer_name TEXT;");
+    }
+    if (!trxCols.includes('member_id')) {
+      sqliteDb.exec("ALTER TABLE transactions ADD COLUMN member_id TEXT;");
+    }
+    if (!trxCols.includes('due_date')) {
+      sqliteDb.exec("ALTER TABLE transactions ADD COLUMN due_date TEXT;");
+    }
+    if (!trxCols.includes('notes')) {
+      sqliteDb.exec("ALTER TABLE transactions ADD COLUMN notes TEXT;");
+    }
+    if (!trxCols.includes('store_id')) {
+      sqliteDb.exec("ALTER TABLE transactions ADD COLUMN store_id TEXT DEFAULT 'store-01';");
+    }
+  } catch (migErr) {
+    console.warn('[LAN Server] Migration notice on transactions table:', migErr.message);
+  }
 
   // Tabel Pembelian Barang (Restock / Faktur Supplier) Terpusat
   sqliteDb.exec(`
@@ -213,12 +240,57 @@ function initCentralDatabase(dataDir) {
       address TEXT,
       credit_limit REAL DEFAULT 0,
       current_debt REAL DEFAULT 0,
+      deposit_balance REAL DEFAULT 0,
+      store_id TEXT DEFAULT 'store-01',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_customers_code ON customers(code);
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+
+    CREATE TABLE IF NOT EXISTS member_deposits (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT,
+      customer_code TEXT,
+      type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      balance_before REAL NOT NULL,
+      balance_after REAL NOT NULL,
+      payment_method TEXT DEFAULT 'CASH',
+      store_id TEXT NOT NULL,
+      store_name TEXT,
+      cashier_id TEXT,
+      cashier_name TEXT,
+      receipt_number TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_member_dep_cust ON member_deposits(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_member_dep_created ON member_deposits(created_at);
   `);
+
+  try {
+    const custCols = sqliteDb.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
+    if (!custCols.includes('store_id')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN store_id TEXT DEFAULT 'store-01';");
+    }
+    if (!custCols.includes('store_name')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN store_name TEXT DEFAULT 'Cabang Utama';");
+    }
+    if (!custCols.includes('access_scope')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN access_scope TEXT DEFAULT 'ALL_STORES';");
+    }
+    if (!custCols.includes('deposit_balance')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN deposit_balance REAL DEFAULT 0;");
+    }
+    if (!custCols.includes('notes')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN notes TEXT DEFAULT '';");
+    }
+    if (!custCols.includes('type')) {
+      sqliteDb.exec("ALTER TABLE customers ADD COLUMN type TEXT DEFAULT 'MEMBER';");
+    }
+  } catch {}
 
   // Tabel Profil Toko & Pengaturan
   sqliteDb.exec(`
@@ -378,6 +450,18 @@ function handleHttpRequest(req, res) {
     });
   }
 
+  // 1.1 Health & Diagnostics Endpoint
+  if (pathname === '/api/lan/health' && req.method === 'GET') {
+    return sendJson(200, {
+      status: 'healthy',
+      uptime_seconds: Math.floor(process.uptime()),
+      memory: process.memoryUsage(),
+      active_connections: sseClients.length,
+      node_version: process.version,
+      timestamp: new Date().toISOString()
+    });
+  }
+
   // 2. Real-time Event Stream (Server-Sent Events)
   if (pathname === '/api/lan/events' && req.method === 'GET') {
     res.writeHead(200, {
@@ -480,9 +564,10 @@ function handleHttpRequest(req, res) {
         const insertTrx = sqliteDb.prepare(`
           INSERT INTO transactions (
             id, receipt_number, cashier_id, cashier_name, terminal_id,
+            customer_name, member_id, due_date, notes, store_id,
             subtotal, discount_amount, tax_amount, grand_total, payment_method,
             cash_given, change_returned, items_json, created_at, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         `);
 
         insertTrx.run(
@@ -491,6 +576,11 @@ function handleHttpRequest(req, res) {
           trx.cashier_id || 'KASIR-01',
           trx.cashier_name || 'Kasir Toko',
           terminalId,
+          trx.customer_name || null,
+          trx.member_id || null,
+          trx.due_date || null,
+          trx.notes || null,
+          trx.store_id || 'store-01',
           Number(trx.subtotal) || 0,
           Number(trx.discount_amount) || 0,
           Number(trx.tax_amount) || 0,
@@ -501,6 +591,53 @@ function handleHttpRequest(req, res) {
           JSON.stringify(trx.items),
           createdAt
         );
+
+        // 1.b Jika Pembayaran dengan Saldo Member, Potong Saldo Member secara Atomik
+        let updatedCustomer = null;
+        const targetCustId = trx.customer_id || trx.member_id || trx.customer_code;
+        if (trx.payment_method === 'SALDO' && (targetCustId || trx.customer_name)) {
+          let custRow = null;
+          if (targetCustId) {
+            custRow = sqliteDb.prepare('SELECT * FROM customers WHERE id = ? OR code = ?').get(targetCustId, targetCustId);
+          }
+          if (!custRow && trx.customer_name) {
+            custRow = sqliteDb.prepare('SELECT * FROM customers WHERE LOWER(name) = LOWER(?)').get(trx.customer_name.trim());
+          }
+          if (custRow) {
+            const grandTotal = Number(trx.grand_total) || 0;
+            const oldBalance = Number(custRow.deposit_balance) || 0;
+            const newBalance = Math.max(0, oldBalance - grandTotal);
+            sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, updated_at = ? WHERE id = ?')
+              .run(newBalance, createdAt, custRow.id);
+
+            const mutId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            sqliteDb.prepare(`
+              INSERT INTO member_deposits (
+                id, customer_id, customer_name, customer_code, type, amount,
+                balance_before, balance_after, payment_method, store_id, store_name,
+                cashier_id, cashier_name, receipt_number, notes, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              mutId,
+              custRow.id,
+              custRow.name,
+              custRow.code,
+              'PAYMENT',
+              grandTotal,
+              oldBalance,
+              newBalance,
+              'SALDO',
+              trx.store_id || 'store-01',
+              trx.store_id === 'store-02' ? 'Cabang Balikpapan' : 'Cabang Utama',
+              trx.cashier_id || 'KASIR-01',
+              trx.cashier_name || 'Kasir Toko',
+              trx.receipt_number || trxId,
+              `Pembayaran Belanja Nota ${trx.receipt_number || trxId}`,
+              createdAt
+            );
+            updatedCustomer = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(custRow.id);
+          }
+        }
 
         // 2. Potong Stok Produk secara Atomik
         const updateStockStmt = sqliteDb.prepare(`
@@ -534,6 +671,11 @@ function handleHttpRequest(req, res) {
             cashier_id: trx.cashier_id || 'KASIR-01',
             cashier_name: trx.cashier_name || 'Kasir Toko',
             terminal_id: terminalId,
+            customer_name: trx.customer_name || null,
+            member_id: trx.member_id || null,
+            due_date: trx.due_date || null,
+            notes: trx.notes || null,
+            store_id: trx.store_id || 'store-01',
             subtotal: Number(trx.subtotal) || 0,
             discount_amount: Number(trx.discount_amount) || 0,
             tax_amount: Number(trx.tax_amount) || 0,
@@ -541,9 +683,6 @@ function handleHttpRequest(req, res) {
             payment_method: trx.payment_method || 'CASH',
             cash_given: Number(trx.cash_given) || Number(trx.grand_total) || 0,
             change_returned: Number(trx.change_returned) || 0,
-            customer_name: trx.customer_name,
-            due_date: trx.due_date,
-            notes: trx.notes,
             items: trx.items,
             created_at: createdAt,
             synced: true
@@ -552,9 +691,19 @@ function handleHttpRequest(req, res) {
           receipt_number: trx.receipt_number,
           terminal_id: terminalId,
           cashier_name: trx.cashier_name,
+          customer_name: trx.customer_name || null,
           grand_total: trx.grand_total,
           updated_stocks: updatedStocks
         });
+
+        if (updatedCustomer) {
+          broadcastSseEvent('customer_updated', updatedCustomer);
+          broadcastSseEvent('member_deposit_updated', {
+            customer: updatedCustomer,
+            customer_id: updatedCustomer.id,
+            deposit_balance: updatedCustomer.deposit_balance
+          });
+        }
 
         return sendJson(200, {
           status: 'success',
@@ -668,12 +817,14 @@ function handleHttpRequest(req, res) {
 
       sqliteDb.exec('BEGIN TRANSACTION;');
       try {
+        const checkTrxStmt = sqliteDb.prepare('SELECT id FROM transactions WHERE id = ?');
         const insertTrx = sqliteDb.prepare(`
           INSERT OR REPLACE INTO transactions (
             id, receipt_number, cashier_id, cashier_name, terminal_id,
+            customer_name, member_id, due_date, notes, store_id,
             subtotal, discount_amount, tax_amount, grand_total, payment_method,
             cash_given, change_returned, items_json, created_at, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         `);
 
         const updateStockStmt = sqliteDb.prepare(`
@@ -683,12 +834,19 @@ function handleHttpRequest(req, res) {
         `);
 
         for (const trx of transactions) {
+          const isNewTrx = !checkTrxStmt.get(trx.id);
+
           insertTrx.run(
             trx.id,
             trx.receipt_number,
             trx.cashier_id || 'KASIR-01',
             trx.cashier_name || 'Kasir',
             trx.terminal_id || 'KASIR-OFFLINE',
+            trx.customer_name || null,
+            trx.member_id || null,
+            trx.due_date || null,
+            trx.notes || null,
+            trx.store_id || 'store-01',
             Number(trx.subtotal) || 0,
             Number(trx.discount_amount) || 0,
             Number(trx.tax_amount) || 0,
@@ -700,7 +858,8 @@ function handleHttpRequest(req, res) {
             trx.created_at || new Date().toISOString()
           );
 
-          if (Array.isArray(trx.items)) {
+          // Hanya potong stok jika transaksi ini benar-benar baru (cegah stok terkurang ganda)
+          if (isNewTrx && Array.isArray(trx.items)) {
             for (const item of trx.items) {
               const prodId = item.product_id || item.id;
               if (prodId) {
@@ -883,18 +1042,25 @@ function handleHttpRequest(req, res) {
       const name = cust.name || 'Pelanggan';
       const phone = cust.phone || '-';
       const address = cust.address || '-';
+      const type = cust.type || 'MEMBER';
       const credit_limit = Number(cust.credit_limit) || 0;
       const current_debt = Number(cust.current_debt) || 0;
+      const deposit_balance = Number(cust.deposit_balance !== undefined ? cust.deposit_balance : 0);
       const created_at = cust.created_at || new Date().toISOString();
       const updated_at = new Date().toISOString();
 
+      const store_id = String(cust.store_id || '').trim() || 'store-01';
+      const store_name = String(cust.store_name || '').trim() || (store_id === 'store-01' ? 'Cabang Utama' : store_id);
+      const access_scope = cust.access_scope === 'HOME_ONLY' ? 'HOME_ONLY' : 'ALL_STORES';
+      const notes = cust.notes || '';
+
       const stmt = sqliteDb.prepare(`
         INSERT OR REPLACE INTO customers (
-          id, code, name, phone, address, credit_limit, current_debt, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, code, name, phone, address, type, credit_limit, current_debt, deposit_balance, store_id, store_name, access_scope, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      stmt.run(id, code, name, phone, address, credit_limit, current_debt, created_at, updated_at);
+      stmt.run(id, code, name, phone, address, type, credit_limit, current_debt, deposit_balance, store_id, store_name, access_scope, notes, created_at, updated_at);
       const saved = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(id);
 
       broadcastSseEvent('customer_updated', saved);
@@ -912,6 +1078,119 @@ function handleHttpRequest(req, res) {
       broadcastSseEvent('customer_deleted', { id: body.id });
       return sendJson(200, { status: 'success', deletedId: body.id });
     });
+  }
+
+  // 8.e Top-Up Saldo Simpanan / Deposit Member Terpusat (Bisa dari Toko A maupun Toko B)
+  if (pathname === '/api/lan/members/topup' && req.method === 'POST') {
+    return readJsonBody((body) => {
+      if (!body || !body.customer_id || !body.amount) {
+        return sendJson(400, { error: 'Customer ID dan nominal topup wajib disertakan' });
+      }
+
+      const custId = String(body.customer_id);
+      const amount = Math.abs(Number(body.amount) || 0);
+      if (amount <= 0) {
+        return sendJson(400, { error: 'Nominal top up harus lebih besar dari 0' });
+      }
+
+      const cust = sqliteDb.prepare('SELECT * FROM customers WHERE id = ? OR code = ?').get(custId, custId);
+      if (!cust) {
+        return sendJson(404, { error: 'Member tidak ditemukan di database pusat' });
+      }
+
+      const balanceBefore = Number(cust.deposit_balance) || 0;
+      const balanceAfter = balanceBefore + amount;
+      const now = new Date().toISOString();
+      const storeId = String(body.store_id || 'store-01');
+      const storeName = String(body.store_name || (storeId === 'store-02' ? 'Cabang Balikpapan' : 'Cabang Utama'));
+      const cashierId = String(body.cashier_id || 'KASIR');
+      const cashierName = String(body.cashier_name || 'Kasir Toko');
+      const paymentMethod = String(body.payment_method || 'CASH');
+      const notes = String(body.notes || `Top Up Saldo di ${storeName}`);
+      const mutId = `topup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+      try {
+        sqliteDb.exec('BEGIN TRANSACTION;');
+        sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, updated_at = ? WHERE id = ?')
+          .run(balanceAfter, now, cust.id);
+
+        sqliteDb.prepare(`
+          INSERT INTO member_deposits (
+            id, customer_id, customer_name, customer_code, type, amount,
+            balance_before, balance_after, payment_method, store_id, store_name,
+            cashier_id, cashier_name, receipt_number, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          mutId,
+          cust.id,
+          cust.name,
+          cust.code,
+          'TOPUP',
+          amount,
+          balanceBefore,
+          balanceAfter,
+          paymentMethod,
+          storeId,
+          storeName,
+          cashierId,
+          cashierName,
+          mutId,
+          notes,
+          now
+        );
+
+        sqliteDb.exec('COMMIT;');
+
+        const updatedCust = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(cust.id);
+        const mutationRecord = sqliteDb.prepare('SELECT * FROM member_deposits WHERE id = ?').get(mutId);
+
+        broadcastSseEvent('customer_updated', updatedCust);
+        broadcastSseEvent('member_deposit_updated', {
+          customer: updatedCust,
+          mutation: mutationRecord,
+          store_id: storeId
+        });
+
+        return sendJson(200, {
+          status: 'success',
+          message: `Top Up saldo sebesar Rp ${amount.toLocaleString('id-ID')} berhasil`,
+          balance_after: balanceAfter,
+          balance_before: balanceBefore,
+          customer: updatedCust,
+          mutation: mutationRecord,
+          data: {
+            customer: updatedCust,
+            mutation: mutationRecord
+          }
+        });
+      } catch (err) {
+        try { sqliteDb.exec('ROLLBACK;'); } catch {}
+        console.error('[LAN Server] Gagal proses top up member:', err);
+        return sendJson(500, { error: 'Gagal memproses top up member: ' + (err.message || String(err)) });
+      }
+    });
+  }
+
+  // 8.f Ambil Riwayat Mutasi Saldo Member
+  if (pathname === '/api/lan/members/deposits' && req.method === 'GET') {
+    const custId = urlObj.searchParams.get('customer_id');
+    const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
+    let rows;
+    if (custId) {
+      rows = sqliteDb.prepare(`
+        SELECT * FROM member_deposits 
+        WHERE customer_id = ? OR customer_code = ?
+        ORDER BY created_at DESC 
+        LIMIT ?
+      `).all(custId, custId, limit);
+    } else {
+      rows = sqliteDb.prepare(`
+        SELECT * FROM member_deposits 
+        ORDER BY created_at DESC 
+        LIMIT ?
+      `).all(limit);
+    }
+    return sendJson(200, { status: 'success', count: rows.length, data: rows });
   }
 
   // 9. Status Cloudflare Tunnel (Akses Online Luar Rumah)
@@ -940,6 +1219,19 @@ function handleHttpRequest(req, res) {
       message: 'Cloudflare Tunnel dimatikan',
       tunnel: getTunnelInfo()
     });
+  }
+
+  // ================= CUSTOMER DISPLAY ROUTE =================
+  if (pathname === '/display' || pathname === '/customer-display') {
+    const displayHtmlDist = path.join(currentDistPath, 'customer-display.html');
+    const displayHtmlPublic = path.join(__dirname, '../public/customer-display.html');
+    const targetDisplayPath = fs.existsSync(displayHtmlDist) ? displayHtmlDist : (fs.existsSync(displayHtmlPublic) ? displayHtmlPublic : null);
+
+    if (targetDisplayPath) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      fs.createReadStream(targetDisplayPath).pipe(res);
+      return;
+    }
   }
 
   // ================= STATIC FILE SERVING (WEB CLIENT SPA) =================
@@ -1022,8 +1314,8 @@ function startLanServer(options = {}) {
       clearInterval(heartbeatTimer);
     });
 
-    serverInstance.listen(currentPort, '0.0.0.0', () => {
-      console.log(`[LAN Server] Berjalan di port ${currentPort} (0.0.0.0)`);
+    serverInstance.listen(currentPort, () => {
+      console.log(`[LAN Server] Berjalan di port ${currentPort} (Dual-Stack IPv4/IPv6 & LAN)`);
       const ips = getLanIpAddresses();
       console.log('[LAN Server] Alamat yang dapat diakses oleh kasir lain:');
       ips.forEach(ip => console.log(`  -> ${ip.iface}: ${ip.url}`));

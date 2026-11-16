@@ -111,16 +111,12 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       }
     }
     if (initialTransactions === undefined) {
-      if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
-        setLocalTransactions([]);
-      } else {
-        db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
-          setLocalTransactions(trxs.filter((t: any) => {
-            if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
-            return t.store_id === currentStoreInfo.id;
-          }));
-        });
-      }
+      db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
+        setLocalTransactions(trxs.filter((t: any) => {
+          if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
+          return t.store_id === currentStoreInfo.id;
+        }));
+      }).catch(() => {});
     }
   }, [initialProducts, initialTransactions, currentStoreInfo]);
 
@@ -143,10 +139,6 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       }
     };
     const handleTrxRefreshed = () => {
-      if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
-        setLocalTransactions([]);
-        return;
-      }
       db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
         setLocalTransactions(trxs.filter((t: any) => {
           if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
@@ -181,8 +173,14 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     }
   };
 
+  React.useEffect(() => {
+    if (initialTransactions !== undefined) {
+      setLocalTransactions(initialTransactions);
+    }
+  }, [initialTransactions]);
+
   const products = (initialProducts && initialProducts.length > 0) ? initialProducts : localProducts;
-  const transactions = initialTransactions !== undefined ? initialTransactions : localTransactions;
+  const transactions = localTransactions.length > 0 ? localTransactions : (initialTransactions || []);
   const effectiveRole = userRole || currentUser?.role || 'CASHIER';
   const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'MANAGER';
 

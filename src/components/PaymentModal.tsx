@@ -10,7 +10,8 @@ import {
   Delete,
   Calendar,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Wallet
 } from 'lucide-react';
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
@@ -22,7 +23,7 @@ interface PaymentModalProps {
   grandTotal: number;
   customerName?: string;
   onProcessPayment: (paymentData: {
-    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO';
+    payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO';
     cash_given: number;
     change_returned: number;
     customer_name?: string;
@@ -42,7 +43,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   isTouchscreenMode = false,
   onToggleTouchscreen
 }) => {
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO'>('CASH');
   const [cashGiven, setCashGiven] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +70,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const isFormValid = () => {
     if (paymentMethod === 'CASH') return cashGiven >= grandTotal;
     if (paymentMethod === 'TEMPO') return customerName.trim().length > 0 && dueDate.length > 0;
+    if (paymentMethod === 'SALDO') {
+      const selected = customerList.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+      return Boolean(selected && (Number(selected.deposit_balance) || 0) >= grandTotal);
+    }
     return true;
   };
 
@@ -235,7 +240,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           {/* Payment Method Selector */}
           <div>
             <label className="text-xs font-bold text-[#5c3c26] mb-1.5 block">Metode Pembayaran</label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -251,6 +256,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               >
                 <Banknote className="w-5 h-5 mb-1 text-amber-200" />
                 <span>TUNAI</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentMethod('SALDO');
+                  setCashGiven(grandTotal);
+                }}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-xs font-bold transition-all active:scale-95 ${
+                  paymentMethod === 'SALDO'
+                    ? 'bg-emerald-700 text-white border-emerald-700 shadow-md shadow-emerald-700/20'
+                    : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                }`}
+              >
+                <Wallet className="w-5 h-5 mb-1 text-emerald-600" />
+                <span>SALDO</span>
               </button>
 
               <button

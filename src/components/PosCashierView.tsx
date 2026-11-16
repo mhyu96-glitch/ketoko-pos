@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Barcode, 
   Plus, 
@@ -21,11 +21,17 @@ import {
   Coins,
   Delete,
   ShoppingBag,
-  Users
+  Users,
+  MessageSquare,
+  Lock
 } from 'lucide-react';
-import type { CartItem, Product } from '../types';
+import type { CartItem, Product, Customer } from '../types';
+import { db } from '../db';
 import { formatRupiah } from '../services/escposService';
 import { BarcodeScanner } from './BarcodeScanner';
+import { checkCustomerBranchAccess, getCurrentActiveStoreId, getStoreDisplayName } from '../utils/customerAccess';
+import type { MemberBlockedState } from '../hooks/useCart';
+import { MemberTopUpModal } from './MemberTopUpModal';
 
 interface HeldCart {
   id: string;
@@ -40,7 +46,10 @@ interface PosCashierViewProps {
   cartItems: CartItem[];
   memberId: string;
   customerName?: string;
-  setMemberId: (id: string) => void;
+  setMemberId: (id: string, nameOrDiscount?: string | number) => void;
+  memberBlockedInfo?: MemberBlockedState | null;
+  onDismissMemberBlocked?: () => void;
+  activeStoreId?: string;
   taxEnabled: boolean;
   setTaxEnabled: (enabled: boolean) => void;
   taxRate?: number;
@@ -55,12 +64,21 @@ interface PosCashierViewProps {
   onUpdateQty: (productId: string, newQty: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
-  onBarcodeScan: (code: string) => Promise<{ found: boolean; product?: Product; latencyMs: number }>;
+  onBarcodeScan: (code: string) => Promise<{
+    found: boolean;
+    product?: Product;
+    latencyMs: number;
+    isMember?: boolean;
+    memberName?: string;
+    branchBlocked?: boolean;
+    blockedMessage?: string;
+  }>;
   onOpenRecentTrx: () => void;
-  onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER', cashGiven?: number) => void;
+  onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO', cashGiven?: number) => void;
   isCatalogSeeding?: boolean;
   isTouchscreenMode?: boolean;
   onOpenMemberModal?: () => void;
+  onOpenHelpChat?: () => void;
 }
 
 // Isolated Self-Updating Live Digital Clock (Prevents whole page re-render every second)
@@ -189,6 +207,9 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   memberId,
   customerName,
   setMemberId,
+  memberBlockedInfo = null,
+  onDismissMemberBlocked,
+  activeStoreId,
   taxEnabled,
   setTaxEnabled,
   taxRate = 11,
@@ -208,11 +229,13 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   onDirectPayment,
   isCatalogSeeding = false,
   isTouchscreenMode = false,
-  onOpenMemberModal
+  onOpenMemberModal,
+  onOpenHelpChat
 }) => {
   // Quick cash tender input state
   const [cashGivenInput, setCashGivenInput] = useState<string>('');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER'>('CASH');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO'>('CASH');
+  const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
 
   // Dynamic tax rate modal state
   const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
@@ -229,6 +252,121 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   });
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
   const [isClearingCartConfirm, setIsClearingCartConfirm] = useState(false);
+
+  // Customer / Member instant autocomplete list
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [isMemberDropdownOpen, setIsMemberDropdownOpen] = useState(false);
+  const memberInputRef = useRef<HTMLDivElement>(null);
+  const currentBranchId = activeStoreId || getCurrentActiveStoreId();
+  const currentBranchName = getStoreDisplayName(currentBranchId);
+
+  const activeCustomer = useMemo(() => {
+    return customersList.find(c => 
+      c.id === memberId || 
+      c.code === memberId || 
+      (customerName && c.name.toLowerCase() === customerName.toLowerCase())
+    ) || null;
+  }, [customersList, memberId, customerName]);
+
+  const loadCustomers = async () => {
+    try {
+      const all = await db.customers.toArray();
+      setCustomersList(all);
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadCustomers();
+
+    const handleCustomerUpdated = (e: any) => {
+      const cust = e?.detail?.customer || e?.detail;
+      if (cust && cust.id) {
+        setCustomersList((prev) => {
+          const idx = prev.findIndex((c) => String(c.id) === String(cust.id));
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], ...cust };
+            return copy;
+          }
+          return [cust, ...prev];
+        });
+      }
+      loadCustomers();
+    };
+
+    const handleCustomerDeleted = (e: any) => {
+      const delId = e?.detail?.id;
+      if (delId) {
+        setCustomersList((prev) => prev.filter((c) => String(c.id) !== String(delId)));
+      }
+      loadCustomers();
+    };
+
+    window.addEventListener('ketoko_customer_updated', handleCustomerUpdated);
+    window.addEventListener('ketoko_customer_deleted', handleCustomerDeleted);
+    window.addEventListener('ketoko_customers_synced', loadCustomers);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('ketoko_customer_sync');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'CUSTOMER_UPDATED' && event.data.customer) {
+            const cust = event.data.customer;
+            setCustomersList((prev) => {
+              const idx = prev.findIndex((c) => String(c.id) === String(cust.id));
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], ...cust };
+                return copy;
+              }
+              return [cust, ...prev];
+            });
+            loadCustomers();
+          } else if (event.data?.type === 'CUSTOMER_DELETED' && event.data.id) {
+            setCustomersList((prev) => prev.filter((c) => String(c.id) !== String(event.data.id)));
+            loadCustomers();
+          } else {
+            loadCustomers();
+          }
+        };
+      }
+    } catch {}
+
+    const handleDocClick = (e: MouseEvent) => {
+      if (memberInputRef.current && !memberInputRef.current.contains(e.target as Node)) {
+        setIsMemberDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleDocClick);
+
+    return () => {
+      window.removeEventListener('ketoko_customer_updated', handleCustomerUpdated);
+      window.removeEventListener('ketoko_customer_deleted', handleCustomerDeleted);
+      window.removeEventListener('ketoko_customers_synced', loadCustomers);
+      document.removeEventListener('mousedown', handleDocClick);
+      if (bc) bc.close();
+    };
+  }, []);
+
+  // Filtered customer suggestions based on user input in member-code-input
+  const filteredCustomers = useMemo(() => {
+    const q = (memberId || '').trim().toLowerCase();
+    if (!q) {
+      return customersList.slice(0, 8);
+    }
+    const cleanDigits = q.replace(/[^0-9]/g, '');
+    return customersList.filter(c => {
+      const cName = (c.name || '').toLowerCase();
+      const cCode = (c.code || '').toLowerCase();
+      const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+      return (
+        cName.includes(q) ||
+        cCode.includes(q) ||
+        (cleanDigits.length >= 3 && cPhone.includes(cleanDigits))
+      );
+    }).slice(0, 10);
+  }, [customersList, memberId]);
 
   // Quick Chips for fast search / add
   const quickSearchKeywords = ['Indomie', 'Minyak', 'Gulaku', 'Aqua', 'Sampoerna', 'Deterjen', 'Beras', 'Gula'];
@@ -254,6 +392,33 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   const effectiveCash = cashGivenNumber > 0 ? cashGivenNumber : grandTotal;
   const changeDue = Math.max(0, effectiveCash - grandTotal);
   const isCashSufficient = cashGivenNumber === 0 || cashGivenNumber >= grandTotal;
+
+  // Sinkronisasi metode pembayaran & uang diterima langsung ke Layar Pelanggan (CFD)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('ketoko_customer_display');
+        if (selectedPaymentMethod === 'QRIS') {
+          channel.postMessage({
+            type: 'PAYMENT_START',
+            method: 'QRIS'
+          });
+        } else if (selectedPaymentMethod === 'CASH') {
+          channel.postMessage({
+            type: 'PAYMENT_START',
+            method: 'CASH',
+            tendered: cashGivenNumber > 0 ? cashGivenNumber : grandTotal
+          });
+        } else if (selectedPaymentMethod === 'DEBIT' || selectedPaymentMethod === 'TRANSFER') {
+          channel.postMessage({
+            type: 'PAYMENT_START',
+            method: 'CARD'
+          });
+        }
+        channel.close();
+      }
+    } catch {}
+  }, [selectedPaymentMethod, cashGivenNumber, grandTotal]);
 
   // Last scanned item
   const lastScannedItem = cartItems.length > 0 ? cartItems[cartItems.length - 1] : null;
@@ -318,6 +483,17 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   // Process payment directly without opening duplicate modal
   const handleTriggerPayment = () => {
     if (cartItems.length === 0) return;
+    if (selectedPaymentMethod === 'SALDO') {
+      if (!customerName && !memberId) {
+        alert('Silakan pilih Anggota / Konsumen terlebih dahulu untuk pembayaran menggunakan Saldo Member.');
+        return;
+      }
+      const balance = Number(activeCustomer?.deposit_balance) || 0;
+      if (balance < grandTotal) {
+        alert(`Saldo member tidak mencukupi!\nSaldo Tersedia: ${formatRupiah(balance)}\nTotal Belanja: ${formatRupiah(grandTotal)}\nKekurangan: ${formatRupiah(grandTotal - balance)}\n\nSilakan klik tombol Top Up untuk mengisi saldo.`);
+        return;
+      }
+    }
     const finalCash = selectedPaymentMethod === 'CASH' 
       ? (cashGivenNumber > 0 ? cashGivenNumber : grandTotal) 
       : grandTotal;
@@ -485,6 +661,18 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
 
               <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open('/customer-display.html', 'KetokoCustomerDisplay', 'width=1100,height=680');
+                  }}
+                  title="Buka Layar Pelanggan (Customer Facing Display)"
+                  className="px-2.5 py-1 bg-[#fcf5ed] hover:bg-[#faebd7] text-[#7c4e2f] border border-[#ebdccf] rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-2xs"
+                >
+                  <span className="text-sm">🖥️</span>
+                  <span className="hidden sm:inline">Layar Pelanggan</span>
+                </button>
+
                 {heldCarts.length > 0 && (
                   <button
                     onClick={() => setIsHeldModalOpen(true)}
@@ -628,8 +816,21 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                 </span>
               </div>
 
-              <div className="text-[10px] text-[#8a6b53] hidden lg:block shrink-0">
-                Ketoko POS • Fast Cashier Mode
+              <div className="flex items-center space-x-2 shrink-0">
+                {onOpenHelpChat && (
+                  <button
+                    type="button"
+                    onClick={onOpenHelpChat}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-[10px] transition-colors border border-amber-300 shadow-2xs cursor-pointer active:scale-95"
+                    title="Ada bug atau kendala kasir? Klik untuk chat bantuan langsung ke developer"
+                  >
+                    <MessageSquare className="w-3 h-3 text-amber-700" />
+                    <span>Lapor Kendala</span>
+                  </button>
+                )}
+                <div className="text-[10px] text-[#8a6b53] hidden lg:block shrink-0">
+                  Ketoko POS • Fast Cashier Mode
+                </div>
               </div>
             </div>
 
@@ -645,13 +846,27 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             
             {/* Member & Tax Toggle + Input Mode Switch */}
             <div className="flex items-center space-x-2">
-              <div className="relative flex-1">
+              <div className="relative flex-1" ref={memberInputRef}>
                 <input
                   id="member-code-input"
                   type="text"
                   value={memberId}
-                  onChange={(e) => setMemberId(e.target.value)}
-                  placeholder="ID Member (F7)..."
+                  onChange={(e) => {
+                    setMemberId(e.target.value);
+                    setIsMemberDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsMemberDropdownOpen(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && filteredCustomers.length > 0) {
+                      e.preventDefault();
+                      const first = filteredCustomers[0];
+                      setMemberId(first.id, first.name);
+                      setIsMemberDropdownOpen(false);
+                    } else if (e.key === 'Escape') {
+                      setIsMemberDropdownOpen(false);
+                    }
+                  }}
+                  placeholder="ID / Nama Member (F7)..."
                   className="w-full pl-8 pr-8 py-1.5 bg-[#fcf8f4] text-[#332219] rounded-xl border border-[#dfcebe] focus:border-[#7c4e2f] focus:bg-white text-xs font-semibold placeholder:text-[#8a6b53] shadow-2xs"
                 />
                 <UserCheck className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#8a6b53]" />
@@ -664,6 +879,60 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   >
                     <Users className="w-3.5 h-3.5" />
                   </button>
+                )}
+
+                {/* Instant Autocomplete Suggestions Dropdown */}
+                {isMemberDropdownOpen && filteredCustomers.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dfcebe] rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-[#f5ece3]">
+                    {filteredCustomers.slice(0, 8).map((c) => {
+                      const access = checkCustomerBranchAccess(c, currentBranchId);
+                      return (
+                        <div
+                          key={c.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setMemberId(c.id, c.name);
+                            setIsMemberDropdownOpen(false);
+                          }}
+                          className={`p-2 cursor-pointer flex items-center justify-between transition-colors text-left ${
+                            access.allowed ? 'hover:bg-[#fbf7f2]' : 'bg-rose-50/60 hover:bg-rose-50'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <p className={`text-xs font-bold truncate ${access.allowed ? 'text-[#332219]' : 'text-rose-800'}`}>
+                              {c.name}
+                            </p>
+                            <div className="flex items-center flex-wrap gap-1 text-[10px] text-[#8a6b53]">
+                              <span className="font-mono bg-[#f0e4d7] text-[#543c2e] px-1 rounded">{c.code}</span>
+                              {c.phone && c.phone !== '-' && <span>📞 {c.phone}</span>}
+                              <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1 rounded border border-emerald-200">
+                                Saldo: {formatRupiah(Number(c.deposit_balance) || 0)}
+                              </span>
+                              <span className={`px-1 rounded font-bold ${
+                                access.scope === 'ALL_STORES'
+                                  ? 'bg-indigo-100 text-indigo-700'
+                                  : access.allowed
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-rose-100 text-rose-700'
+                              }`}>
+                                {access.scope === 'ALL_STORES' ? '🌐 Semua Cabang' : `🏪 ${access.homeStoreName}`}
+                              </span>
+                            </div>
+                          </div>
+                          {access.allowed ? (
+                            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
+                              Pilih
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200 shrink-0 inline-flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>Terkunci</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
@@ -700,18 +969,72 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
             </div>
 
-            {/* Selected Member Name Indicator */}
+            {/* Selected Member Name & Saldo Indicator */}
             {customerName && (
-              <div className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold flex items-center justify-between animate-fadeIn">
-                <span className="truncate">Pelanggan: <b>{customerName}</b></span>
-                <button
-                  type="button"
-                  onClick={() => setMemberId('')}
-                  className="text-emerald-700 hover:text-rose-600 font-bold ml-1.5 text-xs"
-                  title="Hapus pilihan member"
-                >
-                  ✕
-                </button>
+              <div className="p-2 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] font-bold space-y-1 animate-fadeIn shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="truncate">
+                    Pelanggan: <b>{customerName}</b>{' '}
+                    <span className="text-[10px] font-normal opacity-80">
+                      ({activeCustomer?.store_name || currentBranchName})
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsTopUpModalOpen(true)}
+                      className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
+                      title="Isi Ulang Saldo Anggota"
+                    >
+                      <Wallet className="w-2.5 h-2.5" />
+                      <span>+ Top Up</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMemberId('')}
+                      className="text-emerald-700 hover:text-rose-600 font-bold ml-1 text-xs cursor-pointer"
+                      title="Hapus pilihan member"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-emerald-200/80 font-mono text-[11px]">
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <Coins className="w-3 h-3 text-emerald-600" /> Saldo Simpanan:
+                  </span>
+                  <span className="font-extrabold text-emerald-800 text-xs">
+                    {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Cross-Branch Member Blocked Warning */}
+            {memberBlockedInfo && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-[11px] space-y-1.5 shadow-2xs animate-fadeIn">
+                <div className="flex items-start gap-2">
+                  <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-black text-rose-800">Member Terkunci di Cabang Lain!</div>
+                    <div className="text-rose-700 leading-snug">
+                      <b>{memberBlockedInfo.customer.name}</b> ({memberBlockedInfo.customer.code || memberBlockedInfo.customer.id}) terdaftar khusus di <b>{memberBlockedInfo.homeStoreName}</b>, tidak bisa transaksi member di <b>{memberBlockedInfo.activeStoreName}</b>.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-rose-200/80">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMemberId('');
+                      onDismissMemberBlocked?.();
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] transition-colors cursor-pointer"
+                  >
+                    Lanjut sbg Pembeli Umum
+                  </button>
+                </div>
               </div>
             )}
 
@@ -769,11 +1092,12 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               <label className="text-[10px] font-extrabold text-[#8a6b53] uppercase tracking-wider block">
                 Metode Pembayaran
               </label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-1">
                 {[
-                  { id: 'CASH', label: 'Tunai', icon: Wallet },
+                  { id: 'CASH', label: 'Tunai', icon: Coins },
+                  { id: 'SALDO', label: 'Saldo', icon: Wallet },
                   { id: 'QRIS', label: 'QRIS', icon: QrCode },
-                  { id: 'DEBIT', label: 'Debit/EDC', icon: CreditCard },
+                  { id: 'DEBIT', label: 'Debit', icon: CreditCard },
                   { id: 'TRANSFER', label: 'Transfer', icon: Smartphone }
                 ].map((m) => {
                   const Icon = m.icon;
@@ -783,14 +1107,14 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                       key={m.id}
                       type="button"
                       onClick={() => setSelectedPaymentMethod(m.id as any)}
-                      className={`py-1.5 px-1 rounded-xl border flex flex-col items-center justify-center space-y-1 text-center transition-all ${
+                      className={`py-1.5 px-0.5 rounded-xl border flex flex-col items-center justify-center space-y-1 text-center transition-all ${
                         isSelected
                           ? 'bg-[#7c4e2f] border-[#5c3c26] text-white font-bold shadow-xs'
                           : 'bg-[#fcf8f4] border-[#ebdccf] text-[#5c3c26] hover:bg-[#faebd7] hover:border-[#dfcebe]'
                       }`}
                     >
                       <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-[#fde68a]' : 'text-[#7c4e2f]'}`} />
-                      <span className="text-[10px] leading-none">{m.label}</span>
+                      <span className="text-[10px] leading-none font-bold">{m.label}</span>
                     </button>
                   );
                 })}
@@ -950,9 +1274,73 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
               </div>
             ) : (
-              /* Non-Cash QRIS / Debit / Transfer Info Box */
-              <div className="flex flex-col items-center justify-center p-4 bg-[#fcf8f4] rounded-xl border border-[#ebdccf] text-center space-y-2 lg:flex-1 lg:min-h-0">
-                {selectedPaymentMethod === 'QRIS' ? (
+              /* Non-Cash Saldo / QRIS / Debit / Transfer Info Box */
+              <div className="flex flex-col items-center justify-center p-3 sm:p-4 bg-[#fcf8f4] rounded-xl border border-[#ebdccf] text-center space-y-2 lg:flex-1 lg:min-h-0 overflow-y-auto">
+                {selectedPaymentMethod === 'SALDO' ? (
+                  <div className="w-full space-y-2">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-xl border border-emerald-300 flex items-center justify-center text-emerald-800 mx-auto shadow-2xs">
+                      <Wallet className="w-6 h-6" />
+                    </div>
+                    <div className="text-xs font-black text-slate-800">Pembayaran Saldo Member</div>
+                    
+                    {activeCustomer ? (
+                      <div className="bg-white p-2.5 rounded-xl border border-emerald-200 text-left space-y-1.5 font-mono text-xs shadow-2xs">
+                        <div className="flex justify-between text-slate-600">
+                          <span className="font-sans">Anggota:</span>
+                          <span className="font-bold text-slate-800 truncate max-w-[130px] font-sans">{activeCustomer.name}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span className="font-sans">Saldo Saat Ini:</span>
+                          <span className="font-bold text-emerald-700">{formatRupiah(Number(activeCustomer.deposit_balance) || 0)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span className="font-sans">Total Belanja:</span>
+                          <span className="font-bold text-rose-700">-{formatRupiah(grandTotal)}</span>
+                        </div>
+                        <div className="border-t border-dashed border-slate-200 pt-1 flex justify-between font-extrabold">
+                          <span className="font-sans">Sisa Saldo:</span>
+                          <span className={(Number(activeCustomer.deposit_balance) || 0) >= grandTotal ? 'text-emerald-700 font-black' : 'text-rose-600 font-black'}>
+                            {formatRupiah((Number(activeCustomer.deposit_balance) || 0) - grandTotal)}
+                          </span>
+                        </div>
+
+                        {(Number(activeCustomer.deposit_balance) || 0) < grandTotal ? (
+                          <div className="pt-1">
+                            <div className="text-[10px] text-rose-600 font-bold font-sans mb-1 text-center">
+                              ⚠️ Saldo kurang Rp {(grandTotal - (Number(activeCustomer.deposit_balance) || 0)).toLocaleString('id-ID')}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIsTopUpModalOpen(true)}
+                              className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-extrabold font-sans flex items-center justify-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Top Up Saldo Sekarang</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="pt-1 text-[10px] text-emerald-700 font-sans font-bold text-center bg-emerald-50 py-1 rounded-md border border-emerald-200">
+                            ✓ Saldo mencukupi untuk pembayaran
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-300 text-amber-900 text-left space-y-1.5 text-xs">
+                        <p className="font-bold">⚠️ Belum Ada Member Dipilih</p>
+                        <p className="text-[11px] text-amber-800 leading-snug">
+                          Ketik nama/kode anggota pada kolom pelanggan di atas, atau klik tombol <b>Member</b>.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={onOpenMemberModal}
+                          className="w-full py-1.5 px-2 bg-[#7c4e2f] hover:bg-[#5c3c26] text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer"
+                        >
+                          Cari & Pilih Member
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : selectedPaymentMethod === 'QRIS' ? (
                   <>
                     <div className="w-12 h-12 bg-white rounded-xl border border-[#dfcebe] flex items-center justify-center text-[#7c4e2f] shadow-2xs">
                       <QrCode className="w-7 h-7" />
@@ -1193,6 +1581,19 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Top Up Saldo Member Langsung dari Kasir */}
+      {isTopUpModalOpen && activeCustomer && (
+        <MemberTopUpModal
+          isOpen={isTopUpModalOpen}
+          onClose={() => setIsTopUpModalOpen(false)}
+          member={activeCustomer}
+          activeStoreId={currentBranchId}
+          onTopUpSuccess={(updatedCust) => {
+            setCustomersList((prev) => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
+          }}
+        />
       )}
 
     </div>

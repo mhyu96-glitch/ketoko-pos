@@ -10,7 +10,8 @@ import type {
   PurchaseReturn, 
   SalesReturn, 
   StockMovement,
-  User 
+  User,
+  MemberDepositMutation
 } from '../types';
 
 export interface PendingSyncItem {
@@ -37,6 +38,7 @@ export class KetokoDatabase extends Dexie {
   stockMovements!: Table<StockMovement, string>;
   users!: Table<User, string>;
   usersLocal!: Table<User, string>;
+  memberDeposits!: Table<MemberDepositMutation, string>;
 
   constructor() {
     super('KetokoPOS_DB');
@@ -69,6 +71,22 @@ export class KetokoDatabase extends Dexie {
       stockMovements: 'id, product_id, type, store_id, date, created_at',
       users: 'id, username, role, branch_id',
       usersLocal: 'id, username, role, branch_id'
+    });
+    this.version(4).stores({
+      products: 'id, barcode, category, name, store_id, updated_at',
+      transactions: 'id, receipt_number, cashier_id, store_id, created_at, synced',
+      syncQueue: 'id, status, created_at, attempts',
+      customers: 'id, code, name, phone, store_id, created_at',
+      suppliers: 'id, code, name, phone, store_id, created_at',
+      debts: 'id, supplier_id, due_date, status, store_id, created_at',
+      receivables: 'id, customer_id, due_date, status, store_id, created_at',
+      purchases: 'id, invoice_number, supplier_id, store_id, date, created_at',
+      purchaseReturns: 'id, return_number, supplier_id, store_id, date, created_at',
+      salesReturns: 'id, return_number, receipt_number, store_id, date, created_at',
+      stockMovements: 'id, product_id, type, store_id, date, created_at',
+      users: 'id, username, role, branch_id',
+      usersLocal: 'id, username, role, branch_id',
+      memberDeposits: 'id, customer_id, type, store_id, created_at'
     });
   }
 }

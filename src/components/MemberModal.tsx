@@ -12,12 +12,28 @@ import {
   Table as TableIcon,
   LayoutGrid,
   Save,
-  RotateCcw
+  RotateCcw,
+  QrCode,
+  Lock,
+  Wallet
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer } from '../types';
 import { syncService } from '../services/syncService';
+import { lanService } from '../services/lanService';
 import { formatRupiah } from '../services/escposService';
+import { MemberCardModal } from './MemberCardModal';
+import { MemberTopUpModal } from './MemberTopUpModal';
+import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import {
+  checkCustomerBranchAccess,
+  getCurrentActiveStoreId,
+  getStoreDisplayName,
+  normalizeAccessScope,
+  normalizeStoreId,
+  type CustomerAccessScope,
+} from '../utils/customerAccess';
+import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
 
 interface MemberModalProps {
   isOpen: boolean;
@@ -43,6 +59,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
   });
 
+  // Cooperative multi-branch state
+  const activeStoreId = getCurrentActiveStoreId();
+  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoredStores());
+  const [branchFilter, setBranchFilter] = useState<string>('ALL');
+
   // Add Form State
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCode, setNewCode] = useState('');
@@ -51,6 +72,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const [newAddress, setNewAddress] = useState('');
   const [newCreditLimit, setNewCreditLimit] = useState<number>(1000000);
   const [newNotes, setNewNotes] = useState('');
+  const [newStoreId, setNewStoreId] = useState<string>(() => getCurrentActiveStoreId());
+  const [newAccessScope, setNewAccessScope] = useState<CustomerAccessScope>('ALL_STORES');
 
   // Edit Form State
   const [editingMember, setEditingMember] = useState<Customer | null>(null);
@@ -60,9 +83,17 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const [editAddress, setEditAddress] = useState('');
   const [editCreditLimit, setEditCreditLimit] = useState<number>(1000000);
   const [editNotes, setEditNotes] = useState('');
+  const [editStoreId, setEditStoreId] = useState<string>('store-01');
+  const [editAccessScope, setEditAccessScope] = useState<CustomerAccessScope>('ALL_STORES');
 
   // Delete Confirm State
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Digital Card Modal State (QR & Barcode)
+  const [selectedMemberForCard, setSelectedMemberForCard] = useState<Customer | null>(null);
+
+  // Top Up Saldo Modal State
+  const [selectedMemberForTopUp, setSelectedMemberForTopUp] = useState<Customer | null>(null);
 
   const toggleViewMode = (mode: 'table' | 'cards') => {
     setViewMode(mode);
@@ -81,12 +112,29 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const loadMembers = async () => {
     try {
       let custs = await db.customers.toArray();
-      if (custs.length === 0) {
-        // Coba tarik dari Cloud Supabase terlebih dahulu
-        await syncService.pullCustomersFromSupabase().catch(() => {});
-        custs = await db.customers.toArray();
-      }
       setMembers(custs);
+
+      // Sinkronisasi background dari LAN server jika aktif
+      if (lanService.isLanActive()) {
+        try {
+          await lanService.fetchCustomersFromLan();
+          custs = await db.customers.toArray();
+          setMembers(custs);
+        } catch (e) {
+          console.warn('[MemberModal] LAN pull deferred:', e);
+        }
+      }
+
+      // Sinkronisasi background dari Cloud jika online
+      if (navigator.onLine) {
+        try {
+          await syncService.pullCustomersFromSupabase();
+          custs = await db.customers.toArray();
+          setMembers(custs);
+        } catch (e) {
+          console.warn('[MemberModal] Cloud pull deferred:', e);
+        }
+      }
     } catch (err) {
       console.error('Gagal memuat data member:', err);
     }
@@ -132,6 +180,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Start Editing a Member
   const startEdit = (m: Customer) => {
+    setStoresList(getStoredStores());
     setEditingMember(m);
     setEditCode(m.code || m.id);
     setEditName(m.name);
@@ -139,20 +188,25 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     setEditAddress(m.address && m.address !== '-' ? m.address : '');
     setEditCreditLimit(m.credit_limit || 0);
     setEditNotes(m.notes || '');
+    setEditStoreId(normalizeStoreId(m.store_id));
+    setEditAccessScope(normalizeAccessScope(m.access_scope));
     setShowAddForm(false);
     setDeleteConfirmId(null);
   };
 
   // Start Adding a New Member
   const startAdd = () => {
+    setStoresList(getStoredStores());
     setShowAddForm(true);
     setEditingMember(null);
-    setNewCode(`PLG-${String(members.length + 1).padStart(3, '0')}`);
+    setNewCode(`KOP-${String(members.length + 1).padStart(3, '0')}`);
     setNewName('');
     setNewPhone('');
     setNewAddress('');
-    setNewCreditLimit(1000000);
-    setNewNotes('');
+    setNewCreditLimit(1500000);
+    setNewNotes('Karyawan Koperasi');
+    setNewStoreId(getCurrentActiveStoreId());
+    setNewAccessScope('ALL_STORES');
     setDeleteConfirmId(null);
   };
 
@@ -162,8 +216,15 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     if (!editingMember || !editName.trim()) return;
 
     try {
+      const targetStoreId = normalizeStoreId(editStoreId);
+      const oldStoreId = normalizeStoreId(editingMember.store_id);
+      const isBranchMoved = targetStoreId !== oldStoreId;
+
       const updatedMember: Customer = {
         ...editingMember,
+        store_id: targetStoreId,
+        store_name: getStoreDisplayName(targetStoreId),
+        access_scope: normalizeAccessScope(editAccessScope),
         code: editCode.trim() || editingMember.code || `PLG-${Date.now().toString().slice(-4)}`,
         name: editName.trim(),
         phone: editPhone.trim() || '-',
@@ -176,13 +237,17 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       await syncService.syncCustomerChange(updatedMember);
       setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));
       
-      // If this member is currently active in POS, update the selection
+      // If this member is currently active in POS, update the selection (or revoke if mutated out)
       if (currentMemberId === updatedMember.id && onSelectMember) {
         onSelectMember(updatedMember.id, updatedMember);
       }
 
       setEditingMember(null);
-      showToast(`Data pelanggan "${updatedMember.name}" berhasil disimpan!`);
+      showToast(
+        isBranchMoved
+          ? `Mutasi berhasil: "${updatedMember.name}" dipindahkan ke ${getStoreDisplayName(targetStoreId)}!`
+          : `Data pelanggan "${updatedMember.name}" berhasil disimpan!`
+      );
     } catch (err) {
       console.error('Gagal menyimpan perubahan pelanggan:', err);
       showToast('Gagal menyimpan perubahan data pelanggan.');
@@ -197,8 +262,13 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     try {
       const newId = `cust-${Date.now()}`;
       const finalCode = newCode.trim() || `PLG-${String(members.length + 1).padStart(3, '0')}`;
+      const targetStoreId = normalizeStoreId(newStoreId);
       const newMember: Customer = {
         id: newId,
+        store_id: targetStoreId,
+        store_name: getStoreDisplayName(targetStoreId),
+        access_scope: normalizeAccessScope(newAccessScope),
+        type: 'MEMBER',
         code: finalCode,
         name: newName.trim(),
         phone: newPhone.trim() || '-',
@@ -211,9 +281,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       };
 
       await syncService.syncCustomerChange(newMember);
-      setMembers((prev) => [newMember, ...prev]);
+      setMembers((prev) => [newMember, ...prev.filter((m) => m.id !== newMember.id)]);
       setShowAddForm(false);
-      showToast(`Pelanggan baru "${newMember.name}" berhasil didaftarkan!`);
+      showToast(`Karyawan/Pelanggan "${newMember.name}" (${getStoreDisplayName(targetStoreId)}) berhasil didaftarkan!`);
+      setSelectedMemberForCard(newMember);
     } catch (err) {
       console.error('Gagal menambah pelanggan baru:', err);
       showToast('Gagal menambahkan pelanggan.');
@@ -236,19 +307,40 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
   };
 
-  const filteredMembers = members.filter((m) =>
-    (m.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.code || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.id || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.phone || '').includes(search) ||
-    (m.address || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredMembers = members.filter((m) => {
+    const matchesSearch =
+      (m.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (m.code || '').toLowerCase().includes(search.toLowerCase()) ||
+      (m.id || '').toLowerCase().includes(search.toLowerCase()) ||
+      (m.phone || '').includes(search) ||
+      (m.address || '').toLowerCase().includes(search.toLowerCase());
+
+    if (!matchesSearch) return false;
+    if (branchFilter === 'ALLOWED') {
+      return checkCustomerBranchAccess(m, activeStoreId).allowed;
+    }
+    if (branchFilter !== 'ALL') {
+      return normalizeStoreId(m.store_id) === branchFilter;
+    }
+    return true;
+  });
+
+  const handleSelectClick = (m: Customer) => {
+    if (!onSelectMember) return;
+    const access = checkCustomerBranchAccess(m, activeStoreId);
+    if (!access.allowed) {
+      showToast(access.reason || `Member "${m.name}" terdaftar di ${access.homeStoreName}`);
+      return;
+    }
+    onSelectMember(m.id, m);
+    onClose();
+  };
 
   const activeSelected = members.find((m) => m.id === currentMemberId || m.code === currentMemberId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Header - Warm Latte Gradient */}
         <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
@@ -278,11 +370,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         )}
 
         {/* Toolbar & Search Bar */}
-        <div className="px-4 py-3 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        <div className="px-4 py-3 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           
           {/* Left: Total badge & View switcher */}
-          <div className="flex items-center space-x-2">
-            <span className="px-3 py-1.5 rounded-xl bg-white text-[#543c2e] border border-[#dfcebe] text-xs font-bold shadow-2xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-3 py-1.5 rounded-xl bg-white text-[#543c2e] border border-[#dfcebe] text-xs font-bold shadow-2xs whitespace-nowrap">
               Total: {members.length} Pelanggan
             </span>
 
@@ -315,17 +407,32 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 <span>Kartu</span>
               </button>
             </div>
+
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              title="Filter anggota berdasarkan cabang terdaftar"
+              className="px-2.5 py-1.5 rounded-xl border border-[#dfcebe] bg-white text-xs font-bold text-[#543c2e] shadow-2xs focus:border-[#7c4e2f] max-w-[190px] truncate"
+            >
+              <option value="ALL">Semua Cabang ({members.length})</option>
+              <option value="ALLOWED">Aktif di {getStoreDisplayName(activeStoreId)}</option>
+              {storesList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Cabang: {s.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Right: Search Input & Add Button */}
-          <div className="flex items-center space-x-2">
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-[#856b59] absolute left-3 top-2.5" />
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="relative w-48 sm:w-60">
+              <Search className="w-4 h-4 text-[#856b59] absolute left-3 top-2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari nama, kode, no. HP, alamat..."
+                placeholder="Cari nama, kode, no. HP..."
                 className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#dfcebe] text-xs focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20 bg-white font-medium"
               />
             </div>
@@ -435,6 +542,14 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 </div>
               </div>
 
+              <CustomerBranchFields
+                storeId={newStoreId}
+                onStoreIdChange={setNewStoreId}
+                accessScope={newAccessScope}
+                onAccessScopeChange={setNewAccessScope}
+                stores={storesList}
+              />
+
               <div className="flex justify-end space-x-2 pt-1 border-t border-[#eed7c4]">
                 <button
                   type="button"
@@ -537,21 +652,42 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-1 border-t border-[#eed7c4]">
+              <CustomerBranchFields
+                storeId={editStoreId}
+                onStoreIdChange={setEditStoreId}
+                accessScope={editAccessScope}
+                onAccessScopeChange={setEditAccessScope}
+                stores={storesList}
+                originalStoreId={editingMember.store_id}
+              />
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#eed7c4]">
                 <button
                   type="button"
-                  onClick={() => setEditingMember(null)}
-                  className="px-3.5 py-1.5 bg-[#f5ece3] text-[#543c2e] hover:bg-[#ebdccf] rounded-xl text-xs font-bold transition-colors"
+                  onClick={() => setSelectedMemberForCard(editingMember)}
+                  className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs"
+                  title="Lihat & Unduh Barcode Karyawan"
                 >
-                  Batal
+                  <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Lihat Barcode & Kartu</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1 transition-all"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Perubahan</span>
-                </button>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingMember(null)}
+                    className="px-3.5 py-1.5 bg-[#f5ece3] text-[#543c2e] hover:bg-[#ebdccf] rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1 transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan Perubahan</span>
+                  </button>
+                </div>
               </div>
             </form>
           )}
@@ -566,14 +702,15 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                       <th className="py-3 px-4">Kode</th>
                       <th className="py-3 px-4">Nama Pelanggan</th>
                       <th className="py-3 px-4">Kontak & Alamat</th>
+                      <th className="py-3 px-4 text-right">Saldo Member</th>
                       <th className="py-3 px-4 text-right">Plafon Piutang</th>
-                      <th className="py-3 px-4 text-center">Aksi</th>
+                      <th className="py-3 px-4 text-center">Aksi & Barcode</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f0e4d7] font-medium">
                     {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-12 text-center text-[#856b59]">
+                        <td colSpan={6} className="py-12 text-center text-[#856b59]">
                           <Users className="w-8 h-8 mx-auto text-[#dfcebe] mb-2" />
                           <p className="font-bold text-sm text-[#543c2e]">Belum ada data pelanggan</p>
                           <p className="text-xs text-[#856b59]">Klik tombol <b>+ Pelanggan</b> di atas untuk menambahkan.</p>
@@ -583,12 +720,13 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                       filteredMembers.map((m) => {
                         const isSelected = currentMemberId === m.id || currentMemberId === m.code;
                         const isConfirmingDelete = deleteConfirmId === m.id;
+                        const access = checkCustomerBranchAccess(m, activeStoreId);
 
                         return (
                           <tr 
                             key={m.id} 
                             className={`transition-colors ${
-                              isSelected ? 'bg-[#edf5ee]/70' : 'hover:bg-[#fcf8f4]'
+                              isSelected ? 'bg-[#edf5ee]/70' : !access.allowed ? 'bg-rose-50/30 hover:bg-rose-50/50' : 'hover:bg-[#fcf8f4]'
                             }`}
                           >
                             {/* Kode */}
@@ -600,8 +738,9 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
                             {/* Nama Pelanggan */}
                             <td className="py-3 px-4">
-                              <div className="font-bold text-[#332219] text-sm flex items-center space-x-1.5">
+                              <div className="font-bold text-[#332219] text-sm flex items-center flex-wrap gap-1.5">
                                 <span>{m.name}</span>
+                                <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
                                 {isSelected && (
                                   <span className="text-[10px] bg-[#166534] text-white font-bold px-1.5 py-0.2 rounded-full inline-flex items-center space-x-0.5">
                                     <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -609,7 +748,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                   </span>
                                 )}
                               </div>
-                              {m.notes && <div className="text-[11px] text-[#856b59]">{m.notes}</div>}
+                              {m.notes && <div className="text-[11px] text-[#856b59] mt-0.5">{m.notes}</div>}
                             </td>
 
                             {/* Kontak & Alamat */}
@@ -621,6 +760,23 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                               <div className="flex items-center space-x-1 text-[11px] text-[#856b59] mt-0.5 max-w-[240px] truncate">
                                 <MapPin className="w-3.5 h-3.5 text-[#8c7766] shrink-0" />
                                 <span className="truncate">{m.address || '-'}</span>
+                              </div>
+                            </td>
+
+                            {/* Saldo Member */}
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
+                                  {formatRupiah(Number(m.deposit_balance) || 0)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedMemberForTopUp(m)}
+                                  className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                  title="Top Up Saldo Anggota"
+                                >
+                                  <Wallet className="w-3 h-3" />
+                                </button>
                               </div>
                             </td>
 
@@ -654,21 +810,48 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                   {onSelectMember && (
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        onSelectMember(m.id, m);
-                                        onClose();
-                                      }}
+                                      onClick={() => handleSelectClick(m)}
                                       className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center space-x-1 transition-all shadow-2xs ${
-                                        isSelected
-                                          ? 'bg-[#166534] text-white hover:bg-[#14532d]'
-                                          : 'bg-[#96633b] hover:bg-[#83532e] text-white'
+                                        !access.allowed
+                                          ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200'
+                                          : isSelected
+                                            ? 'bg-[#166534] text-white hover:bg-[#14532d]'
+                                            : 'bg-[#96633b] hover:bg-[#83532e] text-white'
                                       }`}
-                                      title={isSelected ? 'Pelanggan ini sedang aktif di kasir' : 'Pilih pelanggan ini untuk nota kasir'}
+                                      title={
+                                        !access.allowed
+                                          ? `Terkunci: member ini hanya bisa bertransaksi di ${access.homeStoreName}`
+                                          : isSelected
+                                            ? 'Pelanggan ini sedang aktif di kasir'
+                                            : 'Pilih pelanggan ini untuk nota kasir'
+                                      }
                                     >
-                                      <Check className="w-3 h-3 stroke-[2.5]" />
-                                      <span>{isSelected ? 'Terpilih' : 'Pilih'}</span>
+                                      {!access.allowed ? <Lock className="w-3 h-3" /> : <Check className="w-3 h-3 stroke-[2.5]" />}
+                                      <span>{!access.allowed ? 'Terkunci' : isSelected ? 'Terpilih' : 'Pilih'}</span>
                                     </button>
                                   )}
+
+                                  {/* Tombol Top Up Saldo */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedMemberForTopUp(m)}
+                                    className="px-2.5 py-1.5 rounded-xl text-emerald-900 bg-emerald-100 hover:bg-emerald-200 transition-colors border border-emerald-300 shadow-2xs flex items-center gap-1 font-bold text-xs cursor-pointer"
+                                    title="Top Up Saldo Anggota"
+                                  >
+                                    <Wallet className="w-3.5 h-3.5 text-emerald-700" />
+                                    <span className="hidden md:inline">Top Up</span>
+                                  </button>
+
+                                  {/* Tombol Lihat & Cetak Kartu Member (QR & Barcode) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedMemberForCard(m)}
+                                    className="px-2.5 py-1.5 rounded-xl text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-300 shadow-2xs flex items-center gap-1.5 font-bold text-xs"
+                                    title="Buat, Simpan Gambar Barcode (PNG) & Kirim ke WA Karyawan"
+                                  >
+                                    <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                                    <span className="hidden md:inline">Barcode & Kartu</span>
+                                  </button>
 
                                   {/* Tombol Edit */}
                                   <button
@@ -712,6 +895,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 filteredMembers.map((m) => {
                   const isSelected = currentMemberId === m.id || currentMemberId === m.code;
                   const isConfirmingDelete = deleteConfirmId === m.id;
+                  const access = checkCustomerBranchAccess(m, activeStoreId);
 
                   return (
                     <div
@@ -719,16 +903,19 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                       className={`p-3.5 rounded-2xl border transition-all ${
                         isSelected
                           ? 'bg-[#edf5ee] border-[#166534] ring-2 ring-[#166534]/20 shadow-xs'
-                          : 'bg-white border-[#e5d0be] hover:border-[#b8957c] shadow-2xs'
+                          : !access.allowed
+                            ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300 shadow-2xs'
+                            : 'bg-white border-[#e5d0be] hover:border-[#b8957c] shadow-2xs'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center space-x-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-black text-sm text-[#3d2617]">{m.name}</span>
                             <span className="text-[10px] font-mono bg-[#f5ebe0] text-[#96633b] px-2 py-0.5 rounded-md border border-[#ddc3aa] font-bold">
                               {m.code || m.id}
                             </span>
+                            <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
                           </div>
                           {m.notes && <div className="text-[11px] text-[#856b59] mt-0.5">{m.notes}</div>}
                           
@@ -752,22 +939,30 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                           {onSelectMember && (
                             <button
                               type="button"
-                              onClick={() => {
-                                onSelectMember(m.id, m);
-                                onClose();
-                              }}
+                              onClick={() => handleSelectClick(m)}
                               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1 transition-all shadow-xs ${
-                                isSelected
-                                  ? 'bg-[#166534] text-white'
-                                  : 'bg-[#96633b] hover:bg-[#83532e] text-white'
+                                !access.allowed
+                                  ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200'
+                                  : isSelected
+                                    ? 'bg-[#166534] text-white'
+                                    : 'bg-[#96633b] hover:bg-[#83532e] text-white'
                               }`}
                             >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>{isSelected ? 'Terpilih' : 'Pilih'}</span>
+                              {!access.allowed ? <Lock className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                              <span>{!access.allowed ? 'Terkunci' : isSelected ? 'Terpilih' : 'Pilih'}</span>
                             </button>
                           )}
 
                           <div className="flex items-center space-x-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMemberForCard(m)}
+                              className="px-2 py-1.5 rounded-xl text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 flex items-center gap-1 font-bold text-xs shadow-2xs"
+                              title="Buat, Simpan Gambar Barcode (PNG) & Kirim ke WA Karyawan"
+                            >
+                              <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Kartu</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => startEdit(m)}
@@ -841,6 +1036,28 @@ export const MemberModal: React.FC<MemberModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Digital Card & Cetak Barcode/QR Member */}
+      <MemberCardModal
+        isOpen={!!selectedMemberForCard}
+        member={selectedMemberForCard}
+        onClose={() => setSelectedMemberForCard(null)}
+        onApplyToPos={onSelectMember}
+      />
+
+      {/* Modal Top Up Saldo Anggota */}
+      {selectedMemberForTopUp && (
+        <MemberTopUpModal
+          isOpen={!!selectedMemberForTopUp}
+          member={selectedMemberForTopUp}
+          activeStoreId={activeStoreId}
+          onClose={() => setSelectedMemberForTopUp(null)}
+          onTopUpSuccess={(updatedCust) => {
+            setMembers((prev) => prev.map(m => m.id === updatedCust.id ? updatedCust : m));
+            showToast(`Top Up untuk "${updatedCust.name}" berhasil! Saldo baru: ${formatRupiah(updatedCust.deposit_balance || 0)}`);
+          }}
+        />
+      )}
     </div>
   );
 };

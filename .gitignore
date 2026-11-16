@@ -61,3 +61,10 @@ Thumbs.db
 
 # 8. Testing Artifacts
 .e2e/
+/*.png
+/*.pdf
+scripts/test_*
+scripts/capture_*
+scripts/verify_*
+scripts/generatePrdPdf.cjs
+scripts/prd_print_template.html

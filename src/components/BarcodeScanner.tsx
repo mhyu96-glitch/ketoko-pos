@@ -12,8 +12,18 @@ import type { Product } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { CameraScannerModal } from './CameraScannerModal';
 
+interface ScanResult {
+  found: boolean;
+  product?: Product;
+  latencyMs: number;
+  isMember?: boolean;
+  memberName?: string;
+  branchBlocked?: boolean;
+  blockedMessage?: string;
+}
+
 interface BarcodeScannerProps {
-  onScan: (query: string) => Promise<{ found: boolean; product?: Product; latencyMs: number }>;
+  onScan: (query: string) => Promise<ScanResult>;
   products?: Product[];
   onAddToCart?: (product: Product, qty?: number) => void;
 }
@@ -97,6 +107,34 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = React.memo(({
     return results;
   }, [debouncedQuery, products]);
 
+  const applyScanFeedback = (result: ScanResult, cleanQuery: string, notFoundPrefix: string) => {
+    if (result.branchBlocked) {
+      setLastScanInfo({
+        name: result.blockedMessage || `Member "${result.memberName || cleanQuery}" terdaftar di cabang lain`,
+        latencyMs: result.latencyMs,
+        success: false
+      });
+      playBeep(240, 220);
+      return;
+    }
+
+    if (result.found && (result.product || result.isMember)) {
+      setLastScanInfo({
+        name: result.isMember ? `Member Koperasi: ${result.memberName || 'Anggota Terpilih'}` : result.product!.name,
+        latencyMs: result.latencyMs,
+        success: true
+      });
+      playBeep(result.isMember ? 1200 : 880, result.isMember ? 120 : 80);
+    } else {
+      setLastScanInfo({
+        name: `${notFoundPrefix} "${cleanQuery}" tidak ditemukan`,
+        latencyMs: result.latencyMs,
+        success: false
+      });
+      playBeep(330, 150);
+    }
+  };
+
   const handleScanSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const clean = queryInput.trim();
@@ -107,21 +145,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = React.memo(({
     const result = await onScan(clean);
     setIsScanning(false);
 
-    if (result.found && result.product) {
-      setLastScanInfo({
-        name: result.product.name,
-        latencyMs: result.latencyMs,
-        success: true
-      });
-      playBeep(880, 80);
-    } else {
-      setLastScanInfo({
-        name: `Barang / Barcode "${clean}" tidak ditemukan`,
-        latencyMs: result.latencyMs,
-        success: false
-      });
-      playBeep(330, 150);
-    }
+    applyScanFeedback(result, clean, 'Barang / Member');
 
     setQueryInput('');
     inputRef.current?.focus();
@@ -149,21 +173,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = React.memo(({
     const result = await onScan(barcode);
     setIsScanning(false);
 
-    if (result.found && result.product) {
-      setLastScanInfo({
-        name: result.product.name,
-        latencyMs: result.latencyMs,
-        success: true
-      });
-      playBeep(880, 80);
-    } else {
-      setLastScanInfo({
-        name: `Barcode Kamera "${barcode}" tidak terdaftar`,
-        latencyMs: result.latencyMs,
-        success: false
-      });
-      playBeep(330, 150);
-    }
+    applyScanFeedback(result, barcode, 'Barcode / QR');
   };
 
   const playBeep = (freq: number, duration: number) => {

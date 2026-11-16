@@ -8,12 +8,26 @@ import {
   Edit3, 
   Trash2, 
   Phone, 
-  MapPin
+  MapPin,
+  Wallet,
+  QrCode
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer, Supplier } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
+import { lanService } from '../services/lanService';
+import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import {
+  getCurrentActiveStoreId,
+  getStoreDisplayName,
+  normalizeAccessScope,
+  normalizeStoreId,
+  type CustomerAccessScope,
+} from '../utils/customerAccess';
+import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
+import { MemberCardModal } from './MemberCardModal';
+import { MemberTopUpModal } from './MemberTopUpModal';
 
 interface CustomerSupplierModalProps {
   isOpen: boolean;
@@ -36,6 +50,8 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const [search, setSearch] = useState('');
 
   // Customer Form State
+  const activeStoreId = getCurrentActiveStoreId();
+  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoredStores());
   const [isAddingCust, setIsAddingCust] = useState(false);
   const [editingCustId, setEditingCustId] = useState<string | null>(null);
   const [custCode, setCustCode] = useState('');
@@ -43,6 +59,9 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const [custPhone, setCustPhone] = useState('');
   const [custAddress, setCustAddress] = useState('');
   const [custCreditLimit, setCustCreditLimit] = useState<number>(1000000);
+  const [custStoreId, setCustStoreId] = useState<string>(() => getCurrentActiveStoreId());
+  const [custOriginalStoreId, setCustOriginalStoreId] = useState<string | null>(null);
+  const [custAccessScope, setCustAccessScope] = useState<CustomerAccessScope>('ALL_STORES');
 
   // Supplier Form State
   const [isAddingSup, setIsAddingSup] = useState(false);
@@ -57,6 +76,10 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   // Delete inline confirmation states
   const [deleteConfirmCustId, setDeleteConfirmCustId] = useState<string | null>(null);
   const [deleteConfirmSupId, setDeleteConfirmSupId] = useState<string | null>(null);
+
+  // Digital Card & Top Up Modals
+  const [selectedCustForCard, setSelectedCustForCard] = useState<Customer | null>(null);
+  const [selectedCustForTopUp, setSelectedCustForTopUp] = useState<Customer | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -99,6 +122,28 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
       setCustomers(allCust);
       setSuppliers(allSup);
       onUpdated?.();
+
+      // Sinkronisasi background dari LAN server jika aktif
+      if (lanService.isLanActive()) {
+        try {
+          await lanService.fetchCustomersFromLan();
+          const refreshedCust = await db.customers.toArray();
+          setCustomers(refreshedCust);
+        } catch (e) {
+          console.warn('[CustomerSupplierModal] LAN customer fetch deferred:', e);
+        }
+      }
+
+      // Sinkronisasi background dari Cloud jika online
+      if (navigator.onLine) {
+        try {
+          await syncService.pullCustomersFromSupabase();
+          const refreshedCust = await db.customers.toArray();
+          setCustomers(refreshedCust);
+        } catch (e) {
+          console.warn('[CustomerSupplierModal] Supabase customer pull deferred:', e);
+        }
+      }
     } catch (err) {
       console.error('Error loading customers/suppliers:', err);
     }
@@ -106,6 +151,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   // Reset Customer Form
   const resetCustForm = () => {
+    setStoresList(getStoredStores());
     setIsAddingCust(false);
     setEditingCustId(null);
     setCustCode('');
@@ -113,6 +159,9 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     setCustPhone('');
     setCustAddress('');
     setCustCreditLimit(1000000);
+    setCustStoreId(getCurrentActiveStoreId());
+    setCustOriginalStoreId(null);
+    setCustAccessScope('ALL_STORES');
   };
 
   // Reset Supplier Form
@@ -132,10 +181,15 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     if (!custName.trim()) return;
 
     try {
+      const targetStoreId = normalizeStoreId(custStoreId || activeStoreId);
       const existing = editingCustId ? await db.customers.get(editingCustId) : null;
       const targetCust: Customer = {
         ...(existing || {}),
         id: editingCustId || `cust-${Date.now()}`,
+        store_id: targetStoreId,
+        store_name: getStoreDisplayName(targetStoreId),
+        access_scope: normalizeAccessScope(custAccessScope),
+        type: existing?.type || 'MEMBER',
         code: custCode.trim() || existing?.code || `PLG-${String(customers.length + 1).padStart(3, '0')}`,
         name: custName.trim(),
         phone: custPhone.trim() || '-',
@@ -152,16 +206,21 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
     resetCustForm();
     loadData();
+    onUpdated?.();
   };
 
   // Edit Customer Trigger
   const handleEditCustomer = (c: Customer) => {
+    setStoresList(getStoredStores());
     setEditingCustId(c.id);
     setCustCode(c.code);
     setCustName(c.name);
     setCustPhone(c.phone || '');
     setCustAddress(c.address || '');
     setCustCreditLimit(c.credit_limit || 0);
+    setCustStoreId(normalizeStoreId(c.store_id));
+    setCustOriginalStoreId(normalizeStoreId(c.store_id));
+    setCustAccessScope(normalizeAccessScope(c.access_scope));
     setIsAddingCust(true);
   };
 
@@ -171,6 +230,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
       await syncService.deleteCustomer(id);
       setDeleteConfirmCustId(null);
       loadData();
+      onUpdated?.();
     } catch (err) {
       console.error('Gagal menghapus pelanggan:', err);
     }
@@ -404,6 +464,15 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                     </div>
                   </div>
 
+                  <CustomerBranchFields
+                    storeId={custStoreId}
+                    onStoreIdChange={setCustStoreId}
+                    accessScope={custAccessScope}
+                    onAccessScopeChange={setCustAccessScope}
+                    stores={storesList}
+                    originalStoreId={custOriginalStoreId}
+                  />
+
                   <div className="flex justify-end space-x-2 pt-1">
                     <button
                       onClick={resetCustForm}
@@ -430,8 +499,9 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                         <th className="py-3 px-4">Kode</th>
                         <th className="py-3 px-4">Nama Pelanggan</th>
                         <th className="py-3 px-4">Kontak & Alamat</th>
+                        <th className="py-3 px-4 text-right">Saldo Member</th>
                         <th className="py-3 px-4 text-right">Plafon Piutang</th>
-                        <th className="py-3 px-4 text-center">Aksi</th>
+                        <th className="py-3 px-4 text-center">Aksi & Barcode</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f0e4d7] font-medium">
@@ -445,8 +515,11 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <div className="font-bold text-[#332219] text-sm">{c.name}</div>
-                              {c.notes && <div className="text-[11px] text-[#856b59]">{c.notes}</div>}
+                              <div className="font-bold text-[#332219] text-sm flex items-center flex-wrap gap-1.5">
+                                <span>{c.name}</span>
+                                <CustomerBranchBadge customer={c} activeStoreId={activeStoreId} />
+                              </div>
+                              {c.notes && <div className="text-[11px] text-[#856b59] mt-0.5">{c.notes}</div>}
                             </td>
                             <td className="py-3 px-4">
                               <div className="flex items-center space-x-1 text-[#543c2e]">
@@ -456,6 +529,21 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                               <div className="flex items-center space-x-1 text-[#856b59] text-[11px] mt-0.5">
                                 <MapPin className="w-3 h-3 text-[#a08573]" />
                                 <span>{c.address || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
+                                  {formatRupiah(Number(c.deposit_balance) || 0)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCustForTopUp(c)}
+                                  className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                  title="Top Up Saldo Anggota"
+                                >
+                                  <Wallet className="w-3 h-3" />
+                                </button>
                               </div>
                             </td>
                             <td className="py-3 px-4 text-right font-mono font-bold text-[#332219] whitespace-nowrap">
@@ -481,6 +569,20 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-center space-x-1.5">
+                                  <button
+                                    onClick={() => setSelectedCustForTopUp(c)}
+                                    className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition-colors"
+                                    title="Top Up Saldo"
+                                  >
+                                    <Wallet className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedCustForCard(c)}
+                                    className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition-colors"
+                                    title="Cetak Barcode & Kartu Digital"
+                                  >
+                                    <QrCode className="w-3.5 h-3.5" />
+                                  </button>
                                   <button
                                     onClick={() => handleEditCustomer(c)}
                                     className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
@@ -710,6 +812,28 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         </div>
 
       </div>
+
+      {/* Modal Digital Card & Cetak Barcode/QR Member */}
+      {selectedCustForCard && (
+        <MemberCardModal
+          isOpen={!!selectedCustForCard}
+          member={selectedCustForCard}
+          onClose={() => setSelectedCustForCard(null)}
+        />
+      )}
+
+      {/* Modal Top Up Saldo Anggota */}
+      {selectedCustForTopUp && (
+        <MemberTopUpModal
+          isOpen={!!selectedCustForTopUp}
+          member={selectedCustForTopUp}
+          activeStoreId={activeStoreId}
+          onClose={() => setSelectedCustForTopUp(null)}
+          onTopUpSuccess={(updatedCust) => {
+            setCustomers((prev) => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
+          }}
+        />
+      )}
     </div>
   );
 };

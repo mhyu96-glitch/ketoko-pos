@@ -66,3 +66,52 @@ export function generateBarcodeSvg(code: string, height = 40, showText = false):
   `.trim();
 }
 
+/**
+ * Draw Code 128 directly to an HTML5 Canvas context
+ * Useful for exporting high-res PNG member cards & sticker badges
+ */
+export function drawBarcodeToCanvas(
+  ctx: CanvasRenderingContext2D,
+  code: string,
+  x: number,
+  y: number,
+  targetWidth: number,
+  targetHeight: number,
+  fillColor = '#000000'
+): void {
+  const cleanCode = (code || '000000').trim();
+  const patternIndices: number[] = [START_B];
+  let checkSum = START_B;
+
+  for (let i = 0; i < cleanCode.length; i++) {
+    const charCode = cleanCode.charCodeAt(i) - 32;
+    const val = Math.max(0, Math.min(charCode, 95));
+    patternIndices.push(val);
+    checkSum += val * (i + 1);
+  }
+
+  const checkDigit = checkSum % 103;
+  patternIndices.push(checkDigit);
+  patternIndices.push(STOP);
+
+  let binaryBars = '';
+  for (const idx of patternIndices) {
+    const pattern = CODE128_PATTERNS[idx] || CODE128_PATTERNS[0];
+    const digits = String(pattern);
+    for (let d = 0; d < digits.length; d++) {
+      const width = Number(digits[d]);
+      const isBar = d % 2 === 0;
+      binaryBars += (isBar ? '1' : '0').repeat(width);
+    }
+  }
+
+  const barWidth = targetWidth / binaryBars.length;
+  ctx.fillStyle = fillColor;
+
+  for (let i = 0; i < binaryBars.length; i++) {
+    if (binaryBars[i] === '1') {
+      ctx.fillRect(Math.round(x + i * barWidth), y, Math.max(1, Math.ceil(barWidth)), targetHeight);
+    }
+  }
+}
+

@@ -50,6 +50,8 @@ CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at);
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     store_id TEXT NOT NULL DEFAULT 'store-01',
+    store_name TEXT DEFAULT 'Cabang Utama',
+    access_scope TEXT DEFAULT 'HOME_ONLY', -- 'HOME_ONLY' | 'ALL_STORES'
     code TEXT,
     name TEXT NOT NULL,
     phone TEXT,
@@ -57,9 +59,13 @@ CREATE TABLE IF NOT EXISTS customers (
     type TEXT DEFAULT 'RETAIL', -- 'RETAIL' | 'MEMBER' | 'WHOLESALE'
     credit_limit NUMERIC(15, 2) DEFAULT 0,
     current_debt NUMERIC(15, 2) DEFAULT 0,
+    notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS store_name TEXT DEFAULT 'Cabang Utama';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS access_scope TEXT DEFAULT 'HOME_ONLY';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT;
 CREATE INDEX IF NOT EXISTS idx_customers_store_id ON customers(store_id);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
@@ -182,6 +188,8 @@ CREATE TABLE IF NOT EXISTS sync_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_sync_logs_store_id ON sync_logs(store_id);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_synced_at ON sync_logs(synced_at);
+CREATE INDEX IF NOT EXISTS idx_sync_logs_op_type ON sync_logs(operation_type, synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_store_name ON products(store_id, name);
 
 -- 11. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
@@ -205,23 +213,12 @@ CREATE POLICY "Allow public read/write debts" ON debts FOR ALL USING (true) WITH
 CREATE POLICY "Allow public read/write receivables" ON receivables FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write sync_logs" ON sync_logs FOR ALL USING (true) WITH CHECK (true);
 
--- 12. TRIGGER OTOMATIS: AUTO DEDUCT STOCK ON TRANSACTION ITEM INSERT
-CREATE OR REPLACE FUNCTION deduct_product_stock_on_sale()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE products
-    SET stock = GREATEST(0, stock - NEW.qty),
-        updated_at = timezone('utc'::text, now())
-    WHERE id = NEW.product_id;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
+-- 12. PENTING: JANGAN AKTIFKAN TRIGGER AUTO DEDUCT STOCK DI SUPABASE
+-- Pengurangan stok barang sudah dikelola dan dihitung secara terpusat dan akurat
+-- di level aplikasi POS (IndexedDB & LAN Server). Mengaktifkan trigger INSERT di Supabase
+-- menyebabkan double-deduction (stok berkurang 2x) dan stok terpotong berkali-kali saat antrean sync retry.
 DROP TRIGGER IF EXISTS trg_deduct_stock ON transaction_items;
-CREATE TRIGGER trg_deduct_stock
-AFTER INSERT ON transaction_items
-FOR EACH ROW
-EXECUTE FUNCTION deduct_product_stock_on_sale();
+DROP FUNCTION IF EXISTS deduct_product_stock_on_sale();
 
 -- ==============================================================================
 -- 13. CLOUDFLARE WORKER & TELEGRAM KEEP-ALIVE (ANTI-PAUSE SUPABASE FREE TIER)
