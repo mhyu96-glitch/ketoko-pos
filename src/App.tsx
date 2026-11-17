@@ -415,8 +415,20 @@ export const App: React.FC = () => {
   }, []);
 
   const sortProductsForDisplay = useCallback((list: Product[], storeFilter?: string): Product[] => {
+    const isStore01 = storeFilter === 'store-01';
     const filtered = storeFilter
-      ? list.filter((p: any) => storeFilter === 'store-01' ? (!p.store_id || p.store_id === 'store-01') : p.store_id === storeFilter)
+      ? list.filter((p: any) => {
+          if (isStore01) {
+            // CV. Tumbuh Makmur Air Conindo (Toko AC): HANYA produk AC store-01!
+            if (p.store_id && p.store_id !== 'store-01') return false;
+            const cat = (p.category || '').toLowerCase();
+            const name = (p.name || '').toLowerCase();
+            if (cat === 'sembako') return false;
+            if (name.includes('minyak goreng') || name.includes('beras premium') || name.includes('koperasi')) return false;
+            return true;
+          }
+          return p.store_id === storeFilter;
+        })
       : list;
 
     return [...filtered].sort((a, b) => {
@@ -428,6 +440,23 @@ export const App: React.FC = () => {
       const bIsCustom = !/^\d+$/.test(String(b.id).trim());
       if (aIsCustom !== bIsCustom) return aIsCustom ? -1 : 1;
       return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
+    });
+  }, []);
+
+  const filterTrxForActiveStore = useCallback((trxList: Transaction[], activeStoreId: string): Transaction[] => {
+    return trxList.filter((t: any) => {
+      if (activeStoreId === 'store-01') {
+        if (t.store_id && t.store_id !== 'store-01') return false;
+        const cashier = (t.cashier_name || '').toLowerCase();
+        if (cashier.includes('toko b') || cashier.includes('koperasi b')) return false;
+        const items = Array.isArray(t.items) ? t.items : [];
+        if (items.some((it: any) => {
+          const n = (it.name || '').toLowerCase();
+          return n.includes('minyak goreng') || n.includes('koperasi b') || n.includes('beras premium');
+        })) return false;
+        return true;
+      }
+      return t.store_id === activeStoreId;
     });
   }, []);
 
@@ -604,7 +633,7 @@ export const App: React.FC = () => {
 
       // Always try to fetch transactions from central LAN server if accessible
       try {
-        const centralTrx = await lanService.fetchCentralTransactions(100);
+        const centralTrx = await lanService.fetchCentralTransactions(100, undefined, activeStore);
         if (centralTrx && centralTrx.length > 0) {
           await db.transactions.bulkPut(centralTrx);
         }
@@ -622,27 +651,39 @@ export const App: React.FC = () => {
       }
 
       const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
-      const filteredTrx = allTrx.filter((t: any) => {
-        if (activeStore === 'store-01') {
-          return !t.store_id || t.store_id === 'store-01';
-        }
-        return t.store_id === activeStore;
-      });
+      const filteredTrx = filterTrxForActiveStore(allTrx, activeStore);
       setTransactions(filteredTrx);
       return filteredTrx;
     } catch (err) {
       console.warn('[App] Gagal memuat data transaksi:', err);
       return [];
     }
-  }, []);
+  }, [filterTrxForActiveStore]);
 
   // Initialize DB, Products and Transactions on mount & global shortcut events & update checker
   useEffect(() => {
-    // Ensure clean initial state (wipe any old dummy products on first launch of this update)
-    const cleanMigrated = localStorage.getItem('ketoko_clean_fresh_v2');
-    if (!cleanMigrated) {
-      db.products.clear().then(() => {
-        localStorage.setItem('ketoko_clean_fresh_v2', 'true');
+    // 1. Pembersihan otomatis data sembako & transaksi dummy toko B di CV Tumbuh Makmur (Toko AC)
+    const sembakoCleaned = localStorage.getItem('ketoko_clean_ac_store_sembako_v4');
+    if (!sembakoCleaned) {
+      Promise.all([
+        db.products.filter((p: any) => {
+          const c = (p.category || '').toLowerCase();
+          const n = (p.name || '').toLowerCase();
+          return c === 'sembako' || n.includes('minyak goreng') || n.includes('beras premium') || n.includes('koperasi');
+        }).delete(),
+        db.transactions.filter((t: any) => {
+          const cashier = (t.cashier_name || '').toLowerCase();
+          const sid = (t.store_id || '').toLowerCase();
+          const items = Array.isArray(t.items) ? t.items : [];
+          return sid === 'store-02' || sid.includes('toko-b') || sid.includes('koperasi') ||
+                 cashier.includes('toko b') || cashier.includes('koperasi b') ||
+                 items.some((it: any) => {
+                   const iname = (it.name || '').toLowerCase();
+                   return iname.includes('minyak goreng') || iname.includes('koperasi b') || iname.includes('beras');
+                 });
+        }).delete()
+      ]).then(() => {
+        localStorage.setItem('ketoko_clean_ac_store_sembako_v4', 'true');
         loadLocalProducts();
         loadTransactions();
       }).catch(() => {
@@ -709,11 +750,16 @@ export const App: React.FC = () => {
           const trx = data?.transaction;
           if (trx && trx.id) {
             db.transactions.put(trx).catch(() => {});
-            setTransactions((prev) => {
-              if (prev.some(t => t.id === trx.id)) return prev;
-              return [trx, ...prev];
-            });
-            window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            const currentHost = resolveStoreFromCurrentHost();
+            const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
+            const filtered = filterTrxForActiveStore([trx], activeStoreId);
+            if (filtered.length > 0) {
+              setTransactions((prev) => {
+                if (prev.some(t => t.id === trx.id)) return prev;
+                return [trx, ...prev];
+              });
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            }
           } else {
             loadTransactions();
           }
@@ -797,11 +843,16 @@ export const App: React.FC = () => {
             const trx = event.data.transaction;
             if (trx && trx.id) {
               db.transactions.put(trx).catch(() => {});
-              setTransactions((prev) => {
-                if (prev.some(t => t.id === trx.id)) return prev;
-                return [trx, ...prev];
-              });
-              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+              const currentHost = resolveStoreFromCurrentHost();
+              const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
+              const filtered = filterTrxForActiveStore([trx], activeStoreId);
+              if (filtered.length > 0) {
+                setTransactions((prev) => {
+                  if (prev.some(t => t.id === trx.id)) return prev;
+                  return [trx, ...prev];
+                });
+                window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+              }
             }
             if (event.data?.updated_stocks && Array.isArray(event.data.updated_stocks)) {
               const stockMap = new Map<string, number>(event.data.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
@@ -886,11 +937,16 @@ export const App: React.FC = () => {
         onTransactionCreated: (data) => {
           const trx = data?.transaction || data;
           if (trx && trx.id) {
-            setTransactions((prev) => {
-              if (prev.some((t) => t.id === trx.id)) return prev;
-              return [trx, ...prev];
-            });
-            window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            const currentHost = resolveStoreFromCurrentHost();
+            const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
+            const filtered = filterTrxForActiveStore([trx], activeStoreId);
+            if (filtered.length > 0) {
+              setTransactions((prev) => {
+                if (prev.some((t) => t.id === trx.id)) return prev;
+                return [trx, ...prev];
+              });
+              window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: trx } }));
+            }
           } else {
             loadTransactions();
           }
@@ -1120,10 +1176,15 @@ export const App: React.FC = () => {
     const handleTrxCreated = (e: any) => {
       const trx = e.detail?.transaction;
       if (trx && trx.id) {
-        setTransactions((prev) => {
-          if (prev.some((t) => t.id === trx.id)) return prev;
-          return [trx, ...prev];
-        });
+        const currentHost = resolveStoreFromCurrentHost();
+        const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
+        const filtered = filterTrxForActiveStore([trx], activeStoreId);
+        if (filtered.length > 0) {
+          setTransactions((prev) => {
+            if (prev.some((t) => t.id === trx.id)) return prev;
+            return [trx, ...prev];
+          });
+        }
       }
     };
 
@@ -1146,8 +1207,10 @@ export const App: React.FC = () => {
 
     const handleTrxRefreshed = async () => {
       try {
+        const currentHost = resolveStoreFromCurrentHost();
+        const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
         const allTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
-        setTransactions(allTrx);
+        setTransactions(filterTrxForActiveStore(allTrx, activeStoreId));
       } catch {}
     };
 
@@ -1316,6 +1379,8 @@ export const App: React.FC = () => {
     }
 
     const now = new Date();
+    const currentHost = resolveStoreFromCurrentHost();
+    const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
     const receiptNumber = `TRX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     // Resolve clean customer name (real name, not ID/Member #)
@@ -1485,8 +1550,10 @@ export const App: React.FC = () => {
       });
     }
 
-    // Update in-memory transactions state immediately
-    setTransactions((prev) => [newTrx, ...prev]);
+    // Update in-memory transactions state immediately if matches active store
+    if (filterTrxForActiveStore([newTrx], activeStoreId).length > 0) {
+      setTransactions((prev) => [newTrx, ...prev]);
+    }
 
     // Live broadcast to Admin views in this window (Dashboard, Reports, Recent Transactions)
     window.dispatchEvent(new CustomEvent('ketoko_transaction_created', {

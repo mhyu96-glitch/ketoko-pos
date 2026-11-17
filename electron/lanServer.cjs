@@ -722,11 +722,32 @@ function handleHttpRequest(req, res) {
   // 6. Mengambil Riwayat Transaksi Terpusat
   if (pathname === '/api/lan/transactions' && req.method === 'GET') {
     const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
-    const transactions = sqliteDb.prepare(`
-      SELECT * FROM transactions 
-      ORDER BY created_at DESC 
-      LIMIT ?
-    `).all(limit);
+    const storeId = urlObj.searchParams.get('store_id');
+    let transactions;
+    if (storeId) {
+      if (storeId === 'store-01') {
+        transactions = sqliteDb.prepare(`
+          SELECT * FROM transactions 
+          WHERE (store_id = ? OR store_id IS NULL OR store_id = '')
+            AND (cashier_name NOT LIKE '%toko b%' AND cashier_name NOT LIKE '%koperasi b%')
+          ORDER BY created_at DESC 
+          LIMIT ?
+        `).all(storeId, limit);
+      } else {
+        transactions = sqliteDb.prepare(`
+          SELECT * FROM transactions 
+          WHERE store_id = ?
+          ORDER BY created_at DESC 
+          LIMIT ?
+        `).all(storeId, limit);
+      }
+    } else {
+      transactions = sqliteDb.prepare(`
+        SELECT * FROM transactions 
+        ORDER BY created_at DESC 
+        LIMIT ?
+      `).all(limit);
+    }
 
     // Parse items_json
     const parsed = transactions.map(t => ({

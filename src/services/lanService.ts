@@ -615,10 +615,14 @@ class LanService {
   /**
    * Mengambil riwayat transaksi dari Server LAN terpusat
    */
-  public async fetchCentralTransactions(limit = 100, serverUrl: string = this.config.serverUrl): Promise<Transaction[]> {
+  public async fetchCentralTransactions(limit = 100, serverUrl: string = this.config.serverUrl, storeId?: string): Promise<Transaction[]> {
     const cleanUrl = serverUrl.replace(/\/+$/, '');
     try {
-      const res = await fetch(`${cleanUrl}/api/lan/transactions?limit=${limit}`, {
+      const activeStore = storeId || (typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : undefined);
+      const url = activeStore 
+        ? `${cleanUrl}/api/lan/transactions?limit=${limit}&store_id=${encodeURIComponent(activeStore)}`
+        : `${cleanUrl}/api/lan/transactions?limit=${limit}`;
+      const res = await fetch(url, {
         headers: { 'Cache-Control': 'no-cache' }
       });
       if (!res.ok) return [];

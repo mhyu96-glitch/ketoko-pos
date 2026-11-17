@@ -31,7 +31,7 @@ export const PromoHeroBanner: React.FC<PromoHeroBannerProps> = ({
           </h1>
 
           <p className="text-xs sm:text-sm text-[#fcefe3] leading-relaxed max-w-lg">
-            Dapatkan produk sembako, makanan & minuman, dan kebutuhan toko terlengkap dengan harga grosir otomatis. Transaksi kasir secepat kilat (&lt;100ms) dengan dukungan offline penuh.
+            Dapatkan sparepart AC, pipa tembaga, freon, dan komponen pendingin terlengkap dengan harga grosir otomatis. Transaksi kasir secepat kilat (&lt;100ms) dengan dukungan offline penuh.
           </p>
 
           <div className="pt-2 flex flex-wrap items-center gap-3">

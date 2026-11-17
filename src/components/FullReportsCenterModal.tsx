@@ -95,20 +95,39 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
+  const filterByActiveStore = (list: Transaction[]) => {
+    const activeStoreId = typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : 'store-01';
+    return list.filter((t: any) => {
+      if (activeStoreId === 'store-01') {
+        if (t.store_id && t.store_id !== 'store-01') return false;
+        const cashier = (t.cashier_name || '').toLowerCase();
+        if (cashier.includes('toko b') || cashier.includes('koperasi b')) return false;
+        const items = Array.isArray(t.items) ? t.items : [];
+        if (items.some((it: any) => {
+          const n = (it.name || '').toLowerCase();
+          return n.includes('minyak goreng') || n.includes('koperasi b') || n.includes('beras premium');
+        })) return false;
+        return true;
+      }
+      return t.store_id === activeStoreId;
+    });
+  };
+
   const loadReportData = async (syncCloud = false) => {
     try {
       // 1. Ambil data lokal seketika (instant 0ms)
       const allTrx = await db.transactions.toArray();
       const allProducts = await db.products.toArray();
       const allCust = await db.customers.toArray();
-      setTransactions(allTrx);
+      setTransactions(filterByActiveStore(allTrx));
       setProducts(allProducts);
       setCustomers(allCust);
 
       // 2. Tarik update transaksi & pelanggan terbaru dari LAN Server jika aktif
       if (lanService.isLanActive()) {
         try {
-          const centralTrx = await lanService.fetchCentralTransactions(500);
+          const activeStoreId = typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : 'store-01';
+          const centralTrx = await lanService.fetchCentralTransactions(500, undefined, activeStoreId);
           if (centralTrx && centralTrx.length > 0) {
             await db.transactions.bulkPut(centralTrx);
           }
@@ -128,7 +147,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
           await syncService.pullCustomersFromSupabase();
           const freshTrx = await db.transactions.toArray();
           const freshCust = await db.customers.toArray();
-          setTransactions(freshTrx);
+          setTransactions(filterByActiveStore(freshTrx));
           setCustomers(freshCust);
         } catch (err) {
           console.warn('[FullReports] Cloud pull deferred:', err);
@@ -137,7 +156,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
         }
       } else if (lanService.isLanActive()) {
         const freshTrx = await db.transactions.toArray();
-        setTransactions(freshTrx);
+        setTransactions(filterByActiveStore(freshTrx));
       }
     } catch (err) {
       console.error('[FullReports] Gagal load report data:', err);
@@ -151,10 +170,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     const handleTrxCreated = (e: any) => {
       const trx = e.detail?.transaction;
       if (trx && trx.id) {
-        setTransactions((prev) => {
-          if (prev.some((t) => t.id === trx.id)) return prev;
-          return [trx, ...prev];
-        });
+        const filtered = filterByActiveStore([trx]);
+        if (filtered.length > 0) {
+          setTransactions((prev) => {
+            if (prev.some((t) => t.id === trx.id)) return prev;
+            return [trx, ...prev];
+          });
+        }
       }
     };
 
@@ -167,7 +189,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
     const handleTrxRefreshed = async () => {
       const allTrx = await db.transactions.toArray();
-      setTransactions(allTrx);
+      setTransactions(filterByActiveStore(allTrx));
     };
 
     const handleProductUpdated = (e: any) => {

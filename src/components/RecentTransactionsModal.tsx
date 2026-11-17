@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Search, 
@@ -63,6 +63,24 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     }
   }, [isOpen]);
 
+  const filterByActiveStore = useCallback((list: Transaction[]) => {
+    const activeStoreId = typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : 'store-01';
+    return list.filter((t: any) => {
+      if (activeStoreId === 'store-01') {
+        if (t.store_id && t.store_id !== 'store-01') return false;
+        const cashier = (t.cashier_name || '').toLowerCase();
+        if (cashier.includes('toko b') || cashier.includes('koperasi b')) return false;
+        const items = Array.isArray(t.items) ? t.items : [];
+        if (items.some((it: any) => {
+          const n = (it.name || '').toLowerCase();
+          return n.includes('minyak goreng') || n.includes('koperasi b') || n.includes('beras premium');
+        })) return false;
+        return true;
+      }
+      return t.store_id === activeStoreId;
+    });
+  }, []);
+
   // Real-time listener: jika transaksi dibuat atau dihapus oleh kasir/admin di terminal/tab mana saja, update list langsung tanpa refresh
   useEffect(() => {
     const handleRemoteDelete = (e: any) => {
@@ -74,14 +92,17 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     const handleRemoteCreate = (e: any) => {
       const trx = e.detail?.transaction;
       if (trx && trx.id) {
-        setTransactions(prev => {
-          if (prev.some(t => t.id === trx.id)) return prev;
-          return [trx, ...prev];
-        });
+        const filtered = filterByActiveStore([trx]);
+        if (filtered.length > 0) {
+          setTransactions(prev => {
+            if (prev.some(t => t.id === trx.id)) return prev;
+            return [trx, ...prev];
+          });
+        }
       }
     };
     const handleRemoteRefresh = () => {
-      db.transactions.reverse().sortBy('created_at').then(setTransactions).catch(() => {});
+      db.transactions.reverse().sortBy('created_at').then(trxs => setTransactions(filterByActiveStore(trxs))).catch(() => {});
     };
     const handleRemoteUpdate = (e: any) => {
       const trx = e.detail?.transaction;
@@ -99,7 +120,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
       window.removeEventListener('ketoko_transaction_updated', handleRemoteUpdate);
       window.removeEventListener('ketoko_transactions_refreshed', handleRemoteRefresh);
     };
-  }, []);
+  }, [filterByActiveStore]);
 
   const loadTransactions = async () => {
     setIsLoading(true);
@@ -108,7 +129,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
         await syncService.pullTransactionsFromSupabase(100).catch(() => {});
       }
       const allTrx = await db.transactions.reverse().sortBy('created_at');
-      setTransactions(allTrx);
+      setTransactions(filterByActiveStore(allTrx));
     } catch (err) {
       console.error('Failed to load transactions:', err);
     } finally {

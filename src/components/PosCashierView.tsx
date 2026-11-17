@@ -368,8 +368,11 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     }).slice(0, 10);
   }, [customersList, memberId]);
 
-  // Quick Chips for fast search / add
-  const quickSearchKeywords = ['Indomie', 'Minyak', 'Gulaku', 'Aqua', 'Sampoerna', 'Deterjen', 'Beras', 'Gula'];
+  // Quick Chips for fast search / add (AC spareparts for CV. Tumbuh Makmur, general for others)
+  const isAcStore = !activeStoreId || activeStoreId === 'store-01';
+  const quickSearchKeywords = isAcStore
+    ? ['AC', 'Pipa', 'Kabel', 'Freon', 'Bracket', 'Duct Tape', 'Kapasitor', 'Drain', 'Siku', 'Flaring']
+    : ['Indomie', 'Minyak', 'Gulaku', 'Aqua', 'Sampoerna', 'Deterjen', 'Beras', 'Gula'];
 
   // Pre-indexed quick items map for instant O(1) click (No searching 24k array on click)
   const quickItemsMap = useMemo(() => {
@@ -385,7 +388,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
       }
     }
     return map;
-  }, [products]);
+  }, [products, quickSearchKeywords]);
 
   // Calculate change
   const cashGivenNumber = cashGivenInput ? parseFloat(cashGivenInput) || 0 : 0;

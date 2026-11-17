@@ -97,6 +97,22 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   const [soldSearchQuery, setSoldSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const isTrxForThisStore = React.useCallback((t: any): boolean => {
+    if (!t) return false;
+    if (currentStoreInfo.id === 'store-01') {
+      if (t.store_id && t.store_id !== 'store-01') return false;
+      const cashier = (t.cashier_name || '').toLowerCase();
+      if (cashier.includes('toko b') || cashier.includes('koperasi b')) return false;
+      const items = Array.isArray(t.items) ? t.items : [];
+      if (items.some((it: any) => {
+        const n = (it.name || '').toLowerCase();
+        return n.includes('minyak goreng') || n.includes('koperasi b') || n.includes('beras premium');
+      })) return false;
+      return true;
+    }
+    return t.store_id === currentStoreInfo.id;
+  }, [currentStoreInfo.id]);
+
   React.useEffect(() => {
     if (!initialProducts || initialProducts.length === 0) {
       if (currentStoreInfo.isClean && currentStoreInfo.id !== 'store-01') {
@@ -112,13 +128,10 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     }
     if (initialTransactions === undefined) {
       db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
-        setLocalTransactions(trxs.filter((t: any) => {
-          if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
-          return t.store_id === currentStoreInfo.id;
-        }));
+        setLocalTransactions(trxs.filter(isTrxForThisStore));
       }).catch(() => {});
     }
-  }, [initialProducts, initialTransactions, currentStoreInfo]);
+  }, [initialProducts, initialTransactions, currentStoreInfo, isTrxForThisStore]);
 
   // Real-time synchronization listeners for instant Dashboard updates (0ms delay)
   React.useEffect(() => {
@@ -131,7 +144,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const handleTrxCreated = (e: any) => {
       const trx = e.detail?.transaction;
       if (trx && trx.id) {
-        if (trx.store_id && trx.store_id !== currentStoreInfo.id) return;
+        if (!isTrxForThisStore(trx)) return;
         setLocalTransactions((prev) => {
           if (prev.some((t) => t.id === trx.id)) return prev;
           return [trx, ...prev];
@@ -140,10 +153,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     };
     const handleTrxRefreshed = () => {
       db.transactions.orderBy('created_at').reverse().limit(100).toArray().then(trxs => {
-        setLocalTransactions(trxs.filter((t: any) => {
-          if (currentStoreInfo.id === 'store-01') return !t.store_id || t.store_id === 'store-01';
-          return t.store_id === currentStoreInfo.id;
-        }));
+        setLocalTransactions(trxs.filter(isTrxForThisStore));
       }).catch(() => {});
     };
 
@@ -156,7 +166,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       window.removeEventListener('ketoko_transaction_created', handleTrxCreated);
       window.removeEventListener('ketoko_transactions_refreshed', handleTrxRefreshed);
     };
-  }, [currentStoreInfo]);
+  }, [currentStoreInfo, isTrxForThisStore]);
 
   const handleRefreshTransactions = async () => {
     setIsRefreshing(true);
@@ -165,7 +175,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
         await onRefreshTransactions();
       }
       const freshTrx = await db.transactions.orderBy('created_at').reverse().limit(100).toArray();
-      setLocalTransactions(freshTrx);
+      setLocalTransactions(freshTrx.filter(isTrxForThisStore));
     } catch (e) {
       console.warn('Gagal refresh data transaksi:', e);
     } finally {
@@ -175,9 +185,9 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
 
   React.useEffect(() => {
     if (initialTransactions !== undefined) {
-      setLocalTransactions(initialTransactions);
+      setLocalTransactions(initialTransactions.filter(isTrxForThisStore));
     }
-  }, [initialTransactions]);
+  }, [initialTransactions, isTrxForThisStore]);
 
   const products = (initialProducts && initialProducts.length > 0) ? initialProducts : localProducts;
   const transactions = localTransactions.length > 0 ? localTransactions : (initialTransactions || []);
@@ -229,7 +239,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     const tLen = transactions.length;
     for (let i = 0; i < tLen; i++) {
       const t = transactions[i];
-      if (!t) continue;
+      if (!t || !isTrxForThisStore(t)) continue;
       const gTotal = Number(t.grand_total) || 0;
       revenue += gTotal;
       if (t.payment_method === 'CASH') {

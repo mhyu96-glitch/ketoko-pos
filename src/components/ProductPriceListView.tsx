@@ -118,7 +118,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
   const [editMinWholesaleQty, setEditMinWholesaleQty] = useState<number>(1);
   const [editStock, setEditStock] = useState<number>(0);
   const [editRackLocation, setEditRackLocation] = useState('');
-  const [editCategory, setEditCategory] = useState('Sembako');
+  const [editCategory, setEditCategory] = useState('Sparepart AC');
   const [editUnit, setEditUnit] = useState('Pcs');
 
   // Edit Image state with WebP conversion
@@ -214,7 +214,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
     setEditMinWholesaleQty(prod.min_wholesale_qty);
     setEditStock(prod.stock);
     setEditRackLocation(prod.rack_location);
-    setEditCategory(prod.category || 'Sembako');
+    setEditCategory(prod.category || 'Sparepart AC');
     setEditUnit(prod.unit || 'Pcs');
     setEditImageUrl(prod.image_url || '');
     setEditImageMeta(null);
@@ -1110,13 +1110,15 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                   value={editCategory}
                   onChange={setEditCategory}
                   options={[
-                    'Sembako',
-                    'Minuman',
-                    'Mie & Makanan Instan',
-                    'Perawatan Tubuh',
-                    'Kebersihan',
-                    'Snack & Biskuit',
-                    'Lain-lain'
+                    'Sparepart AC',
+                    'Unit AC',
+                    'Freon & Refrigerant',
+                    'Pipa & Fitting',
+                    'Kompresor',
+                    'Elektronik & PCB',
+                    'Material & Aksesoris',
+                    'Alat Kerja & Pompa',
+                    'Umum'
                   ]}
                 />
 

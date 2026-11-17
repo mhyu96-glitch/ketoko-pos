@@ -93,17 +93,19 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   const [barcodeDuplicate, setBarcodeDuplicate] = useState<Product | null>(null);
 
   // Category state
-  const [category, setCategory] = useState('Sembako');
+  const [category, setCategory] = useState('Sparepart AC');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [existingCategories, setExistingCategories] = useState<string[]>([
-    'Sembako',
-    'Minuman',
-    'Mie & Makanan Instan',
-    'Perawatan Tubuh',
-    'Kebersihan',
-    'Snack & Biskuit',
-    'Lain-lain'
+    'Sparepart AC',
+    'Unit AC',
+    'Freon & Refrigerant',
+    'Pipa & Fitting',
+    'Kompresor',
+    'Elektronik & PCB',
+    'Material & Aksesoris',
+    'Alat Kerja & Pompa',
+    'Umum'
   ]);
 
   // Unit state
@@ -164,7 +166,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
     setCustomCategoryInput('');
     setIsCustomUnit(false);
     setCustomUnitInput('');
-    setCategory('Sembako');
+    setCategory('Sparepart AC');
     setUnit('Pcs');
     setBuyPrice('');
     setRetailPrice('');
@@ -184,13 +186,15 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         if (cats.length > 0) {
           const merged = Array.from(new Set([
             ...cats,
-            'Sembako',
-            'Minuman',
-            'Mie & Makanan Instan',
-            'Perawatan Tubuh',
-            'Kebersihan',
-            'Snack & Biskuit',
-            'Lain-lain'
+            'Sparepart AC',
+            'Unit AC',
+            'Freon & Refrigerant',
+            'Pipa & Fitting',
+            'Kompresor',
+            'Elektronik & PCB',
+            'Material & Aksesoris',
+            'Alat Kerja & Pompa',
+            'Umum'
           ]));
           setExistingCategories(merged);
         }
@@ -641,7 +645,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
                     setCustomCategoryInput(e.target.value);
                     setCategory(e.target.value);
                   }}
-                  placeholder="e.g. Frozen Food, Kosmetik..."
+                  placeholder="e.g. Pipa Tembaga, Freon R32, Bracket AC..."
                   required={isCustomCategory}
                   className="w-full px-3 py-2 bg-white text-[#3d2617] rounded-xl border border-[#7c4e2f] text-xs font-semibold focus:ring-2 focus:ring-[#7c4e2f]/20 shadow-2xs animate-fadeIn"
                   autoFocus
