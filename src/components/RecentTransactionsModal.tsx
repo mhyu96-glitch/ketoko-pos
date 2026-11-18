@@ -13,17 +13,19 @@ import {
   QrCode, 
   CreditCard, 
   Receipt, 
-  Eye,
-  Trash2,
-  Edit3,
-  FileSpreadsheet,
-  AlertTriangle
+  Eye, 
+  Trash2, 
+  Edit3, 
+  FileSpreadsheet, 
+  FileText, 
+  AlertTriangle 
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { EditTransactionModal } from './EditTransactionModal';
+import { InvoiceModal } from './InvoiceModal';
 
 interface RecentTransactionsModalProps {
   isOpen: boolean;
@@ -52,6 +54,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [editingTrx, setEditingTrx] = useState<Transaction | null>(null);
+  const [selectedInvoiceTrx, setSelectedInvoiceTrx] = useState<Transaction | null>(null);
 
   const canDelete = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
   const canEdit = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
@@ -615,6 +618,15 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                       <span>Cetak</span>
                     </button>
 
+                    <button
+                      onClick={() => setSelectedInvoiceTrx(trx)}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center space-x-1 transition-colors shadow-2xs"
+                      title="Cetak Faktur Penjualan / Invoice Resmi untuk Pelanggan"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Invoice</span>
+                    </button>
+
                     {canEdit && (
                       <button
                         onClick={() => setEditingTrx(trx)}
@@ -750,6 +762,15 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
               });
               setTimeout(() => setDeleteStatus(null), 3500);
             }}
+          />
+        )}
+
+        {/* Modal Invoice / Faktur Penjualan Resmi */}
+        {selectedInvoiceTrx && (
+          <InvoiceModal
+            isOpen={!!selectedInvoiceTrx}
+            onClose={() => setSelectedInvoiceTrx(null)}
+            transaction={selectedInvoiceTrx}
           />
         )}
 

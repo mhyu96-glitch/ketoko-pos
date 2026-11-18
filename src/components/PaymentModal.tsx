@@ -22,6 +22,7 @@ interface PaymentModalProps {
   onClose: () => void;
   grandTotal: number;
   customerName?: string;
+  customDate?: string;
   onProcessPayment: (paymentData: {
     payment_method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO';
     cash_given: number;
@@ -29,6 +30,7 @@ interface PaymentModalProps {
     customer_name?: string;
     due_date?: string;
     notes?: string;
+    custom_created_at?: string;
   }) => Promise<void>;
   isTouchscreenMode?: boolean;
   onToggleTouchscreen?: () => void;
@@ -39,6 +41,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   grandTotal,
   customerName: initialCustomerName = '',
+  customDate,
   onProcessPayment,
   isTouchscreenMode = false,
   onToggleTouchscreen
@@ -122,13 +125,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           change_returned: 0,
           customer_name: customerName.trim(),
           due_date: dueDate,
-          notes: notes.trim()
+          notes: notes.trim(),
+          custom_created_at: customDate || undefined
         });
       } else {
         await onProcessPayment({
           payment_method: paymentMethod,
           cash_given: paymentMethod === 'CASH' ? cashGiven : grandTotal,
-          change_returned: paymentMethod === 'CASH' ? changeReturned : 0
+          change_returned: paymentMethod === 'CASH' ? changeReturned : 0,
+          custom_created_at: customDate || undefined
         });
       }
       onClose();

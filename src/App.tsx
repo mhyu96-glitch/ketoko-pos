@@ -34,6 +34,7 @@ import { PurchasesAndReturnsModal } from './components/PurchasesAndReturnsModal'
 import { StockAdjustmentsModal } from './components/StockAdjustmentsModal';
 import { StoreSettingsModal } from './components/StoreSettingsModal';
 import { BarcodeLabelModal } from './components/BarcodeLabelModal';
+import { InvoiceModal } from './components/InvoiceModal';
 import { LicenseModal } from './components/LicenseModal';
 import { licenseService } from './services/licenseService';
 import { AppUpdateNotifierModal } from './components/AppUpdateNotifierModal';
@@ -133,6 +134,7 @@ export const App: React.FC = () => {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
+  const [selectedInvoiceTrx, setSelectedInvoiceTrx] = useState<Transaction | null>(null);
   const [isRecentTrxOpen, setIsRecentTrxOpen] = useState(false);
   const [isQATestOpen, setIsQATestOpen] = useState(false);
   const [isPrinterSettingsOpen, setIsPrinterSettingsOpen] = useState(false);
@@ -1367,6 +1369,7 @@ export const App: React.FC = () => {
     customer_name?: string;
     due_date?: string;
     notes?: string;
+    custom_created_at?: string;
   }) => {
     if (cartItems.length === 0) return;
 
@@ -1378,7 +1381,7 @@ export const App: React.FC = () => {
       return;
     }
 
-    const now = new Date();
+    const now = paymentData.custom_created_at ? new Date(paymentData.custom_created_at) : new Date();
     const currentHost = resolveStoreFromCurrentHost();
     const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
     const receiptNumber = `TRX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1611,7 +1614,8 @@ export const App: React.FC = () => {
   // Handle Direct 1-Step Payment from POS Screen (Direct checkout, no duplicate modal)
   const handleDirectPayment = async (
     method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO',
-    cashGiven?: number
+    cashGiven?: number,
+    customDate?: string
   ) => {
     if (cartItems.length === 0) return;
     if (memberBlockedInfo) {
@@ -1640,7 +1644,8 @@ export const App: React.FC = () => {
     await handleProcessPayment({
       payment_method: method,
       cash_given: finalCash,
-      change_returned: change
+      change_returned: change,
+      custom_created_at: customDate
     });
   };
 
@@ -2261,6 +2266,15 @@ export const App: React.FC = () => {
           onClose={() => setIsReceiptOpen(false)}
           transaction={activeReceipt}
           onOpenPrinterSettings={() => setIsPrinterSettingsOpen(true)}
+          onOpenInvoice={(trx) => setSelectedInvoiceTrx(trx)}
+        />
+      )}
+
+      {selectedInvoiceTrx && (
+        <InvoiceModal
+          isOpen={!!selectedInvoiceTrx}
+          onClose={() => setSelectedInvoiceTrx(null)}
+          transaction={selectedInvoiceTrx}
         />
       )}
 

@@ -27,6 +27,7 @@ interface ReceiptModalProps {
   transaction: Transaction | null;
   cashierName?: string;
   onOpenPrinterSettings?: () => void;
+  onOpenInvoice?: (trx: Transaction) => void;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -34,7 +35,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
   transaction,
   cashierName = 'Kasir Toko',
-  onOpenPrinterSettings
+  onOpenPrinterSettings,
+  onOpenInvoice
 }) => {
   const [config, setConfig] = useState<PrinterConfig>(DEFAULT_CONFIG);
   const [printStatus, setPrintStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -413,7 +415,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 onClick={handlePrintDotMatrix}
                 disabled={isPrinting}
                 className="w-full sm:w-auto px-4 py-3 bg-[#edf5ee] hover:bg-[#dceede] text-[#166534] rounded-2xl font-bold text-xs border border-[#cce2cf] flex items-center justify-center space-x-1.5 transition-colors shadow-2xs"
-                title="Cetak Faktur Penjualan"
+                title="Cetak Faktur Penjualan Dot Matrix"
               >
                 <FileSpreadsheet className="w-4 h-4 text-[#166534]" />
                 <span className="hidden sm:inline">
@@ -427,6 +429,18 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 </span>
               </button>
             </>
+          )}
+
+          {onOpenInvoice && (
+            <button
+              type="button"
+              onClick={() => onOpenInvoice(transaction)}
+              className="w-full sm:w-auto px-4 py-3 bg-[#e8f5e9] hover:bg-[#c8e6c9] text-[#1b5e20] rounded-2xl font-bold text-xs border border-[#a5d6a7] flex items-center justify-center space-x-1.5 transition-all shadow-2xs active:scale-95"
+              title="Buka / Cetak Invoice Resmi (Faktur Penjualan A4)"
+            >
+              <FileText className="w-4 h-4 text-[#2e7d32]" />
+              <span>Invoice Pelanggan</span>
+            </button>
           )}
 
           <button

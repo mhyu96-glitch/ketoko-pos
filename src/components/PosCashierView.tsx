@@ -23,7 +23,8 @@ import {
   ShoppingBag,
   Users,
   MessageSquare,
-  Lock
+  Lock,
+  Calendar
 } from 'lucide-react';
 import type { CartItem, Product, Customer } from '../types';
 import { db } from '../db';
@@ -74,7 +75,7 @@ interface PosCashierViewProps {
     blockedMessage?: string;
   }>;
   onOpenRecentTrx: () => void;
-  onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO', cashGiven?: number) => void;
+  onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO', cashGiven?: number, customDate?: string) => void;
   isCatalogSeeding?: boolean;
   isTouchscreenMode?: boolean;
   onOpenMemberModal?: () => void;
@@ -252,6 +253,51 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   });
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
   const [isClearingCartConfirm, setIsClearingCartConfirm] = useState(false);
+
+  // Backdate / Custom Transaction Date State
+  const [customDate, setCustomDate] = useState<string>(''); // format YYYY-MM-DDTHH:mm or empty
+  const [isBackdateModalOpen, setIsBackdateModalOpen] = useState(false);
+  const [tempCustomDate, setTempCustomDate] = useState<string>('');
+
+  const handleOpenBackdateModal = () => {
+    if (customDate) {
+      setTempCustomDate(customDate);
+    } else {
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const localStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      setTempCustomDate(localStr);
+    }
+    setIsBackdateModalOpen(true);
+  };
+
+  const handleApplyPresetBackdate = (daysAgo: number, timeStr?: string) => {
+    const target = new Date();
+    target.setDate(target.getDate() - daysAgo);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const time = timeStr || `${pad(target.getHours())}:${pad(target.getMinutes())}`;
+    const dateStr = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${time}`;
+    setTempCustomDate(dateStr);
+  };
+
+  const handleApplyStartOfMonth = () => {
+    const target = new Date();
+    target.setDate(1);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const dateStr = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-01T08:00`;
+    setTempCustomDate(dateStr);
+  };
+
+  const handleSaveBackdate = () => {
+    setCustomDate(tempCustomDate);
+    setIsBackdateModalOpen(false);
+  };
+
+  const handleResetBackdate = () => {
+    setCustomDate('');
+    setTempCustomDate('');
+    setIsBackdateModalOpen(false);
+  };
 
   // Customer / Member instant autocomplete list
   const [customersList, setCustomersList] = useState<Customer[]>([]);
@@ -500,7 +546,11 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     const finalCash = selectedPaymentMethod === 'CASH' 
       ? (cashGivenNumber > 0 ? cashGivenNumber : grandTotal) 
       : grandTotal;
-    onDirectPayment(selectedPaymentMethod, finalCash);
+    onDirectPayment(
+      selectedPaymentMethod,
+      finalCash,
+      customDate ? new Date(customDate).toISOString() : undefined
+    );
     setCashGivenInput('');
   };
 
@@ -664,6 +714,39 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
 
               <div className="flex items-center space-x-1.5">
+                {/* Backdate / Custom Date Button */}
+                <button
+                  type="button"
+                  onClick={handleOpenBackdateModal}
+                  title="Atur Tanggal Transaksi (Backdate / Custom Tanggal)"
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs ${
+                    customDate 
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 ring-2 ring-amber-400/40'
+                      : 'bg-[#fcf5ed] hover:bg-[#faebd7] text-[#7c4e2f] border border-[#ebdccf]'
+                  }`}
+                >
+                  <Calendar className={`w-3.5 h-3.5 ${customDate ? 'text-amber-800' : 'text-[#7c4e2f]'}`} />
+                  <span>
+                    {customDate ? (
+                      <span className="font-mono font-bold">
+                        📅 {new Date(customDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} {new Date(customDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    ) : (
+                      'Tanggal'
+                    )}
+                  </span>
+                </button>
+                {customDate && (
+                  <button
+                    type="button"
+                    onClick={handleResetBackdate}
+                    title="Reset ke Waktu Sekarang (Realtime)"
+                    className="p-1 hover:bg-amber-200 text-amber-800 rounded-md text-xs font-bold transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1175,15 +1258,47 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   <div className="flex flex-col justify-between space-y-1.5 pt-1 lg:flex-1 lg:min-h-0">
                     
                     {/* Live Kasir Status & Shift Info */}
-                    <div className="p-2 bg-white rounded-lg border border-[#e4d5c7] flex items-center justify-between text-[11px] shadow-2xs">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
-                        <div>
-                          <div className="font-extrabold text-[#332219] text-[11px]">Kasir 01 • Shift Pagi</div>
-                          <div className="text-[9px] text-[#8a6b53]">Supermarket POS Active</div>
+                    <div className={`p-2 rounded-lg border flex flex-col space-y-1 text-[11px] shadow-2xs ${
+                      customDate ? 'bg-amber-50/90 border-amber-300 ring-1 ring-amber-400/30' : 'bg-white border-[#e4d5c7]'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${customDate ? 'bg-amber-500 animate-ping' : 'bg-emerald-500 animate-ping'}`} />
+                          <div>
+                            <div className="font-extrabold text-[#332219] text-[11px]">Kasir 01 • Shift Pagi</div>
+                            <div className="text-[9px] text-[#8a6b53]">
+                              {customDate ? '⚠️ Mode Backdate Aktif' : 'Supermarket POS Active'}
+                            </div>
+                          </div>
                         </div>
+                        <LiveDigitalClock />
                       </div>
-                      <LiveDigitalClock />
+
+                      {customDate && (
+                        <div className="pt-1 mt-0.5 border-t border-amber-200/80 flex items-center justify-between">
+                          <div className="flex items-center space-x-1 text-amber-900 font-semibold text-[10px] truncate max-w-[190px]">
+                            <Calendar className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                            <span className="truncate">Tgl: <b className="font-mono">{new Date(customDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date(customDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</b></span>
+                          </div>
+                          <div className="flex items-center space-x-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleOpenBackdateModal}
+                              className="text-[9px] font-bold text-amber-800 hover:text-amber-950 underline px-1"
+                            >
+                              Ubah
+                            </button>
+                            <span className="text-amber-300">•</span>
+                            <button
+                              type="button"
+                              onClick={handleResetBackdate}
+                              className="text-[9px] font-bold text-rose-600 hover:text-rose-800 px-1"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Highlight Last Scanned Item */}
@@ -1597,6 +1712,162 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             setCustomersList((prev) => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
           }}
         />
+      )}
+
+      {/* Modal Backdate / Custom Tanggal & Waktu Transaksi */}
+      {isBackdateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-[#fcf8f4] border border-[#d8c3b0] rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-[#ebdccf]">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl border border-amber-200">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-[#3d2617]">Atur Tanggal Transaksi (Backdate)</h4>
+                  <p className="text-[11px] text-[#8a6b53]">Catat nota lampau atau sesuaikan tanggal transaksi</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBackdateModalOpen(false)}
+                className="p-1 hover:bg-[#faebd7] text-stone-500 rounded-lg text-sm font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Status Banner */}
+            <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+              customDate 
+                ? 'bg-amber-50 border-amber-300 text-amber-900' 
+                : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+            }`}>
+              <div className="flex items-center space-x-2">
+                <span className="text-base">{customDate ? '⚠️' : '🟢'}</span>
+                <div>
+                  <div className="font-bold">{customDate ? 'Mode Backdate Sedang Aktif' : 'Mode Waktu Normal (Realtime)'}</div>
+                  <div className="text-[11px] text-[#5c3c26]">
+                    {customDate 
+                      ? `Nota dicatat pada: ${new Date(customDate).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })} pk ${new Date(customDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Transaksi kasir otomatis menggunakan jam dan tanggal saat ini.'}
+                  </div>
+                </div>
+              </div>
+              {customDate && (
+                <button
+                  type="button"
+                  onClick={handleResetBackdate}
+                  className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 rounded-lg text-[11px] font-bold shadow-2xs transition-all"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Quick Presets Grid */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#8a6b53] uppercase tracking-wider block">
+                Pilihan Cepat (Preset):
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const pad = (n: number) => n.toString().padStart(2, '0');
+                    setTempCustomDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                  }}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  Hari Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPresetBackdate(1, '12:00')}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  Kemarin (H-1)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPresetBackdate(2, '12:00')}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  2 Hari Lalu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPresetBackdate(3, '12:00')}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  3 Hari Lalu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPresetBackdate(7, '12:00')}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  1 Minggu Lalu
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyStartOfMonth}
+                  className="py-2 px-2 bg-white hover:bg-[#faebd7] border border-[#ddc3aa] rounded-xl text-xs font-semibold text-[#5c3c26] text-center transition-all shadow-2xs"
+                >
+                  Awal Bulan
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Datetime Input */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#8a6b53] uppercase tracking-wider block">
+                Atur Tanggal & Jam Spesifik:
+              </label>
+              <div className="relative">
+                <input
+                  type="datetime-local"
+                  value={tempCustomDate}
+                  onChange={(e) => setTempCustomDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-[#ddc3aa] text-xs font-bold text-[#3d2617] focus:outline-none focus:border-[#96633b] shadow-2xs"
+                />
+              </div>
+              <p className="text-[10px] text-[#8a6b53]">
+                Format: Tanggal / Bulan / Tahun beserta Jam & Menit transaksi
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center space-x-2 pt-2 border-t border-[#ebdccf]">
+              <button
+                type="button"
+                onClick={handleResetBackdate}
+                className="py-2.5 px-3 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-bold transition-all"
+                title="Kembalikan ke jam & tanggal otomatis saat ini"
+              >
+                Reset Realtime
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBackdateModalOpen(false)}
+                className="py-2.5 px-3 rounded-xl bg-white hover:bg-stone-100 border border-stone-300 text-stone-700 text-xs font-bold transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBackdate}
+                className="flex-1 py-2.5 rounded-xl bg-[#96633b] hover:bg-[#83532e] text-white text-xs font-extrabold shadow-sm transition-all active:scale-95 flex items-center justify-center space-x-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Terapkan Tanggal</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>
