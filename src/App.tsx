@@ -730,6 +730,9 @@ export const App: React.FC = () => {
         (updatedStocks) => {
           if (!updatedStocks || updatedStocks.length === 0) return;
           const stockMap = new Map(updatedStocks.map(s => [s.id, s.stock]));
+          for (const s of updatedStocks) {
+            db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+          }
           setProducts((prev) => prev.map(p => {
             const newStock = stockMap.get(p.id);
             return newStock !== undefined ? { ...p, stock: newStock } : p;
@@ -2328,9 +2331,11 @@ export const App: React.FC = () => {
           products={products}
           onTransactionDeleted={(deletedId) => {
             setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
+            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStore))).catch(() => {});
           }}
           onTransactionUpdated={(updated) => {
             setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStore))).catch(() => {});
           }}
         />
       )}

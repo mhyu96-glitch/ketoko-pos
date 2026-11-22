@@ -982,6 +982,9 @@ function handleHttpRequest(req, res) {
           WHERE id = ?
         `);
 
+        const getStockStmt = sqliteDb.prepare('SELECT id, stock FROM products WHERE id = ?');
+        const affectedProdIds = new Set();
+
         for (const trx of transactions) {
           const isNewTrx = !checkTrxStmt.get(trx.id);
 
@@ -1013,6 +1016,7 @@ function handleHttpRequest(req, res) {
               const prodId = item.product_id || item.id;
               if (prodId) {
                 updateStockStmt.run(Number(item.qty) || 1, trx.created_at, prodId);
+                affectedProdIds.add(prodId);
               }
             }
           }
@@ -1021,8 +1025,17 @@ function handleHttpRequest(req, res) {
           successCount++;
         }
 
+        const updatedStocks = [];
+        for (const pid of affectedProdIds) {
+          const current = getStockStmt.get(pid);
+          if (current) updatedStocks.push({ id: pid, stock: current.stock });
+        }
+
         sqliteDb.exec('COMMIT;');
         broadcastSseEvent('batch_sync_completed', { count: successCount });
+        if (updatedStocks.length > 0) {
+          broadcastSseEvent('stock_updated', updatedStocks);
+        }
 
         return sendJson(200, {
           status: 'success',

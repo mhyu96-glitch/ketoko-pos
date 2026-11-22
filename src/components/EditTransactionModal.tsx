@@ -194,7 +194,13 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   const handleAddProduct = (prod: Product) => {
-    const existingIndex = items.findIndex((it) => String(it.product_id) === String(prod.id));
+    const cleanId = String(prod.id).trim().toLowerCase();
+    const cleanBc = prod.barcode ? String(prod.barcode).trim().toLowerCase() : '';
+    const existingIndex = items.findIndex((it) => {
+      const itId = String(it.product_id).trim().toLowerCase();
+      const itBc = it.barcode ? String(it.barcode).trim().toLowerCase() : '';
+      return itId === cleanId || (cleanBc && itBc && itBc === cleanBc);
+    });
     if (existingIndex >= 0) {
       handleUpdateItemQty(existingIndex, items[existingIndex].qty + 1);
     } else {

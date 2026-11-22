@@ -346,6 +346,28 @@ class LanService {
         } catch {}
       });
 
+      es.addEventListener('transaction_updated', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && data.updated_stocks) {
+            onStockUpdate(data.updated_stocks);
+          }
+          if (data?.transaction) {
+            db.transactions.put(data.transaction).catch(() => {});
+            window.dispatchEvent(new CustomEvent('ketoko_transaction_updated', { detail: data.transaction }));
+          }
+        } catch {}
+      });
+
+      es.addEventListener('stock_updated', (e: MessageEvent) => {
+        try {
+          const stocks = JSON.parse(e.data);
+          if (Array.isArray(stocks)) {
+            onStockUpdate(stocks);
+          }
+        } catch {}
+      });
+
       es.addEventListener('product_updated', (e: MessageEvent) => {
         try {
           const prod = JSON.parse(e.data);
