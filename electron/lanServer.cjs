@@ -129,11 +129,14 @@ function initCentralDatabase(dataDir) {
 
   sqliteDb = new DatabaseSync(dbPath);
 
-  // Performance optimizations (WAL Mode for high concurrency)
+  // Performance & Concurrency optimizations (WAL Mode for high concurrency & multi-cashier lock resilience)
   sqliteDb.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
     PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+    PRAGMA cache_size = -64000;
+    PRAGMA temp_store = MEMORY;
   `);
 
   // Tabel Master Produk & Live Stock
@@ -184,6 +187,8 @@ function initCentralDatabase(dataDir) {
     );
     CREATE INDEX IF NOT EXISTS idx_trx_created_at ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_trx_receipt ON transactions(receipt_number);
+    CREATE INDEX IF NOT EXISTS idx_trx_store_id ON transactions(store_id);
+    CREATE INDEX IF NOT EXISTS idx_trx_member_id ON transactions(member_id);
   `);
 
   // Safe migration for existing SQLite database
@@ -803,6 +808,54 @@ function handleHttpRequest(req, res) {
           } catch {}
         }
 
+        // Kembalikan saldo member jika pembayaran menggunakan SALDO
+        let updatedCustomer = null;
+        if (trx && trx.payment_method === 'SALDO') {
+          let custRow = null;
+          if (trx.member_id) {
+            custRow = sqliteDb.prepare('SELECT * FROM customers WHERE id = ? OR code = ?').get(trx.member_id, trx.member_id);
+          }
+          if (!custRow && trx.customer_name) {
+            custRow = sqliteDb.prepare('SELECT * FROM customers WHERE LOWER(name) = LOWER(?)').get(trx.customer_name.trim());
+          }
+          if (custRow) {
+            const refundAmount = Number(trx.grand_total) || 0;
+            const oldBalance = Number(custRow.deposit_balance) || 0;
+            const newBalance = oldBalance + refundAmount;
+            const nowTime = new Date().toISOString();
+
+            sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, updated_at = ? WHERE id = ?')
+              .run(newBalance, nowTime, custRow.id);
+
+            const mutId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            sqliteDb.prepare(`
+              INSERT INTO member_deposits (
+                id, customer_id, customer_name, customer_code, type, amount,
+                balance_before, balance_after, payment_method, store_id, store_name,
+                cashier_id, cashier_name, receipt_number, notes, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              mutId,
+              custRow.id,
+              custRow.name,
+              custRow.code,
+              'REFUND',
+              refundAmount,
+              oldBalance,
+              newBalance,
+              'SALDO',
+              trx.store_id || 'store-01',
+              'Cabang',
+              trx.cashier_id || 'ADMIN',
+              trx.cashier_name || 'Admin',
+              trx.receipt_number || trxId,
+              `Pengembalian Saldo Nota Batal/Hapus ${trx.receipt_number || trxId}`,
+              nowTime
+            );
+            updatedCustomer = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(custRow.id);
+          }
+        }
+
         sqliteDb.prepare('DELETE FROM transactions WHERE id = ?').run(trxId);
         sqliteDb.exec('COMMIT;');
 
@@ -813,6 +866,14 @@ function handleHttpRequest(req, res) {
         });
         if (updatedStocks.length > 0) {
           broadcastSseEvent('stock_updated', updatedStocks);
+        }
+        if (updatedCustomer) {
+          broadcastSseEvent('customer_updated', updatedCustomer);
+          broadcastSseEvent('member_deposit_updated', {
+            customer: updatedCustomer,
+            customer_id: updatedCustomer.id,
+            deposit_balance: updatedCustomer.deposit_balance
+          });
         }
 
         return sendJson(200, {
