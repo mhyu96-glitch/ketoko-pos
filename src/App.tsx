@@ -132,6 +132,8 @@ export const App: React.FC = () => {
 
   // Modals state
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
+  const isPaymentProcessingRef = useRef(false);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
   const [selectedInvoiceTrx, setSelectedInvoiceTrx] = useState<Transaction | null>(null);
@@ -1371,7 +1373,11 @@ export const App: React.FC = () => {
     notes?: string;
     custom_created_at?: string;
   }) => {
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || isPaymentProcessingRef.current) return;
+    isPaymentProcessingRef.current = true;
+    setIsPaymentProcessing(true);
+
+    try {
 
     // Validate License / Trial Status before recording transactions
     const lic = await licenseService.getStatus();
@@ -1400,16 +1406,38 @@ export const App: React.FC = () => {
       } catch {}
     }
 
-    const newTrx: Transaction = {
-      id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      store_id: activeStoreId || 'store-01',
-      receipt_number: receiptNumber,
-      cashier_id: currentUser?.id || 'USR-001',
-      cashier_name: currentUser?.name || 'Kasir',
-      branch_id: currentUser?.branch_id || 'BR-01',
-      member_id: memberId || undefined,
-      customer_name: finalCustName || (memberId ? undefined : 'PELANGGAN UMUM'),
-      items: [...cartItems],
+      // Consolidate duplicate items in cart to guarantee 100% strictly 1 row per product
+      const consolidatedItemsMap = new Map<string, CartItem>();
+      for (const item of cartItems) {
+        const pId = String(item.product_id).trim();
+        const existing = consolidatedItemsMap.get(pId);
+        if (existing) {
+          const totalQty = existing.qty + item.qty;
+          const isWholesale = existing.min_wholesale_qty ? totalQty >= existing.min_wholesale_qty : false;
+          const price = isWholesale && existing.wholesale_price ? existing.wholesale_price : (existing.retail_price || existing.price_applied);
+          consolidatedItemsMap.set(pId, {
+            ...existing,
+            qty: totalQty,
+            is_wholesale: isWholesale,
+            price_applied: price,
+            subtotal_item: totalQty * price
+          });
+        } else {
+          consolidatedItemsMap.set(pId, { ...item });
+        }
+      }
+      const finalCartItems = Array.from(consolidatedItemsMap.values());
+
+      const newTrx: Transaction = {
+        id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        store_id: activeStoreId || 'store-01',
+        receipt_number: receiptNumber,
+        cashier_id: currentUser?.id || 'USR-001',
+        cashier_name: currentUser?.name || 'Kasir',
+        branch_id: currentUser?.branch_id || 'BR-01',
+        member_id: memberId || undefined,
+        customer_name: finalCustName || (memberId ? undefined : 'PELANGGAN UMUM'),
+        items: finalCartItems,
       subtotal,
       discount_amount: discountAmount,
       tax_amount: taxAmount,
@@ -1545,9 +1573,14 @@ export const App: React.FC = () => {
     // Update in-memory stock instantly without heavy full DB reload (only if not already updated by LAN server authoritative stock)
     if (!lanUpdatedStocks) {
       setProducts((prev) => {
-        const soldMap = new Map(newTrx.items.map(i => [i.product_id, i.qty]));
+        const soldMap = new Map<string, number>();
+        for (const item of newTrx.items) {
+          const pId = String(item.product_id).trim();
+          soldMap.set(pId, (soldMap.get(pId) || 0) + (Number(item.qty) || 0));
+        }
         return prev.map(p => {
-          const qtySold = soldMap.get(p.id);
+          const pId = String(p.id).trim();
+          const qtySold = soldMap.get(pId);
           return qtySold ? { ...p, stock: Math.max(0, p.stock - qtySold) } : p;
         });
       });
@@ -1609,6 +1642,10 @@ export const App: React.FC = () => {
         channel.close();
       }
     } catch (e) {}
+    } finally {
+      isPaymentProcessingRef.current = false;
+      setIsPaymentProcessing(false);
+    }
   };
 
   // Handle Direct 1-Step Payment from POS Screen (Direct checkout, no duplicate modal)
@@ -1617,7 +1654,7 @@ export const App: React.FC = () => {
     cashGiven?: number,
     customDate?: string
   ) => {
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || isPaymentProcessingRef.current) return;
     if (memberBlockedInfo) {
       setSyncToastMessage(`🚫 ${memberBlockedInfo.reason || 'Akses member ditolak untuk cabang ini. Batalkan pilihan member untuk melanjutkan sebagai Pembeli Umum.'}`);
       setTimeout(() => setSyncToastMessage(null), 5000);
@@ -2242,6 +2279,7 @@ export const App: React.FC = () => {
           onDirectPayment={handleDirectPayment}
           isCatalogSeeding={isCatalogSeeding}
           isTouchscreenMode={isTouchscreenMode}
+          isPaymentProcessing={isPaymentProcessing}
           onOpenMemberModal={() => setIsMemberModalOpen(true)}
           onOpenHelpChat={() => setIsHelpChatOpen(true)}
         />

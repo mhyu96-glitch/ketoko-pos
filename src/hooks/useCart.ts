@@ -40,9 +40,14 @@ export function useCart(activeStoreId?: string) {
 
   // Add item or increment qty with wholesale evaluation
   const addItem = useCallback((product: Product, quantityToAdd = 1) => {
-    const cleanId = String(product.id).trim();
+    const cleanId = String(product.id).trim().toLowerCase();
+    const cleanBarcode = product.barcode ? String(product.barcode).trim().toLowerCase() : '';
     setItems((prevItems) => {
-      const existingIndex = prevItems.findIndex((item) => String(item.product_id).trim() === cleanId);
+      const existingIndex = prevItems.findIndex((item) => {
+        const itemPId = String(item.product_id).trim().toLowerCase();
+        const itemBc = item.barcode ? String(item.barcode).trim().toLowerCase() : '';
+        return itemPId === cleanId || (cleanBarcode && itemBc && itemBc === cleanBarcode);
+      });
       const maxAllowed = product.stock > 0 ? product.stock : 999999;
 
       if (existingIndex > -1) {

@@ -769,6 +769,58 @@ class LanService {
   }
 
   /**
+   * Kirim perintah update/edit transaksi ke Server LAN terpusat
+   */
+  public async updateTransaction(
+    updatedTrx: any,
+    originalTrx?: any,
+    serverUrl?: string
+  ): Promise<{ success: boolean; updatedStocks?: Array<{ id: string; stock: number }>; error?: string }> {
+    const urlsToTry: string[] = [];
+    if (serverUrl) {
+      urlsToTry.push(serverUrl);
+    }
+    if (this.isClientMode() && this.config.serverUrl) {
+      urlsToTry.push(this.config.serverUrl);
+    }
+    urlsToTry.push('http://127.0.0.1:4040', 'http://localhost:4040');
+    if (typeof window !== 'undefined' && window.location.origin) {
+      urlsToTry.push(window.location.origin);
+    }
+
+    const uniqueUrls = Array.from(new Set(urlsToTry.map(u => u.replace(/\/+$/, ''))));
+    const payload = JSON.stringify({
+      transaction: updatedTrx,
+      original_transaction: originalTrx
+    });
+
+    for (const base of uniqueUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+        const res = await fetch(`${base}/api/lan/transactions/update`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Terminal-Id': this.config.terminalId
+          },
+          body: payload,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          return { success: true, updatedStocks: data.updated_stocks };
+        }
+      } catch {}
+    }
+
+    return { success: false, error: 'Tidak dapat terhubung ke LAN Server' };
+  }
+
+  /**
    * Kirim perintah hapus produk ke Server LAN terpusat
    */
   public async deleteProduct(
@@ -809,6 +861,7 @@ class LanService {
 
     return { success: false, error: 'Tidak dapat terhubung ke LAN Server' };
   }
+
 }
 
 export const lanService = new LanService();

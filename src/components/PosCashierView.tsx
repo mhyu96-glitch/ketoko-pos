@@ -78,6 +78,7 @@ interface PosCashierViewProps {
   onDirectPayment: (method: 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO', cashGiven?: number, customDate?: string) => void;
   isCatalogSeeding?: boolean;
   isTouchscreenMode?: boolean;
+  isPaymentProcessing?: boolean;
   onOpenMemberModal?: () => void;
   onOpenHelpChat?: () => void;
 }
@@ -230,9 +231,11 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   onDirectPayment,
   isCatalogSeeding = false,
   isTouchscreenMode = false,
+  isPaymentProcessing = false,
   onOpenMemberModal,
   onOpenHelpChat
 }) => {
+  const lastQuickClickRef = useRef<number>(0);
   // Quick cash tender input state
   const [cashGivenInput, setCashGivenInput] = useState<string>('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'SALDO'>('CASH');
@@ -531,7 +534,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
   // Process payment directly without opening duplicate modal
   const handleTriggerPayment = () => {
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || isPaymentProcessing) return;
     if (selectedPaymentMethod === 'SALDO') {
       if (!customerName && !memberId) {
         alert('Silakan pilih Anggota / Konsumen terlebih dahulu untuk pembayaran menggunakan Saldo Member.');
@@ -566,7 +569,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         }
       } else if (e.key === 'F4') {
         e.preventDefault();
-        handleTriggerPayment();
+        if (!isPaymentProcessing) handleTriggerPayment();
       } else if (e.key === 'F7') {
         e.preventDefault();
         const memberInput = document.getElementById('member-code-input') as HTMLInputElement;
@@ -682,6 +685,9 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                     key={kw}
                     type="button"
                     onClick={() => {
+                      const now = Date.now();
+                      if (now - lastQuickClickRef.current < 250) return;
+                      lastQuickClickRef.current = now;
                       const match = quickItemsMap.get(kw);
                       if (match) onAddToCart(match, 1);
                     }}
@@ -1497,11 +1503,20 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={handleTriggerPayment}
-                disabled={cartItems.length === 0}
+                disabled={cartItems.length === 0 || isPaymentProcessing}
                 className="w-full py-3.5 px-4 bg-[#166534] hover:bg-[#14532d] disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold rounded-xl shadow-md flex items-center justify-center space-x-2 text-sm sm:text-base transition-all active:scale-[0.98]"
               >
-                <CreditCard className="w-5 h-5 text-amber-300" />
-                <span>PROSES BAYAR & CETAK (F9)</span>
+                {isPaymentProcessing ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Memproses Transaksi...</span>
+                  </div>
+                ) : (
+                  <>
+                    <CreditCard className="w-5 h-5 text-amber-300" />
+                    <span>PROSES BAYAR & CETAK (F9)</span>
+                  </>
+                )}
               </button>
 
               {/* Secondary Buttons */}

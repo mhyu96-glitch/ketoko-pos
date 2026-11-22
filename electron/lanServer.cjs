@@ -639,7 +639,7 @@ function handleHttpRequest(req, res) {
           }
         }
 
-        // 2. Potong Stok Produk secara Atomik
+        // 2. Potong Stok Produk secara Atomik (dikonsolidasi per product_id)
         const updateStockStmt = sqliteDb.prepare(`
           UPDATE products 
           SET stock = MAX(0, stock - ?), updated_at = ?
@@ -648,16 +648,19 @@ function handleHttpRequest(req, res) {
 
         const getStockStmt = sqliteDb.prepare('SELECT id, stock FROM products WHERE id = ?');
         const updatedStocks = [];
-
-        for (const item of trx.items) {
+        const qtyByProdId = new Map();
+        for (const item of (trx.items || [])) {
           const prodId = item.product_id || item.id;
-          const qty = Number(item.qty) || 1;
           if (prodId) {
-            updateStockStmt.run(qty, createdAt, prodId);
-            const current = getStockStmt.get(prodId);
-            if (current) {
-              updatedStocks.push({ id: prodId, stock: current.stock });
-            }
+            qtyByProdId.set(prodId, (qtyByProdId.get(prodId) || 0) + (Number(item.qty) || 1));
+          }
+        }
+
+        for (const [prodId, qty] of qtyByProdId.entries()) {
+          updateStockStmt.run(qty, createdAt, prodId);
+          const current = getStockStmt.get(prodId);
+          if (current) {
+            updatedStocks.push({ id: prodId, stock: current.stock });
           }
         }
 
@@ -821,6 +824,131 @@ function handleHttpRequest(req, res) {
       } catch (err) {
         try { sqliteDb.exec('ROLLBACK;'); } catch {}
         return sendJson(500, { error: 'Gagal menghapus transaksi di server: ' + err.message });
+      }
+    });
+  }
+
+  // 6.c Update/Edit Transaksi Terpusat & Sesuaikan Delta Stok Produk secara Atomik
+  if (pathname === '/api/lan/transactions/update' && req.method === 'POST') {
+    return readJsonBody((payload) => {
+      const trx = payload.transaction || payload;
+      const originalTrx = payload.original_transaction;
+      const trxId = trx.id;
+      if (!trxId) {
+        return sendJson(400, { error: 'ID Transaksi wajib diisi' });
+      }
+
+      sqliteDb.exec('BEGIN TRANSACTION;');
+      try {
+        const existingRow = sqliteDb.prepare('SELECT * FROM transactions WHERE id = ?').get(trxId);
+        let oldItems = [];
+        if (originalTrx && Array.isArray(originalTrx.items)) {
+          oldItems = originalTrx.items;
+        } else if (existingRow && existingRow.items_json) {
+          try {
+            oldItems = JSON.parse(existingRow.items_json);
+          } catch {}
+        }
+
+        const newItems = Array.isArray(trx.items) ? trx.items : [];
+        const now = new Date().toISOString();
+        const updatedStocks = [];
+
+        // Kumpulkan semua product_id yang terlibat
+        const productIds = new Set();
+        for (const it of oldItems) {
+          const pid = it.product_id || it.id;
+          if (pid) productIds.add(String(pid));
+        }
+        for (const it of newItems) {
+          const pid = it.product_id || it.id;
+          if (pid) productIds.add(String(pid));
+        }
+
+        const updateStockStmt = sqliteDb.prepare(`
+          UPDATE products 
+          SET stock = MAX(0, stock + ?), updated_at = ?
+          WHERE id = ?
+        `);
+        const getStockStmt = sqliteDb.prepare('SELECT id, stock FROM products WHERE id = ?');
+
+        for (const pId of productIds) {
+          const oldQty = oldItems
+            .filter(it => String(it.product_id || it.id) === pId)
+            .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+
+          const newQty = newItems
+            .filter(it => String(it.product_id || it.id) === pId)
+            .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+
+          const delta = oldQty - newQty; // delta > 0: barang dikurangi di nota -> kembalikan ke stok; delta < 0: barang ditambah di nota -> potong stok
+          if (delta !== 0) {
+            updateStockStmt.run(delta, now, pId);
+            const current = getStockStmt.get(pId);
+            if (current) {
+              updatedStocks.push({ id: pId, stock: current.stock });
+            }
+          }
+        }
+
+        // Perbarui baris transaksi di SQLite jika sudah ada
+        if (existingRow) {
+          const updateTrxStmt = sqliteDb.prepare(`
+            UPDATE transactions SET
+              customer_name = ?,
+              member_id = ?,
+              due_date = ?,
+              notes = ?,
+              subtotal = ?,
+              discount_amount = ?,
+              tax_amount = ?,
+              grand_total = ?,
+              payment_method = ?,
+              cash_given = ?,
+              change_returned = ?,
+              items_json = ?,
+              synced = 1
+            WHERE id = ?
+          `);
+
+          updateTrxStmt.run(
+            trx.customer_name || null,
+            trx.member_id || null,
+            trx.due_date || null,
+            trx.notes || null,
+            Number(trx.subtotal) || 0,
+            Number(trx.discount_amount) || 0,
+            Number(trx.tax_amount) || 0,
+            Number(trx.grand_total) || 0,
+            trx.payment_method || 'CASH',
+            Number(trx.cash_given) || Number(trx.grand_total) || 0,
+            Number(trx.change_returned) || 0,
+            JSON.stringify(newItems),
+            trxId
+          );
+        }
+
+        sqliteDb.exec('COMMIT;');
+
+        // Broadcast Real-time Event ke seluruh kasir yang terhubung
+        broadcastSseEvent('transaction_updated', {
+          transaction: trx,
+          transaction_id: trxId,
+          updated_stocks: updatedStocks
+        });
+        if (updatedStocks.length > 0) {
+          broadcastSseEvent('stock_updated', updatedStocks);
+        }
+
+        return sendJson(200, {
+          status: 'success',
+          message: 'Transaksi dan stok berhasil diperbarui di server pusat',
+          transaction_id: trxId,
+          updated_stocks: updatedStocks
+        });
+      } catch (err) {
+        try { sqliteDb.exec('ROLLBACK;'); } catch {}
+        return sendJson(500, { error: 'Gagal memperbarui transaksi di server: ' + err.message });
       }
     });
   }

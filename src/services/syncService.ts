@@ -512,19 +512,25 @@ export class SyncService {
     await db.transaction('rw', db.transactions, db.products, db.syncQueue, async () => {
       await db.transactions.put(trxToSave);
 
+      const soldMap = new Map<string, number>();
       for (const item of trxToSave.items) {
-        const prod = await db.products.get(item.product_id);
+        const pId = String(item.product_id).trim();
+        soldMap.set(pId, (soldMap.get(pId) || 0) + (Number(item.qty) || 0));
+      }
+
+      for (const [prodId, qtyToDeduct] of soldMap.entries()) {
+        const prod = await db.products.get(prodId);
         if (prod) {
           // Jika stok sudah dihitung pasti oleh LAN Server, gunakan nilai tersebut.
           // Cegah pengurangan ganda (double-deduct) saat checkout.
-          const newStock = knownMap && knownMap.has(item.product_id)
-            ? knownMap.get(item.product_id)!
-            : Math.max(0, prod.stock - item.qty);
+          const newStock = knownMap && knownMap.has(prodId)
+            ? knownMap.get(prodId)!
+            : Math.max(0, (Number(prod.stock) || 0) - qtyToDeduct);
 
-          await db.products.update(item.product_id, {
+          await db.products.update(prodId, {
             stock: newStock
           });
-          updatedStocks.push({ id: item.product_id, stock: newStock });
+          updatedStocks.push({ id: prodId, stock: newStock });
         }
       }
 
@@ -1378,6 +1384,9 @@ export class SyncService {
     if (updatedStocks.length > 0) {
       this.broadcastCloudEvent('stock_updated', updatedStocks);
     }
+
+    // 6.b Kirim update ke LAN Server (jika aktif)
+    lanService.updateTransaction(finalTrx, oldTrx).catch(() => {});
 
     // 7. Jika online, langsung update ke tabel Supabase (transactions, transaction_items)
     if (navigator.onLine) {

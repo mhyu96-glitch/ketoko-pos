@@ -57,6 +57,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = React.memo(({
   
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isScanningRef = useRef<boolean>(false);
+  const lastScanTimeRef = useRef<number>(0);
 
   // Focus input on mount
   useEffect(() => {
@@ -140,18 +142,31 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = React.memo(({
     const clean = queryInput.trim();
     if (!clean) return;
 
+    const now = Date.now();
+    if (isScanningRef.current || now - lastScanTimeRef.current < 350) {
+      return;
+    }
+    lastScanTimeRef.current = now;
+    isScanningRef.current = true;
     setIsScanning(true);
     setIsDropdownOpen(false);
-    const result = await onScan(clean);
-    setIsScanning(false);
 
-    applyScanFeedback(result, clean, 'Barang / Member');
-
-    setQueryInput('');
-    inputRef.current?.focus();
+    try {
+      const result = await onScan(clean);
+      applyScanFeedback(result, clean, 'Barang / Member');
+    } finally {
+      setIsScanning(false);
+      isScanningRef.current = false;
+      setQueryInput('');
+      inputRef.current?.focus();
+    }
   };
 
   const handleSelectProduct = (product: Product) => {
+    const now = Date.now();
+    if (now - lastScanTimeRef.current < 350) return;
+    lastScanTimeRef.current = now;
+
     if (onAddToCart) {
       onAddToCart(product, 1);
     } else {
