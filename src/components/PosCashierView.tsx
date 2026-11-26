@@ -36,6 +36,7 @@ import {
   getCurrentActiveStoreId,
   getStoreDisplayName,
   isCustomerBelongsToStoreOrCluster,
+  isCustomerCardBlocked,
 } from '../utils/customerAccess';
 import type { MemberBlockedState } from '../hooks/useCart';
 import { MemberTopUpModal } from './MemberTopUpModal';
@@ -45,6 +46,7 @@ interface HeldCart {
   timestamp: string;
   items: CartItem[];
   memberId: string;
+  customerName?: string;
   subtotal: number;
 }
 
@@ -323,6 +325,20 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     ) || null;
   }, [customersList, memberId, customerName]);
 
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+
+  const activeMemberDisplayName = useMemo(() => {
+    if (customerName && customerName.trim()) return customerName.trim();
+    if (activeCustomer?.name) return activeCustomer.name.trim();
+    if (memberId) {
+      const found = customersList.find(c => c.id === memberId || c.code === memberId);
+      if (found?.name) return found.name.trim();
+      return memberId;
+    }
+    return '';
+  }, [customerName, activeCustomer, memberId, customersList]);
+
   const loadCustomers = async () => {
     try {
       const all = await db.customers.toArray();
@@ -409,7 +425,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
   // Filtered customer suggestions based on user input in member-code-input
   const filteredCustomers = useMemo(() => {
-    const q = (memberId || '').trim().toLowerCase();
+    const q = (isSearching ? memberSearchQuery : '').trim().toLowerCase();
     const isolated = filterCustomersForStore(customersList, currentBranchId);
     if (!q) {
       return isolated.slice(0, 8);
@@ -425,7 +441,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         (cleanDigits.length >= 3 && cPhone.includes(cleanDigits))
       );
     }).slice(0, 10);
-  }, [customersList, memberId, currentBranchId]);
+  }, [customersList, isSearching, memberSearchQuery, currentBranchId]);
 
   // Quick Chips for fast search / add (AC spareparts for CV. Tumbuh Makmur, general for others)
   const isAcStore = !activeStoreId || activeStoreId === 'store-01';
@@ -622,6 +638,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
       timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       items: [...cartItems],
       memberId: memberId,
+      customerName: activeMemberDisplayName,
       subtotal: grandTotal
     };
     const updated = [newHold, ...heldCarts];
@@ -642,7 +659,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         onAddToCart(prod, item.qty);
       }
     });
-    setMemberId(hold.memberId || '');
+    setMemberId(hold.memberId || '', hold.customerName);
 
     const updated = heldCarts.filter((h) => h.id !== hold.id);
     setHeldCarts(updated);
@@ -957,32 +974,103 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                 <input
                   id="member-code-input"
                   type="text"
-                  value={memberId}
+                  value={isSearching ? memberSearchQuery : (activeMemberDisplayName || '')}
                   onChange={(e) => {
-                    setMemberId(e.target.value);
+                    setIsSearching(true);
+                    setMemberSearchQuery(e.target.value);
                     setIsMemberDropdownOpen(true);
                   }}
-                  onFocus={() => setIsMemberDropdownOpen(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && filteredCustomers.length > 0) {
-                      e.preventDefault();
-                      const first = filteredCustomers[0];
-                      setMemberId(first.id, first.name);
+                  onFocus={(e) => {
+                    setIsMemberDropdownOpen(true);
+                    e.target.select();
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      setIsSearching(false);
+                      setMemberSearchQuery('');
                       setIsMemberDropdownOpen(false);
+                    }, 250);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredCustomers.length > 0) {
+                        const first = filteredCustomers[0];
+                        setMemberId(first.id, first.name);
+                        setIsSearching(false);
+                        setMemberSearchQuery('');
+                        setIsMemberDropdownOpen(false);
+                        (e.target as HTMLInputElement).blur();
+                      } else if (memberSearchQuery.trim()) {
+                        const cleanQ = memberSearchQuery.trim();
+                        const cleanDigits = cleanQ.replace(/[^0-9]/g, '');
+                        const found = customersList.find(c => {
+                          const cCode = (c.code || '').trim().toLowerCase();
+                          const cId = (c.id || '').trim().toLowerCase();
+                          const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+                          const cName = (c.name || '').trim().toLowerCase();
+                          return (
+                            cCode === cleanQ.toLowerCase() ||
+                            cId === cleanQ.toLowerCase() ||
+                            cName === cleanQ.toLowerCase() ||
+                            (cleanDigits.length >= 4 && (cCode.replace(/[^0-9]/g, '') === cleanDigits || cPhone === cleanDigits))
+                          );
+                        });
+                        if (found) {
+                          setMemberId(found.id, found.name);
+                        } else {
+                          setMemberId(cleanQ);
+                        }
+                        setIsSearching(false);
+                        setMemberSearchQuery('');
+                        setIsMemberDropdownOpen(false);
+                        (e.target as HTMLInputElement).blur();
+                      }
                     } else if (e.key === 'Escape') {
                       setIsMemberDropdownOpen(false);
+                      setIsSearching(false);
+                      setMemberSearchQuery('');
+                      (e.target as HTMLInputElement).blur();
                     }
                   }}
-                  placeholder="ID / Nama Member (F7)..."
-                  className="w-full pl-8 pr-8 py-1.5 bg-[#fcf8f4] text-[#332219] rounded-xl border border-[#dfcebe] focus:border-[#7c4e2f] focus:bg-white text-xs font-semibold placeholder:text-[#8a6b53] shadow-2xs"
+                  placeholder="ID / NIK / Nama Member (F7)..."
+                  className={`w-full pl-8 py-1.5 rounded-xl border text-xs transition-all shadow-2xs ${
+                    activeMemberDisplayName
+                      ? 'pr-14 bg-emerald-50 text-emerald-950 font-bold border-emerald-400 focus:bg-white focus:border-emerald-600'
+                      : 'pr-8 bg-[#fcf8f4] text-[#332219] font-semibold border-[#dfcebe] focus:border-[#7c4e2f] focus:bg-white placeholder:text-[#8a6b53]'
+                  }`}
                 />
-                <UserCheck className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#8a6b53]" />
+                <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 top-2.5 transition-colors ${
+                  activeMemberDisplayName ? 'text-emerald-700' : 'text-[#8a6b53]'
+                }`} />
+
+                {/* Tombol Clear Member / Reset ke Pelanggan Umum */}
+                {Boolean(activeMemberDisplayName || memberId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMemberId('', '');
+                      setIsSearching(false);
+                      setMemberSearchQuery('');
+                      setIsMemberDropdownOpen(false);
+                    }}
+                    title="Lepas Member / Kembali ke Pelanggan Umum"
+                    className="absolute right-7 top-1.5 p-1 rounded-lg text-emerald-800 hover:text-rose-600 hover:bg-rose-100/60 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 {onOpenMemberModal && (
                   <button
                     type="button"
                     onClick={onOpenMemberModal}
                     title="Cari / Pilih Member (F7)"
-                    className="absolute right-1.5 top-1.5 p-1 rounded-lg text-[#8a6b53] hover:text-[#54321c] hover:bg-[#faebd7] transition-colors"
+                    className={`absolute right-1.5 top-1.5 p-1 rounded-lg transition-colors ${
+                      activeMemberDisplayName
+                        ? 'text-emerald-800 hover:text-emerald-950 hover:bg-emerald-200/60'
+                        : 'text-[#8a6b53] hover:text-[#54321c] hover:bg-[#faebd7]'
+                    }`}
                   >
                     <Users className="w-3.5 h-3.5" />
                   </button>
@@ -999,6 +1087,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                           onMouseDown={(e) => {
                             e.preventDefault();
                             setMemberId(c.id, c.name);
+                            setIsSearching(false);
+                            setMemberSearchQuery('');
                             setIsMemberDropdownOpen(false);
                           }}
                           className={`p-2 cursor-pointer flex items-center justify-between transition-colors text-left ${
@@ -1077,29 +1167,43 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             </div>
 
             {/* Selected Member Name & Saldo Indicator */}
-            {customerName && (
-              <div className="p-2 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] font-bold space-y-1 animate-fadeIn shadow-2xs">
+            {activeMemberDisplayName && (
+              <div className={`p-2 rounded-xl border text-[11px] font-bold space-y-1 animate-fadeIn shadow-2xs ${
+                isCustomerCardBlocked(activeCustomer)
+                  ? 'bg-rose-50 text-rose-950 border-rose-300'
+                  : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+              }`}>
                 <div className="flex items-center justify-between">
                   <span className="truncate">
-                    Pelanggan: <b>{customerName}</b>{' '}
+                    Pelanggan: <b>{activeMemberDisplayName}</b>{' '}
                     <span className="text-[10px] font-normal opacity-80">
                       ({activeCustomer?.store_name || currentBranchName})
                     </span>
                   </span>
                   <div className="flex items-center gap-1">
+                    {isCustomerCardBlocked(activeCustomer) ? (
+                      <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-extrabold flex items-center gap-1 shadow-2xs">
+                        🚫 KARTU DIBLOKIR
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsTopUpModalOpen(true)}
+                        className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
+                        title="Isi Ulang Saldo Anggota"
+                      >
+                        <Wallet className="w-2.5 h-2.5" />
+                        <span>+ Top Up</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => setIsTopUpModalOpen(true)}
-                      className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
-                      title="Isi Ulang Saldo Anggota"
-                    >
-                      <Wallet className="w-2.5 h-2.5" />
-                      <span>+ Top Up</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMemberId('')}
-                      className="text-emerald-700 hover:text-rose-600 font-bold ml-1 text-xs cursor-pointer"
+                      onClick={() => {
+                        setMemberId('', '');
+                        setIsSearching(false);
+                        setMemberSearchQuery('');
+                      }}
+                      className="text-stone-500 hover:text-rose-600 font-bold ml-1 text-xs cursor-pointer p-0.5"
                       title="Hapus pilihan member"
                     >
                       ✕
@@ -1107,11 +1211,13 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-emerald-200/80 font-mono text-[11px]">
-                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                <div className={`flex items-center justify-between pt-1 border-t font-mono text-[11px] ${
+                  isCustomerCardBlocked(activeCustomer) ? 'border-rose-200 text-rose-800' : 'border-emerald-200/80 text-emerald-700'
+                }`}>
+                  <span className="font-semibold flex items-center gap-1">
                     <Coins className="w-3 h-3 text-emerald-600" /> Saldo Simpanan:
                   </span>
-                  <span className="font-extrabold text-emerald-800 text-xs">
+                  <span className={`font-extrabold text-xs ${isCustomerCardBlocked(activeCustomer) ? 'text-rose-900' : 'text-emerald-800'}`}>
                     {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
                   </span>
                 </div>
@@ -1589,9 +1695,9 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                           {hold.id}
                         </span>
                         <span className="text-[11px] text-[#8a6b53]">{hold.timestamp}</span>
-                        {hold.memberId && (
+                        {(hold.customerName || hold.memberId) && (
                           <span className="text-[10px] bg-[#edf5ee] text-[#166534] px-1.5 py-0.2 rounded font-bold">
-                            Member: {hold.memberId}
+                            Member: {hold.customerName || hold.memberId}
                           </span>
                         )}
                       </div>
