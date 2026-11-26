@@ -59,8 +59,82 @@ export function getStoreDisplayName(storeId?: string | null, fallbackName?: stri
   if (fallbackName && String(fallbackName).trim()) {
     return String(fallbackName).trim();
   }
-  if (normalized === 'store-01') return 'Cabang Utama (store-01)';
+  if (normalized === 'store-01') return 'Cabang Samarinda (BR-01)';
+  if (normalized === 'store-koperasimsl') return 'Koperasi MSL (Toko Utama)';
+  if (normalized === 'store-koperasimsl-cabang') return 'Koperasi MSL (Cabang 1)';
   return normalized;
+}
+
+/**
+ * Mendapatkan ID Cluster Bisnis untuk isolasi toko (misal Koperasi MSL vs Tumbuh Makmur).
+ * Toko dalam satu cluster (misal Toko Utama & Cabang Koperasi) berbagi data anggota.
+ * Toko beda cluster (misal CV Tumbuh Makmur vs Koperasi MSL) TERISOLASI TOTAL!
+ */
+export function getStoreClusterId(storeId?: string | null): string {
+  const normalized = normalizeStoreId(storeId);
+  try {
+    const stores: RegisteredStoreInfo[] = getStoredStores();
+    const found = stores.find((s) => s.id === normalized);
+    if (found?.clusterId) return found.clusterId;
+  } catch {}
+
+  // Heuristic fallbacks jika storeRegistry belum selesai hydrate
+  if (normalized.startsWith('store-koperasimsl')) {
+    return 'cluster-koperasi-msl';
+  }
+  if (normalized === 'store-borneoetam') {
+    return 'cluster-borneoetam';
+  }
+  if (normalized === 'store-01') {
+    return 'cluster-tumbuhmakmur';
+  }
+  return `cluster-${normalized}`;
+}
+
+/**
+ * Mengambil daftar toko/cabang yang hanya satu cluster dengan toko aktif.
+ * Digunakan agar dropdown cabang di MemberModal tidak menampilkan toko dari bisnis lain.
+ */
+export function getStoresForCluster(activeStoreId?: string | null): RegisteredStoreInfo[] {
+  const activeCluster = getStoreClusterId(activeStoreId);
+  try {
+    const allStores = getStoredStores();
+    const filtered = allStores.filter((s) => (s.clusterId || getStoreClusterId(s.id)) === activeCluster);
+    if (filtered.length > 0) return filtered;
+  } catch {}
+  return [];
+}
+
+/**
+ * Memeriksa apakah pelanggan berasal dari cluster toko yang sama dengan toko aktif.
+ * Pelanggan CV Tumbuh Makmur (store-01) TIDAK BOLEH tampil di Toko Koperasi MSL, dan sebaliknya!
+ */
+export function isCustomerBelongsToStoreOrCluster(
+  customerStoreId?: string | null,
+  activeStoreId?: string | null
+): boolean {
+  const normCustomerStore = normalizeStoreId(customerStoreId);
+  const normActiveStore = normalizeStoreId(activeStoreId || getCurrentActiveStoreId());
+
+  // Cocok ID toko secara langsung
+  if (normCustomerStore === normActiveStore) return true;
+
+  // Cocok cluster bisnis (misal: store-koperasimsl dengan store-koperasimsl-cabang)
+  const custCluster = getStoreClusterId(normCustomerStore);
+  const activeCluster = getStoreClusterId(normActiveStore);
+
+  return Boolean(custCluster && activeCluster && custCluster === activeCluster);
+}
+
+/**
+ * Filter array pelanggan secara ketat hanya untuk cluster toko aktif saat ini.
+ */
+export function filterCustomersForStore<T extends { store_id?: string | null }>(
+  customers: T[],
+  activeStoreId?: string | null
+): T[] {
+  const resolvedActive = normalizeStoreId(activeStoreId || getCurrentActiveStoreId());
+  return customers.filter((c) => isCustomerBelongsToStoreOrCluster(c?.store_id, resolvedActive));
 }
 
 /**
@@ -88,7 +162,22 @@ export function checkCustomerBranchAccess(
   const homeStoreId = normalizeStoreId(customer.store_id);
   const homeStoreName = getStoreDisplayName(homeStoreId, customer.store_name);
   const scope = normalizeAccessScope(customer.access_scope);
+  const label = customer.name || customer.code || 'Pelanggan ini';
 
+  // 1. ISOLASI BISNIS/CLUSTER: Jika toko pelanggan bukan dalam cluster yang sama, TOLAK MUTLAK!
+  if (!isCustomerBelongsToStoreOrCluster(homeStoreId, resolvedActiveId)) {
+    return {
+      allowed: false,
+      homeStoreId,
+      homeStoreName,
+      activeStoreId: resolvedActiveId,
+      activeStoreName,
+      scope,
+      reason: `Akses Ditolak: "${label}" terdaftar di ${homeStoreName} (${homeStoreId}) dan bukan pelanggan/karyawan ${activeStoreName}.`,
+    };
+  }
+
+  // 2. Dalam cluster yang sama (misal: Toko Utama vs Cabang 1 Koperasi MSL)
   if (scope === 'ALL_STORES' || homeStoreId === resolvedActiveId) {
     return {
       allowed: true,
@@ -100,7 +189,6 @@ export function checkCustomerBranchAccess(
     };
   }
 
-  const label = customer.name || customer.code || 'Pelanggan ini';
   return {
     allowed: false,
     homeStoreId,
@@ -108,6 +196,6 @@ export function checkCustomerBranchAccess(
     activeStoreId: resolvedActiveId,
     activeStoreName,
     scope,
-    reason: `Akses Ditolak: "${label}" terdaftar di ${homeStoreName} (${homeStoreId}) dan tidak bisa transaksi member di ${activeStoreName} (${resolvedActiveId}).`,
+    reason: `Akses Terkunci: "${label}" terdaftar di ${homeStoreName} dan hanya diizinkan transaksi di cabang asalnya.`,
   };
 }

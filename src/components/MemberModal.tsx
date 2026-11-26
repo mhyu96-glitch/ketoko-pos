@@ -18,7 +18,6 @@ import {
   Wallet,
   Smartphone,
   RefreshCw,
-  Share2,
   Copy,
   ExternalLink,
   ShieldCheck,
@@ -32,11 +31,14 @@ import { employeeAllowanceService } from '../services/employeeAllowanceService';
 import { formatRupiah } from '../services/escposService';
 import { MemberCardModal } from './MemberCardModal';
 import { MemberTopUpModal } from './MemberTopUpModal';
-import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import { type RegisteredStoreInfo } from '../services/storeRegistry';
 import {
   checkCustomerBranchAccess,
   getCurrentActiveStoreId,
   getStoreDisplayName,
+  getStoresForCluster,
+  filterCustomersForStore,
+  isCustomerBelongsToStoreOrCluster,
   normalizeAccessScope,
   normalizeStoreId,
   type CustomerAccessScope,
@@ -69,7 +71,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Cooperative multi-branch state
   const activeStoreId = getCurrentActiveStoreId();
-  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoredStores());
+  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoresForCluster(activeStoreId));
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'ALL' | 'KARYAWAN' | 'MEMBER'>('ALL');
 
@@ -81,7 +83,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Add Form State
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newType, setNewType] = useState<'KARYAWAN' | 'MEMBER' | 'REGULAR'>('KARYAWAN');
+  const [newType, setNewType] = useState<Customer['type']>('KARYAWAN');
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -95,7 +97,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Edit Form State
   const [editingMember, setEditingMember] = useState<Customer | null>(null);
-  const [editType, setEditType] = useState<'KARYAWAN' | 'MEMBER' | 'REGULAR'>('KARYAWAN');
+  const [editType, setEditType] = useState<Customer['type']>('KARYAWAN');
   const [editCode, setEditCode] = useState('');
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -133,14 +135,14 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const loadMembers = async () => {
     try {
       let custs = await db.customers.toArray();
-      setMembers(custs);
+      setMembers(filterCustomersForStore(custs, activeStoreId));
 
       // Sinkronisasi background dari LAN server jika aktif
       if (lanService.isLanActive()) {
         try {
-          await lanService.fetchCustomersFromLan();
+          await lanService.fetchCustomersFromLan(activeStoreId);
           custs = await db.customers.toArray();
-          setMembers(custs);
+          setMembers(filterCustomersForStore(custs, activeStoreId));
         } catch (e) {
           console.warn('[MemberModal] LAN pull deferred:', e);
         }
@@ -151,7 +153,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         try {
           await syncService.pullCustomersFromSupabase();
           custs = await db.customers.toArray();
-          setMembers(custs);
+          setMembers(filterCustomersForStore(custs, activeStoreId));
         } catch (e) {
           console.warn('[MemberModal] Cloud pull deferred:', e);
         }
@@ -171,7 +173,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
     const handleSync = () => {
       db.customers.toArray().then((custs) => {
-        setMembers(custs);
+        setMembers(filterCustomersForStore(custs, activeStoreId));
       }).catch(() => {});
     };
 
@@ -201,7 +203,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Start Editing a Member
   const startEdit = (m: Customer) => {
-    setStoresList(getStoredStores());
+    setStoresList(getStoresForCluster(activeStoreId));
     setEditingMember(m);
     setEditType((m.type as any) || 'KARYAWAN');
     setEditCode(m.code || m.id);
@@ -212,7 +214,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     setEditAllowance(m.monthly_allowance !== undefined ? m.monthly_allowance : (m.type === 'KARYAWAN' ? 2000000 : 0));
     setEditDepositBalance(m.deposit_balance !== undefined ? m.deposit_balance : (m.type === 'KARYAWAN' ? 2000000 : 0));
     setEditNotes(m.notes || '');
-    setEditStoreId(normalizeStoreId(m.store_id));
+    setEditStoreId(normalizeStoreId(m.store_id || activeStoreId));
     setEditAccessScope(normalizeAccessScope(m.access_scope));
     setShowAddForm(false);
     setDeleteConfirmId(null);
@@ -220,7 +222,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Start Adding a New Member
   const startAdd = () => {
-    setStoresList(getStoredStores());
+    setStoresList(getStoresForCluster(activeStoreId));
     setShowAddForm(true);
     setEditingMember(null);
     setNewType('KARYAWAN');
@@ -252,7 +254,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       const res = await employeeAllowanceService.resetEmployeeAllowance();
       if (res.success) {
         await loadMembers();
-        showToast(`Berhasil! Saldo kuota ${res.reset_count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
+        showToast(`Berhasil! Saldo kuota ${res.count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
       } else {
         showToast('Gagal reset kuota: ' + (res.message || 'Terjadi kesalahan'));
       }
@@ -386,6 +388,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   };
 
   const filteredMembers = members.filter((m) => {
+    // Isolasi ketat: Pelanggan/karyawan harus berada dalam cluster toko aktif!
+    if (!isCustomerBelongsToStoreOrCluster(m.store_id, activeStoreId)) {
+      return false;
+    }
+
     const matchesSearch =
       (m.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (m.code || '').toLowerCase().includes(search.toLowerCase()) ||

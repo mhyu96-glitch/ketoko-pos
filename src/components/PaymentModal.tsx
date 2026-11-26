@@ -16,6 +16,7 @@ import {
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
 import type { Customer } from '../types';
+import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -97,7 +98,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
       // Load customers for suggestion
       db.customers.toArray().then((list) => {
-        setCustomerList(list || []);
+        const activeStoreId = getCurrentActiveStoreId();
+        setCustomerList(filterCustomersForStore(list || [], activeStoreId));
       }).catch(() => {});
       
       // Auto-focus input on keyboard mode

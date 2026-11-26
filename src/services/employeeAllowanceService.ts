@@ -3,33 +3,53 @@ import type { Customer, MemberDepositMutation, Transaction } from '../types';
 import { lanService } from './lanService';
 import { syncService } from './syncService';
 import { formatRupiah } from './escposService';
+import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
 
 export interface EmployeeAllowanceRecord {
   id: string;
+  customer_id: string;
   code: string;
   name: string;
   phone: string;
   store_id: string;
   store_name: string;
   monthly_allowance: number;
+  allowance: number;
   deposit_balance: number;
+  remaining_balance: number;
   spent_this_month: number;
+  spent: number;
   trx_count_this_month: number;
   utilization_percent: number;
+  status: 'ACTIVE' | 'EXHAUSTED';
   last_allowance_reset: string;
+  last_reset: string;
   updated_at: string;
 }
 
 export interface EmployeeAllowanceReportSummary {
   monthKey: string;
   monthFormatted: string;
+  period_name: string;
   totalEmployees: number;
   totalAllowance: number;
   totalSpent: number;
   totalRemaining: number;
   overallUtilization: number;
   employees: EmployeeAllowanceRecord[];
+  summary: {
+    total_employees: number;
+    total_allowance: number;
+    total_allowance_budget: number;
+    total_spent: number;
+    total_remaining_balance: number;
+    utilization_rate: number;
+    active_count: number;
+    exhausted_count: number;
+  };
 }
+
+export type EmployeeAllowanceReport = EmployeeAllowanceReportSummary;
 
 export class EmployeeAllowanceService {
   /**
@@ -55,11 +75,12 @@ export class EmployeeAllowanceService {
   /**
    * Pengecekan dan eksekusi Otomatis Reset Saldo Karyawan Bulanan saat aplikasi dibuka
    */
-  public async checkAndAutoResetMonthlyAllowance(): Promise<number> {
+  public async checkAndAutoResetMonthlyAllowance(targetStoreId?: string): Promise<number> {
     try {
       const currentMonth = this.getCurrentMonthKey();
+      const activeStoreId = targetStoreId || getCurrentActiveStoreId();
       const allCustomers = await db.customers.toArray();
-      const employees = allCustomers.filter((c) => c.type === 'KARYAWAN');
+      const employees = filterCustomersForStore(allCustomers, activeStoreId).filter((c) => c.type === 'KARYAWAN');
 
       const needReset = employees.filter((e) => !e.last_allowance_reset || e.last_allowance_reset !== currentMonth);
       if (needReset.length === 0) return 0;
@@ -129,12 +150,13 @@ export class EmployeeAllowanceService {
   /**
    * Reset Saldo Kuota Karyawan secara Manual oleh Admin (Bisa 1 Karyawan atau Semua)
    */
-  public async resetEmployeeAllowance(customerId?: string, customAmount?: number): Promise<{ success: boolean; count: number; message: string }> {
+  public async resetEmployeeAllowance(customerId?: string, customAmount?: number, targetStoreId?: string): Promise<{ success: boolean; count: number; message: string }> {
     try {
       const currentMonth = this.getCurrentMonthKey();
       const now = new Date().toISOString();
+      const activeStoreId = targetStoreId || getCurrentActiveStoreId();
       const allCustomers = await db.customers.toArray();
-      let targets = allCustomers.filter((c) => c.type === 'KARYAWAN');
+      let targets = filterCustomersForStore(allCustomers, activeStoreId).filter((c) => c.type === 'KARYAWAN');
 
       if (customerId) {
         targets = targets.filter((c) => c.id === customerId || c.code === customerId);
@@ -273,12 +295,17 @@ export class EmployeeAllowanceService {
   /**
    * Menghitung Laporan Rekapitulasi Saldo & Pemakaian Belanja Karyawan Bulanan
    */
-  public generateMonthlyReport(
-    customers: Customer[],
-    transactions: Transaction[],
-    monthKey: string = this.getCurrentMonthKey()
-  ): EmployeeAllowanceReportSummary {
-    const employees = customers.filter((c) => c.type === 'KARYAWAN');
+  public async generateMonthlyReport(
+    customCustomers?: Customer[],
+    customTransactions?: Transaction[],
+    monthKey: string = this.getCurrentMonthKey(),
+    targetStoreId?: string
+  ): Promise<EmployeeAllowanceReportSummary> {
+    const activeStoreId = targetStoreId || getCurrentActiveStoreId();
+    const customers = customCustomers && customCustomers.length > 0 ? customCustomers : await db.customers.toArray();
+    const transactions = customTransactions && customTransactions.length > 0 ? customTransactions : await db.transactions.toArray();
+    const isolatedCusts = filterCustomersForStore(customers, activeStoreId);
+    const employees = isolatedCusts.filter((c) => c.type === 'KARYAWAN');
 
     // Filter transaksi belanja yang dibayar menggunakan SALDO pada bulan terpilih
     const monthTrx = transactions.filter((t) => {
@@ -307,20 +334,27 @@ export class EmployeeAllowanceService {
       const allowance = Number(emp.monthly_allowance) || 2000000;
       const currentBalance = Number(emp.deposit_balance) || 0;
       const utilization = allowance > 0 ? Math.min(100, (spent / allowance) * 100) : 0;
+      const status: 'ACTIVE' | 'EXHAUSTED' = currentBalance > 0 ? 'ACTIVE' : 'EXHAUSTED';
 
       return {
         id: emp.id,
+        customer_id: emp.id,
         code: emp.code || '-',
         name: emp.name,
         phone: emp.phone || '-',
         store_id: emp.store_id || 'store-01',
         store_name: emp.store_name || 'Cabang Utama',
         monthly_allowance: allowance,
+        allowance,
         deposit_balance: currentBalance,
+        remaining_balance: currentBalance,
         spent_this_month: spent,
+        spent,
         trx_count_this_month: empSales.length,
         utilization_percent: Math.round(utilization * 10) / 10,
+        status,
         last_allowance_reset: emp.last_allowance_reset || '-',
+        last_reset: emp.last_allowance_reset || 'Awal Bulan',
         updated_at: emp.updated_at || '-'
       };
     });
@@ -332,23 +366,38 @@ export class EmployeeAllowanceService {
     const totalSpent = records.reduce((s, r) => s + r.spent_this_month, 0);
     const totalRemaining = records.reduce((s, r) => s + r.deposit_balance, 0);
     const overallUtilization = totalAllowance > 0 ? Math.round((totalSpent / totalAllowance) * 1000) / 10 : 0;
+    const activeCount = records.filter(r => r.status === 'ACTIVE').length;
+    const exhaustedCount = records.filter(r => r.status === 'EXHAUSTED').length;
+    const formatted = this.formatMonthLabel(monthKey);
 
     return {
       monthKey,
-      monthFormatted: this.formatMonthLabel(monthKey),
+      monthFormatted: formatted,
+      period_name: formatted,
       totalEmployees: records.length,
       totalAllowance,
       totalSpent,
       totalRemaining,
       overallUtilization,
-      employees: records
+      employees: records,
+      summary: {
+        total_employees: records.length,
+        total_allowance: totalAllowance,
+        total_allowance_budget: totalAllowance,
+        total_spent: totalSpent,
+        total_remaining_balance: totalRemaining,
+        utilization_rate: overallUtilization,
+        active_count: activeCount,
+        exhausted_count: exhaustedCount
+      }
     };
   }
 
   /**
    * Cetak Laporan Saldo Karyawan Bulanan ke Format Dokumen A4 / Print Dialog
    */
-  public printEmployeeAllowanceReport(report: EmployeeAllowanceReportSummary, storeName = 'CV. Tumbuh Makmur Air Conindo'): void {
+  public printEmployeeAllowanceReport(report: EmployeeAllowanceReportSummary, storeNameOrProfile: any = 'Koperasi MSL'): void {
+    const storeName = typeof storeNameOrProfile === 'object' ? (storeNameOrProfile?.name || 'Koperasi MSL') : String(storeNameOrProfile || 'Koperasi MSL');
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 

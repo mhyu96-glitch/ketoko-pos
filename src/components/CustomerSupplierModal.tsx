@@ -19,8 +19,11 @@ import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
 import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
 import {
+  filterCustomersForStore,
   getCurrentActiveStoreId,
   getStoreDisplayName,
+  getStoresForCluster,
+  isCustomerBelongsToStoreOrCluster,
   normalizeAccessScope,
   normalizeStoreId,
   type CustomerAccessScope,
@@ -51,7 +54,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   // Customer Form State
   const activeStoreId = getCurrentActiveStoreId();
-  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoredStores());
+  const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoresForCluster(activeStoreId));
   const [isAddingCust, setIsAddingCust] = useState(false);
   const [editingCustId, setEditingCustId] = useState<string | null>(null);
   const [custCode, setCustCode] = useState('');
@@ -119,16 +122,16 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     try {
       const allCust = await db.customers.toArray();
       const allSup = await db.suppliers.toArray();
-      setCustomers(allCust);
+      setCustomers(filterCustomersForStore(allCust, activeStoreId));
       setSuppliers(allSup);
       onUpdated?.();
 
       // Sinkronisasi background dari LAN server jika aktif
       if (lanService.isLanActive()) {
         try {
-          await lanService.fetchCustomersFromLan();
+          await lanService.fetchCustomersFromLan(activeStoreId);
           const refreshedCust = await db.customers.toArray();
-          setCustomers(refreshedCust);
+          setCustomers(filterCustomersForStore(refreshedCust, activeStoreId));
         } catch (e) {
           console.warn('[CustomerSupplierModal] LAN customer fetch deferred:', e);
         }
@@ -139,7 +142,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         try {
           await syncService.pullCustomersFromSupabase();
           const refreshedCust = await db.customers.toArray();
-          setCustomers(refreshedCust);
+          setCustomers(filterCustomersForStore(refreshedCust, activeStoreId));
         } catch (e) {
           console.warn('[CustomerSupplierModal] Supabase customer pull deferred:', e);
         }
@@ -151,7 +154,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   // Reset Customer Form
   const resetCustForm = () => {
-    setStoresList(getStoredStores());
+    setStoresList(getStoresForCluster(activeStoreId));
     setIsAddingCust(false);
     setEditingCustId(null);
     setCustCode('');
@@ -506,7 +509,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-[#f0e4d7] font-medium">
                       {customers
-                        .filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase()) || (c.phone && c.phone.includes(search)))
+                        .filter((c) => isCustomerBelongsToStoreOrCluster(c.store_id, activeStoreId) && (!search || c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase()) || (c.phone && c.phone.includes(search))))
                         .map((c) => (
                           <tr key={c.id} className="hover:bg-[#fcf8f4] transition-colors">
                             <td className="py-3 px-4 whitespace-nowrap">

@@ -6,7 +6,7 @@ import type { Transaction, Product, Customer, MemberDepositMutation } from '../t
 import { lanService } from './lanService';
 import { notifySaleToTelegram } from './telegramService';
 import { resolveStoreFromCurrentHost } from './storeRegistry';
-import { normalizeStoreId, normalizeAccessScope, getStoreDisplayName } from '../utils/customerAccess';
+import { normalizeStoreId, normalizeAccessScope, getStoreDisplayName, isCustomerBelongsToStoreOrCluster } from '../utils/customerAccess';
 
 function buildCustomerCloudPayload(c: Customer, fallbackStoreId: string, includeExtended: boolean) {
   const storeId = normalizeStoreId(c.store_id || fallbackStoreId);
@@ -1853,26 +1853,41 @@ export class SyncService {
       let allCloudCustomers: Customer[] = [];
       let fromCust = 0;
       const stepCust = 1000;
+      const activeStoreId = this.getActiveStoreId();
+
       while (true) {
-        const { data: cloudBatch, error: custErr } = await supabase
+        let query = supabase
           .from('customers')
           .select('*')
-          .order('name', { ascending: true })
+          .order('name', { ascending: true });
+
+        // Isolasi penarikan data pelanggan dari Cloud Supabase per cluster toko
+        if (activeStoreId === 'store-01') {
+          query = query.or('store_id.eq.store-01,store_id.is.null');
+        } else if (activeStoreId.startsWith('store-koperasimsl')) {
+          query = query.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+        } else {
+          query = query.eq('store_id', activeStoreId);
+        }
+
+        const { data: cloudBatch, error: custErr } = await query
           .range(fromCust, fromCust + stepCust - 1);
 
         if (custErr) throw custErr;
         if (!cloudBatch || cloudBatch.length === 0) break;
 
-        const normalizedBatch: Customer[] = (cloudBatch as Customer[]).map((c) => {
-          const existing = localMap.get(String(c.id).trim());
-          const sid = normalizeStoreId(c.store_id);
-          return {
-            ...c,
-            store_id: sid,
-            store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
-            access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
-          };
-        });
+        const normalizedBatch: Customer[] = (cloudBatch as Customer[])
+          .filter((c) => isCustomerBelongsToStoreOrCluster(c.store_id || activeStoreId, activeStoreId))
+          .map((c) => {
+            const existing = localMap.get(String(c.id).trim());
+            const sid = c.store_id ? c.store_id.trim() : activeStoreId;
+            return {
+              ...c,
+              store_id: sid,
+              store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
+              access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
+            };
+          });
 
         allCloudCustomers = allCloudCustomers.concat(normalizedBatch);
         fromCust += stepCust;

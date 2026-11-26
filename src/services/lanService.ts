@@ -472,13 +472,14 @@ class LanService {
   }
 
   /**
-   * Ambil daftar Customer dari Central LAN Server dan simpan ke IndexedDB lokal
+   * Ambil daftar Customer dari Central LAN Server dan simpan ke IndexedDB lokal (terisolasi per toko/cluster)
    */
-  public async fetchCustomersFromLan(): Promise<Customer[]> {
+  public async fetchCustomersFromLan(storeId?: string): Promise<Customer[]> {
     if (this.config.mode !== 'CLIENT') return [];
     try {
       const cleanUrl = this.config.serverUrl.replace(/\/+$/, '');
-      const res = await fetch(`${cleanUrl}/api/lan/customers`, {
+      const activeStore = storeId || (typeof window !== 'undefined' ? localStorage.getItem('ketoko_active_store_id') || 'store-01' : 'store-01');
+      const res = await fetch(`${cleanUrl}/api/lan/customers?store_id=${encodeURIComponent(activeStore)}`, {
         headers: { 'Cache-Control': 'no-cache' }
       });
       if (res.ok) {

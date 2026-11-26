@@ -26,8 +26,6 @@ import {
   FileSpreadsheet,
   Smartphone,
   ShieldCheck,
-  Award,
-  CheckCircle,
   RotateCcw
 } from 'lucide-react';
 import { db } from '../db';
@@ -42,7 +40,8 @@ import {
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
-import { employeeAllowanceService, type EmployeeAllowanceReport } from '../services/employeeAllowanceService';
+import { employeeAllowanceService, type EmployeeAllowanceReport, type EmployeeAllowanceRecord } from '../services/employeeAllowanceService';
+import { filterCustomersForStore } from '../utils/customerAccess';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
@@ -131,21 +130,21 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       const allTrx = await db.transactions.toArray();
       const allProducts = await db.products.toArray();
       const allCust = await db.customers.toArray();
+      const activeStoreId = typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : 'store-01';
       setTransactions(filterByActiveStore(allTrx));
       setProducts(allProducts);
-      setCustomers(allCust);
+      setCustomers(filterCustomersForStore(allCust, activeStoreId));
 
       // 2. Tarik update transaksi & pelanggan terbaru dari LAN Server jika aktif
       if (lanService.isLanActive()) {
         try {
-          const activeStoreId = typeof window !== 'undefined' ? (localStorage.getItem('ketoko_active_store_id') || 'store-01') : 'store-01';
           const centralTrx = await lanService.fetchCentralTransactions(500, undefined, activeStoreId);
           if (centralTrx && centralTrx.length > 0) {
             await db.transactions.bulkPut(centralTrx);
           }
-          await lanService.fetchCustomersFromLan();
+          await lanService.fetchCustomersFromLan(activeStoreId);
           const freshCust = await db.customers.toArray();
-          setCustomers(freshCust);
+          setCustomers(filterCustomersForStore(freshCust, activeStoreId));
         } catch (lanErr) {
           console.warn('[FullReports] LAN pull deferred:', lanErr);
         }
@@ -160,7 +159,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
           const freshTrx = await db.transactions.toArray();
           const freshCust = await db.customers.toArray();
           setTransactions(filterByActiveStore(freshTrx));
-          setCustomers(freshCust);
+          setCustomers(filterCustomersForStore(freshCust, activeStoreId));
         } catch (err) {
           console.warn('[FullReports] Cloud pull deferred:', err);
         } finally {
@@ -615,7 +614,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   // Load and refresh Employee Allowance Report
   useEffect(() => {
     if (isOpen) {
-      employeeAllowanceService.generateMonthlyReport().then(setEmployeeReport).catch(console.error);
+      employeeAllowanceService.generateMonthlyReport(customers, transactions).then(setEmployeeReport).catch(console.error);
     }
   }, [isOpen, activeTab, transactions, customers]);
 
@@ -623,13 +622,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     if (!employeeReport) return [];
     let list = employeeReport.employees;
     if (employeeStatusFilter === 'ACTIVE') {
-      list = list.filter(e => e.status === 'ACTIVE');
+      list = list.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE');
     } else if (employeeStatusFilter === 'EXHAUSTED') {
-      list = list.filter(e => e.status === 'EXHAUSTED');
+      list = list.filter((e: EmployeeAllowanceRecord) => e.status === 'EXHAUSTED');
     }
     const q = employeeSearchTerm.trim().toLowerCase();
     if (q) {
-      list = list.filter(e =>
+      list = list.filter((e: EmployeeAllowanceRecord) =>
         e.name.toLowerCase().includes(q) ||
         e.code.toLowerCase().includes(q) ||
         e.phone.includes(q)
@@ -647,9 +646,9 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     try {
       const res = await employeeAllowanceService.resetEmployeeAllowance();
       if (res.success) {
-        const updated = await employeeAllowanceService.generateMonthlyReport();
+        const updated = await employeeAllowanceService.generateMonthlyReport(customers, transactions);
         setEmployeeReport(updated);
-        alert(`Berhasil! Saldo kuota ${res.reset_count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
+        alert(`Berhasil! Saldo kuota ${res.count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
       } else {
         alert('Gagal reset: ' + (res.message || 'Error'));
       }
@@ -667,7 +666,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     try {
       const res = await employeeAllowanceService.resetEmployeeAllowance(empId, targetAllowance);
       if (res.success) {
-        const updated = await employeeAllowanceService.generateMonthlyReport();
+        const updated = await employeeAllowanceService.generateMonthlyReport(customers, transactions);
         setEmployeeReport(updated);
       } else {
         alert('Gagal reset: ' + (res.message || 'Error'));
@@ -685,7 +684,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
     if (activeTab === 'employee_allowance') {
       if (employeeReport) {
-        employeeAllowanceService.printEmployeeAllowanceReport(employeeReport, storeProfile);
+        employeeAllowanceService.printEmployeeAllowanceReport(employeeReport, storeProfile?.name || 'Koperasi MSL');
       }
       return;
     }
@@ -2326,7 +2325,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 focus:border-emerald-600"
                   >
                     <option value="ALL">Semua Status ({employeeReport?.employees.length || 0})</option>
-                    <option value="ACTIVE">🟢 Masih Ada Kuota ({employeeReport?.employees.filter(e => e.status === 'ACTIVE').length || 0})</option>
+                    <option value="ACTIVE">🟢 Masih Ada Kuota ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE').length || 0})</option>
                     <option value="EXHAUSTED">🔴 Kuota Habis (Rp 0) ({employeeReport?.summary.exhausted_count || 0})</option>
                   </select>
                 </div>
@@ -2378,7 +2377,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           </td>
                         </tr>
                       ) : (
-                        filteredEmployees.map((emp, idx) => {
+                        filteredEmployees.map((emp: EmployeeAllowanceRecord, idx: number) => {
                           const percentUsed = emp.allowance > 0 ? Math.min(Math.round((emp.spent / emp.allowance) * 100), 100) : 0;
                           return (
                             <tr key={emp.customer_id} className="hover:bg-emerald-50/50 transition-colors">
@@ -2458,13 +2457,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                             TOTAL ({filteredEmployees.length} Karyawan)
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-stone-900">
-                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.allowance, 0))}
+                            {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + e.allowance, 0))}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-rose-800">
-                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.spent, 0))}
+                            {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + e.spent, 0))}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-emerald-900 text-sm">
-                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.remaining_balance, 0))}
+                            {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + e.remaining_balance, 0))}
                           </td>
                           <td colSpan={3}></td>
                         </tr>

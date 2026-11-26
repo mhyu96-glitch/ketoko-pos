@@ -4,6 +4,7 @@ import { db } from '../db';
 import {
   checkCustomerBranchAccess,
   getCurrentActiveStoreId,
+  isCustomerBelongsToStoreOrCluster,
   type BranchAccessCheckResult
 } from '../utils/customerAccess';
 
@@ -174,37 +175,38 @@ export function useCart(activeStoreId?: string) {
       try {
         // 1. Cari via ID eksak
         const custById = await db.customers.get(cleanId);
-        if (custById && custById.name) {
+        if (custById && custById.name && isCustomerBelongsToStoreOrCluster(custById.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custById, false);
           return;
         }
 
         // 2. Cari via Kode Pelanggan (case-insensitive)
         const custByCode = await db.customers.where('code').equalsIgnoreCase(cleanId).first();
-        if (custByCode && custByCode.name) {
+        if (custByCode && custByCode.name && isCustomerBelongsToStoreOrCluster(custByCode.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByCode, false);
           return;
         }
 
         // 3. Cari via No HP
         const custByPhone = await db.customers.where('phone').equalsIgnoreCase(cleanId).first();
-        if (custByPhone && custByPhone.name) {
+        if (custByPhone && custByPhone.name && isCustomerBelongsToStoreOrCluster(custByPhone.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByPhone, false);
           return;
         }
 
         // 4. Cari via Nama Pelanggan (case-insensitive)
         const custByName = await db.customers.where('name').equalsIgnoreCase(cleanId).first();
-        if (custByName && custByName.name) {
+        if (custByName && custByName.name && isCustomerBelongsToStoreOrCluster(custByName.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByName, false);
           return;
         }
 
         // 5. In-Memory Search: Hanya kunci otomatis jika benar-benar identik (exact match) dengan kode, nama lengkap, atau nomor HP
         const allCusts = await db.customers.toArray();
+        const clusterCusts = allCusts.filter(c => isCustomerBelongsToStoreOrCluster(c.store_id, resolvedStoreId));
         const lower = cleanId.toLowerCase();
         const cleanDigits = cleanId.replace(/[^0-9]/g, '');
-        const exactMatch = allCusts.find(c => {
+        const exactMatch = clusterCusts.find(c => {
           const cName = (c.name || '').trim().toLowerCase();
           const cCode = (c.code || '').trim().toLowerCase();
           const cPhone = (c.phone || '').replace(/[^0-9]/g, '');

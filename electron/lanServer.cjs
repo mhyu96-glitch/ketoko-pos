@@ -1302,9 +1302,21 @@ function handleHttpRequest(req, res) {
     });
   }
 
-  // 8.b Mengambil Semua Pelanggan
+  // 8.b Mengambil Semua Pelanggan (Terisolasi per Toko / Cluster Bisnis)
   if (pathname === '/api/lan/customers' && req.method === 'GET') {
-    const custs = sqliteDb.prepare('SELECT * FROM customers ORDER BY name ASC').all();
+    const targetStoreId = (urlObj.searchParams.get('store_id') || '').trim();
+    let custs = [];
+    if (targetStoreId) {
+      if (targetStoreId.startsWith('store-koperasimsl')) {
+        custs = sqliteDb.prepare("SELECT * FROM customers WHERE store_id IN ('store-koperasimsl', 'store-koperasimsl-cabang') ORDER BY name ASC").all();
+      } else if (targetStoreId === 'store-01') {
+        custs = sqliteDb.prepare("SELECT * FROM customers WHERE store_id = 'store-01' OR store_id IS NULL OR store_id = '' ORDER BY name ASC").all();
+      } else {
+        custs = sqliteDb.prepare("SELECT * FROM customers WHERE store_id = ? ORDER BY name ASC").all(targetStoreId);
+      }
+    } else {
+      custs = sqliteDb.prepare('SELECT * FROM customers ORDER BY name ASC').all();
+    }
     return sendJson(200, {
       status: 'success',
       count: custs.length,
@@ -1644,14 +1656,26 @@ function handleHttpRequest(req, res) {
   // 8.i Self-Service Portal Karyawan (Cek Saldo Mandiri, Kartu Digital, & Riwayat Belanja)
   if (pathname === '/api/lan/employee/portal' && req.method === 'GET') {
     const query = (urlObj.searchParams.get('q') || '').trim();
+    const targetStoreId = (urlObj.searchParams.get('store_id') || '').trim();
     if (!query) {
       return sendJson(400, { error: 'NIK, Kode Karyawan, atau Nomor HP wajib diisi' });
     }
 
-    const emp = sqliteDb.prepare(`
-      SELECT * FROM customers 
-      WHERE (LOWER(id) = LOWER(?) OR LOWER(code) = LOWER(?) OR phone = ? OR LOWER(name) = LOWER(?))
-    `).get(query, query, query, query);
+    let emp = null;
+    if (targetStoreId.startsWith('store-koperasimsl')) {
+      emp = sqliteDb.prepare(`
+        SELECT * FROM customers 
+        WHERE (LOWER(id) = LOWER(?) OR LOWER(code) = LOWER(?) OR phone = ? OR LOWER(name) = LOWER(?))
+          AND type = 'KARYAWAN'
+          AND store_id IN ('store-koperasimsl', 'store-koperasimsl-cabang')
+      `).get(query, query, query, query);
+    } else {
+      emp = sqliteDb.prepare(`
+        SELECT * FROM customers 
+        WHERE (LOWER(id) = LOWER(?) OR LOWER(code) = LOWER(?) OR phone = ? OR LOWER(name) = LOWER(?))
+          AND type = 'KARYAWAN'
+      `).get(query, query, query, query);
+    }
 
     if (!emp) {
       return sendJson(404, { error: 'Data karyawan tidak ditemukan. Pastikan NIK atau No HP sesuai yang terdaftar.' });

@@ -39,8 +39,8 @@ export const DEFAULT_REGISTERED_STORES: RegisteredStoreInfo[] = [
     productsCount: '1.503 Produk Sparepart AC',
     status: 'ONLINE',
     isClean: false,
-    clusterId: 'cluster-default',
-    clusterName: 'Cluster 1 (Default Cloud)'
+    clusterId: 'cluster-tumbuhmakmur',
+    clusterName: 'Cluster CV. Tumbuh Makmur'
   },
   {
     id: 'store-borneoetam',
@@ -58,8 +58,8 @@ export const DEFAULT_REGISTERED_STORES: RegisteredStoreInfo[] = [
     productsCount: '0 Produk (Toko Bersih Baru)',
     status: 'ONLINE',
     isClean: true,
-    clusterId: 'cluster-default',
-    clusterName: 'Cluster 1 (Default Cloud)'
+    clusterId: 'cluster-borneoetam',
+    clusterName: 'Cluster Borneo Etam'
   },
   {
     id: 'store-koperasimsl',

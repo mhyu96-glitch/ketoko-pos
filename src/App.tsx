@@ -5,7 +5,7 @@ import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
 import { api } from './api/client';
 import { syncService } from './services/syncService';
-import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation } from './types';
+import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation, CartItem } from './types';
 import { formatRupiah } from './services/escposService';
 import { getStoreDisplayName } from './utils/customerAccess';
 
@@ -55,7 +55,7 @@ import {
   saveStoresList,
   getStoredStores
 } from './services/storeRegistry';
-import { checkCustomerBranchAccess, normalizeStoreId } from './utils/customerAccess';
+import { checkCustomerBranchAccess, normalizeStoreId, isCustomerBelongsToStoreOrCluster } from './utils/customerAccess';
 
 function resolveInitialTerminalStore() {
   const hostStore = resolveStoreFromCurrentHost();
@@ -477,6 +477,17 @@ export const App: React.FC = () => {
         const storeProds = await db.products.toArray();
         setProducts(sortProductsForDisplay(storeProds, activeStore));
         setOverdueCount(0);
+
+        // Bersihkan data pelanggan toko luar yang bocor dari IndexedDB toko baru ini
+        try {
+          const allCust = await db.customers.toArray();
+          const leaked = allCust.filter((c) => !isCustomerBelongsToStoreOrCluster(c.store_id, activeStore));
+          if (leaked.length > 0) {
+            await db.customers.bulkDelete(leaked.map((c) => c.id));
+            console.log(`[App] Berhasil membersihkan ${leaked.length} data pelanggan luar yang bocor dari toko (${activeStore}).`);
+          }
+        } catch {}
+
         if (navigator.onLine) {
           syncService.pullFromSupabase().then(async (res) => {
             if (res && res.products) {
@@ -1955,6 +1966,15 @@ export const App: React.FC = () => {
       const allTrxs = await db.transactions.toArray();
       setTransactions(allTrxs.filter((t: any) => t.store_id === store.id));
 
+      // Jika toko bersih baru, bersihkan pelanggan luar yang bocor dari IndexedDB toko ini
+      try {
+        const allCust = await db.customers.toArray();
+        const leaked = allCust.filter((c) => !isCustomerBelongsToStoreOrCluster(c.store_id, store.id));
+        if (leaked.length > 0) {
+          await db.customers.bulkDelete(leaked.map((c) => c.id));
+        }
+      } catch {}
+
       try {
         await db.users.bulkPut([
           {
@@ -2343,11 +2363,11 @@ export const App: React.FC = () => {
           products={products}
           onTransactionDeleted={(deletedId) => {
             setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
-            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStore))).catch(() => {});
+            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStoreId))).catch(() => {});
           }}
           onTransactionUpdated={(updated) => {
             setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStore))).catch(() => {});
+            db.products.toArray().then((all) => setProducts(sortProductsForDisplay(all, activeStoreId))).catch(() => {});
           }}
         />
       )}

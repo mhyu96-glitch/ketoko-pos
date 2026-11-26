@@ -19,6 +19,7 @@ import type { DebtRecord, ReceivableRecord, Supplier, Customer } from '../types'
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { CustomSelect } from './CustomSelect';
+import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
 
 interface DebtReceivableModalProps {
   isOpen: boolean;
@@ -90,10 +91,11 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
     const allReceivables = await db.receivables.toArray();
     const allSuppliers = await db.suppliers.toArray();
     const allCustomers = await db.customers.toArray();
+    const activeStoreId = branchId || getCurrentActiveStoreId();
     setDebts(allDebts);
     setReceivables(allReceivables);
     setSuppliers(allSuppliers);
-    setCustomers(allCustomers);
+    setCustomers(filterCustomersForStore(allCustomers, activeStoreId));
     onUpdated?.();
   };
 

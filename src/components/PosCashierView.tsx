@@ -30,7 +30,13 @@ import type { CartItem, Product, Customer } from '../types';
 import { db } from '../db';
 import { formatRupiah } from '../services/escposService';
 import { BarcodeScanner } from './BarcodeScanner';
-import { checkCustomerBranchAccess, getCurrentActiveStoreId, getStoreDisplayName } from '../utils/customerAccess';
+import {
+  checkCustomerBranchAccess,
+  filterCustomersForStore,
+  getCurrentActiveStoreId,
+  getStoreDisplayName,
+  isCustomerBelongsToStoreOrCluster,
+} from '../utils/customerAccess';
 import type { MemberBlockedState } from '../hooks/useCart';
 import { MemberTopUpModal } from './MemberTopUpModal';
 
@@ -320,7 +326,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   const loadCustomers = async () => {
     try {
       const all = await db.customers.toArray();
-      setCustomersList(all);
+      setCustomersList(filterCustomersForStore(all, currentBranchId));
     } catch {}
   };
 
@@ -330,6 +336,9 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     const handleCustomerUpdated = (e: any) => {
       const cust = e?.detail?.customer || e?.detail;
       if (cust && cust.id) {
+        if (!isCustomerBelongsToStoreOrCluster(cust.store_id, currentBranchId)) {
+          return;
+        }
         setCustomersList((prev) => {
           const idx = prev.findIndex((c) => String(c.id) === String(cust.id));
           if (idx >= 0) {
@@ -401,11 +410,12 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   // Filtered customer suggestions based on user input in member-code-input
   const filteredCustomers = useMemo(() => {
     const q = (memberId || '').trim().toLowerCase();
+    const isolated = filterCustomersForStore(customersList, currentBranchId);
     if (!q) {
-      return customersList.slice(0, 8);
+      return isolated.slice(0, 8);
     }
     const cleanDigits = q.replace(/[^0-9]/g, '');
-    return customersList.filter(c => {
+    return isolated.filter(c => {
       const cName = (c.name || '').toLowerCase();
       const cCode = (c.code || '').toLowerCase();
       const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
@@ -415,7 +425,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         (cleanDigits.length >= 3 && cPhone.includes(cleanDigits))
       );
     }).slice(0, 10);
-  }, [customersList, memberId]);
+  }, [customersList, memberId, currentBranchId]);
 
   // Quick Chips for fast search / add (AC spareparts for CV. Tumbuh Makmur, general for others)
   const isAcStore = !activeStoreId || activeStoreId === 'store-01';

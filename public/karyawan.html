@@ -1,40 +1,40 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="utf-8"/>
-  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-  <title>Portal Cek Saldo & Kartu Belanja Karyawan Koperasi</title>
-  
-  <!-- Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet"/>
+  <!DOCTYPE html>
+  <html lang="id">
+  <head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+    <title>Portal Cek Saldo & Kartu Belanja Karyawan Koperasi</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet"/>
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- JsBarcode & QRCode CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-  <!-- HTML2Canvas CDN for saving card image -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JsBarcode & QRCode CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <!-- HTML2Canvas CDN for saving card image -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace']
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace']
+            }
           }
         }
-      }
-    };
-  </script>
+      };
+    </script>
 
-  <style>
-    body {
-      background-color: #f7f3ee;
-      font-family: 'Plus Jakarta Sans', sans-serif;
+    <style>
+      body {
+        background-color: #f7f3ee;
+        font-family: 'Plus Jakarta Sans', sans-serif;
     }
     .card-gradient {
       background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 85%, #0f766e 100%);
@@ -240,7 +240,7 @@
       resultSec.classList.add('hidden');
 
       try {
-        const res = await fetch('/api/lan/employee/portal?q=' + encodeURIComponent(q));
+        const res = await fetch('/api/lan/employee/portal?q=' + encodeURIComponent(q) + '&store_id=store-koperasimsl');
         const json = await res.json();
 
         loader.classList.add('hidden');
