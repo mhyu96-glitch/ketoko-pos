@@ -1804,6 +1804,9 @@ function handleHttpRequest(req, res) {
       LIMIT 10
     `).all(emp.id, emp.code);
 
+    const pinMatch = String(emp.address || '').match(/\[PIN:([a-f0-9]{32,64})\]/i);
+    const pinHash = pinMatch ? pinMatch[1].toLowerCase() : null;
+
     return sendJson(200, {
       status: 'success',
       data: {
@@ -1813,6 +1816,8 @@ function handleHttpRequest(req, res) {
           name: emp.name,
           phone: emp.phone,
           address: emp.address,
+          has_pin: Boolean(pinHash),
+          pin_hash: pinHash,
           store_id: emp.store_id,
           store_name: emp.store_name,
           type: emp.type || 'KARYAWAN',
@@ -1825,6 +1830,78 @@ function handleHttpRequest(req, res) {
         last_transaction: lastTransaction,
         transactions: parsedTrx,
         mutations
+      }
+    });
+  }
+
+  // 8.j Atur / Ubah PIN Karyawan
+  if (pathname === '/api/lan/employee/set-pin' && req.method === 'POST') {
+    return readJsonBody((body) => {
+      const code = String(body?.code || '').trim();
+      const pinHash = String(body?.pin_hash || '').toLowerCase().trim();
+      const phone = String(body?.phone || '').trim();
+      if (!code || !pinHash) {
+        return sendJson(400, { error: 'NIK dan Hash PIN wajib diisi' });
+      }
+
+      sqliteDb.exec('BEGIN TRANSACTION;');
+      try {
+        const emp = sqliteDb.prepare("SELECT * FROM customers WHERE id = ? OR LOWER(code) = LOWER(?)").get(code, code);
+        if (!emp) {
+          sqliteDb.exec('ROLLBACK;');
+          return sendJson(404, { error: 'Karyawan tidak ditemukan' });
+        }
+
+        const baseAddr = String(emp.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+        const newAddr = `${baseAddr} [PIN:${pinHash}]`.trim();
+        const newPhone = (phone && phone !== '-') ? phone : emp.phone;
+        const now = new Date().toISOString();
+
+        sqliteDb.prepare(`
+          UPDATE customers 
+          SET address = ?, phone = ?, updated_at = ?
+          WHERE id = ?
+        `).run(newAddr, newPhone, now, emp.id);
+
+        sqliteDb.exec('COMMIT;');
+        return sendJson(200, { status: 'success', message: 'PIN berhasil diatur' });
+      } catch (e) {
+        sqliteDb.exec('ROLLBACK;');
+        return sendJson(500, { error: 'Gagal mengatur PIN: ' + e.message });
+      }
+    });
+  }
+
+  // 8.k Reset PIN Karyawan (Oleh Kasir/Admin)
+  if (pathname === '/api/lan/employee/reset-pin' && req.method === 'POST') {
+    return readJsonBody((body) => {
+      const code = String(body?.code || body?.customer_id || '').trim();
+      if (!code) {
+        return sendJson(400, { error: 'NIK atau ID Karyawan wajib diisi' });
+      }
+
+      sqliteDb.exec('BEGIN TRANSACTION;');
+      try {
+        const emp = sqliteDb.prepare("SELECT * FROM customers WHERE id = ? OR LOWER(code) = LOWER(?)").get(code, code);
+        if (!emp) {
+          sqliteDb.exec('ROLLBACK;');
+          return sendJson(404, { error: 'Karyawan tidak ditemukan' });
+        }
+
+        const newAddr = String(emp.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+        const now = new Date().toISOString();
+
+        sqliteDb.prepare(`
+          UPDATE customers 
+          SET address = ?, updated_at = ?
+          WHERE id = ?
+        `).run(newAddr, now, emp.id);
+
+        sqliteDb.exec('COMMIT;');
+        return sendJson(200, { status: 'success', message: 'PIN berhasil di-reset' });
+      } catch (e) {
+        sqliteDb.exec('ROLLBACK;');
+        return sendJson(500, { error: 'Gagal reset PIN: ' + e.message });
       }
     });
   }

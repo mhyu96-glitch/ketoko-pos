@@ -23,6 +23,7 @@ export interface ParsedEmployeeMeta {
   emp_status: string;
   clean_address: string;
   reset_month: string;
+  has_pin: boolean;
 }
 
 /**
@@ -44,12 +45,46 @@ export function clampEmployeeBalance(val?: number | null, maxAllowance = MAX_EMP
 }
 
 /**
- * Membersihkan tag metadata [RST:YYYY-MM] dari teks alamat untuk tampilan UI
+ * Membersihkan tag metadata [RST:YYYY-MM] dan [PIN:...] dari teks alamat untuk tampilan UI
  */
 export function formatCustomerAddressDisplay(address?: string | null): string {
   if (!address) return '-';
-  const cleaned = String(address).replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '').trim();
+  const cleaned = String(address)
+    .replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '')
+    .replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '')
+    .trim();
   return cleaned || '-';
+}
+
+/**
+ * Mengekstrak PIN hash dari objek Customer / teks alamat
+ */
+export function extractEmployeePinHash(customer?: Partial<Customer> | null): string | null {
+  const addr = String(customer?.address || '');
+  const m = addr.match(/\[PIN:([a-f0-9]{32,64})\]/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Mengecek apakah karyawan telah mengaktifkan PIN keamanan
+ */
+export function hasEmployeePin(customer?: Partial<Customer> | null): boolean {
+  return Boolean(extractEmployeePinHash(customer));
+}
+
+/**
+ * Menyisipkan atau mengganti tag [PIN:hash] ke dalam teks alamat
+ */
+export function setEmployeePinInAddress(address: string | undefined | null, pinHash: string): string {
+  const base = String(address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+  return `${base} [PIN:${pinHash.toLowerCase().trim()}]`.trim();
+}
+
+/**
+ * Menghapus tag [PIN:...] dari teks alamat (digunakan saat Kasir / Admin Reset PIN)
+ */
+export function removeEmployeePinFromAddress(address: string | undefined | null): string {
+  return String(address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
 }
 
 /**
@@ -60,6 +95,7 @@ export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEm
   const rstMatch = rawAddr.match(/\[RST:(\d{4}-\d{2})\]/i);
   const reset_month = customer?.last_allowance_reset || (rstMatch ? rstMatch[1] : '');
   const clean_address = formatCustomerAddressDisplay(rawAddr);
+  const pin_hash = extractEmployeePinHash(customer);
 
   let unit_profile = customer?.unit_profile || '';
   let afdeling = customer?.afdeling || '';
@@ -90,7 +126,8 @@ export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEm
     job_code: job_code || '-',
     emp_status: emp_status || '-',
     clean_address,
-    reset_month
+    reset_month,
+    has_pin: Boolean(pin_hash)
   };
 }
 

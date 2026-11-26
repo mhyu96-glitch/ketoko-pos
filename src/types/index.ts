@@ -148,6 +148,7 @@ export interface Customer {
   job_code?: string; // Jabatan karyawan, misal "MANDOR PANEN", "PEMANEN", "SATPAM"
   emp_status?: string; // Status kepegawaian, misal "KT", "KK", "KP"
   discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
+  pin_hash?: string; // SHA-256 hash PIN portal karyawan (disimpan juga dalam tag [PIN:hash] di address)
   notes?: string;
   created_at?: string;
   updated_at?: string;

@@ -22,7 +22,8 @@ import {
   ExternalLink,
   ShieldCheck,
   CheckCircle2,
-  Printer
+  Printer,
+  KeyRound
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer } from '../types';
@@ -47,6 +48,7 @@ import {
   normalizeAccessScope,
   normalizeStoreId,
   parseEmployeeMeta,
+  removeEmployeePinFromAddress,
   type CustomerAccessScope,
 } from '../utils/customerAccess';
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
@@ -295,6 +297,38 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       }
     } catch (err: any) {
       showToast('Error saat reset kuota: ' + (err.message || ''));
+    }
+  };
+
+  // Reset PIN Portal Karyawan (Jika karyawan lupa PIN)
+  const handleResetPinEmployee = async (m: Customer) => {
+    const meta = parseEmployeeMeta(m);
+    if (!meta.has_pin) {
+      showToast(`Karyawan "${m.name}" belum membuat PIN di portal HP.`);
+      return;
+    }
+
+    if (
+      !confirm(
+        `Reset PIN Portal untuk "${m.name}" (NIK: ${m.code || m.id})?\n\nPIN lama akan dihapus. Saat karyawan membuka link portal di HP, karyawan akan diminta membuat 6-digit PIN baru.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const newAddress = removeEmployeePinFromAddress(m.address);
+      const updated: Customer = {
+        ...m,
+        address: newAddress,
+        updated_at: new Date().toISOString()
+      };
+      await db.customers.put(updated);
+      await syncService.syncCustomerChange(updated);
+      setMembers((prev) => prev.map((item) => (item.id === m.id ? updated : item)));
+      showToast(`PIN untuk "${m.name}" berhasil di-reset! Karyawan dapat membuat PIN baru di HP.`);
+    } catch (err: any) {
+      showToast('Gagal me-reset PIN: ' + (err?.message || 'Error'));
     }
   };
 
@@ -1219,6 +1253,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                         const isSelected = currentMemberId === m.id || currentMemberId === m.code;
                         const isConfirmingDelete = deleteConfirmId === m.id;
                         const access = checkCustomerBranchAccess(m, activeStoreId);
+                        const meta = parseEmployeeMeta(m);
 
                         return (
                           <tr 
@@ -1239,9 +1274,21 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                               <div className="font-bold text-[#332219] text-sm flex items-center flex-wrap gap-1.5">
                                 <span>{m.name}</span>
                                 {m.type === 'KARYAWAN' && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300 shadow-2xs">
-                                    👔 Karyawan
-                                  </span>
+                                  <>
+                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300 shadow-2xs">
+                                      👔 Karyawan
+                                    </span>
+                                    {meta.has_pin ? (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-teal-100 text-teal-800 text-[9.5px] font-bold border border-teal-300 shadow-2xs flex items-center gap-1" title="Karyawan sudah mengaktifkan 6-digit PIN keamanan">
+                                        <KeyRound className="w-2.5 h-2.5 text-teal-700" />
+                                        <span>PIN Aktif</span>
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-stone-100 text-stone-500 text-[9.5px] font-semibold border border-stone-200" title="Karyawan belum membuat PIN di portal HP">
+                                        ⚪ Belum PIN
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                                 <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
                                 {isSelected && (
@@ -1343,14 +1390,29 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
                                   {/* Tombol Reset Kuota 1 Karyawan */}
                                   {m.type === 'KARYAWAN' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleResetSingleEmployee(m)}
-                                      className="p-1.5 rounded-xl text-amber-800 bg-amber-100 hover:bg-amber-200 transition-colors border border-amber-300 shadow-2xs"
-                                      title={`Reset saldo kuota ${m.name} ke ${formatRupiah(m.monthly_allowance || 2000000)}`}
-                                    >
-                                      <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                                    </button>
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResetSingleEmployee(m)}
+                                        className="p-1.5 rounded-xl text-amber-800 bg-amber-100 hover:bg-amber-200 transition-colors border border-amber-300 shadow-2xs"
+                                        title={`Reset saldo kuota ${m.name} ke ${formatRupiah(m.monthly_allowance || 2000000)}`}
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResetPinEmployee(m)}
+                                        className={`p-1.5 rounded-xl transition-colors border shadow-2xs ${
+                                          meta.has_pin
+                                            ? 'text-teal-900 bg-teal-100 hover:bg-teal-200 border-teal-300'
+                                            : 'text-stone-400 bg-stone-100 border-stone-200 opacity-50 cursor-not-allowed'
+                                        }`}
+                                        title={meta.has_pin ? `Reset PIN portal karyawan untuk ${m.name}` : `${m.name} belum membuat PIN di portal HP`}
+                                        disabled={!meta.has_pin}
+                                      >
+                                        <KeyRound className="w-3.5 h-3.5 text-teal-700" />
+                                      </button>
+                                    </>
                                   )}
 
                                   {/* Tombol Top Up Saldo */}
@@ -1452,9 +1514,21 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                               {m.code || m.id}
                             </span>
                             {m.type === 'KARYAWAN' && (
-                              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-300">
-                                👔 Karyawan
-                              </span>
+                              <>
+                                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-300">
+                                  👔 Karyawan
+                                </span>
+                                {parseEmployeeMeta(m).has_pin ? (
+                                  <span className="text-[10px] font-bold bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded-md border border-teal-300 flex items-center gap-1" title="PIN portal aktif">
+                                    <KeyRound className="w-2.5 h-2.5 text-teal-700" />
+                                    <span>PIN Aktif</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded-md border border-stone-200" title="Belum membuat PIN portal">
+                                    ⚪ Belum PIN
+                                  </span>
+                                )}
+                              </>
                             )}
                             <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
                           </div>
@@ -1504,14 +1578,29 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                           <div className="flex items-center space-x-1">
                             {/* Tombol Reset Kuota 1 Karyawan di Card */}
                             {m.type === 'KARYAWAN' && (
-                              <button
-                                type="button"
-                                onClick={() => handleResetSingleEmployee(m)}
-                                className="p-1.5 rounded-xl text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 shadow-2xs"
-                                title={`Reset saldo kuota ${m.name} ke ${formatRupiah(m.monthly_allowance || 2000000)}`}
-                              >
-                                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetSingleEmployee(m)}
+                                  className="p-1.5 rounded-xl text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 shadow-2xs"
+                                  title={`Reset saldo kuota ${m.name} ke ${formatRupiah(m.monthly_allowance || 2000000)}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetPinEmployee(m)}
+                                  className={`p-1.5 rounded-xl border shadow-2xs ${
+                                    parseEmployeeMeta(m).has_pin
+                                      ? 'text-teal-900 bg-teal-100 hover:bg-teal-200 border-teal-300'
+                                      : 'text-stone-400 bg-stone-100 border-stone-200 opacity-50 cursor-not-allowed'
+                                  }`}
+                                  title={parseEmployeeMeta(m).has_pin ? `Reset PIN portal karyawan untuk ${m.name}` : `${m.name} belum membuat PIN di portal HP`}
+                                  disabled={!parseEmployeeMeta(m).has_pin}
+                                >
+                                  <KeyRound className="w-3.5 h-3.5 text-teal-700" />
+                                </button>
+                              </>
                             )}
 
                             <button

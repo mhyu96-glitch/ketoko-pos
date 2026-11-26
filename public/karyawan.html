@@ -61,7 +61,7 @@
   <main class="max-w-md mx-auto w-full px-4 py-4 space-y-4 flex-1">
 
     <!-- Search Card -->
-    <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#e5d6c8] space-y-3">
+    <div id="searchCard" class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#e5d6c8] space-y-3">
       <div>
         <h2 class="text-base font-extrabold text-[#064e3b]">Cek Saldo & Kartu Belanja Digital</h2>
         <p class="text-xs text-stone-600 mt-0.5">Masukkan <b>NIK Karyawan</b> (contoh: <code class="font-mono text-emerald-800 bg-emerald-50 px-1 rounded">52/5221/0911/324</code>) atau <b>Nama Lengkap</b> Anda</p>
@@ -98,6 +98,157 @@
       </div>
     </div>
 
+    <!-- 1. PIN Setup Card (Aktivasi Pertama Kali untuk Akun Baru) -->
+    <div id="pinSetupCard" class="hidden bg-white rounded-2xl p-4 sm:p-5 shadow-md border-2 border-emerald-600 space-y-3.5 animate-fadeIn">
+      <div class="flex items-start space-x-3">
+        <div class="p-2.5 rounded-xl bg-emerald-100 text-emerald-800 shrink-0 text-xl">
+          🔐
+        </div>
+        <div>
+          <h2 class="text-sm sm:text-base font-extrabold text-emerald-950">Aktivasi & Buat PIN Rahasia 6-Digit</h2>
+          <p class="text-xs text-stone-600 mt-0.5 leading-relaxed">
+            Halo <b id="pinSetupEmpName" class="text-emerald-900">-</b> (<span id="pinSetupEmpCode" class="font-mono text-emerald-800">-</span>)! Demi melindungi saldo kuota belanja <b>Rp 2.000.000</b> Anda agar <b>tidak bisa dibuka oleh orang lain</b>, silakan buat 6-digit PIN rahasia Anda.
+          </p>
+        </div>
+      </div>
+
+      <form id="pinSetupForm" onsubmit="handlePinSetupSubmit(event)" class="space-y-3">
+        <div>
+          <label class="text-[11px] font-black uppercase text-stone-600 block mb-1">
+            Buat 6-Digit PIN Rahasia * (Hanya Angka)
+          </label>
+          <input
+            type="password"
+            id="newPinInput"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            placeholder="Contoh: 123456"
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-[#d6c3b0] bg-[#fcfaf7] text-base font-mono font-bold tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-700 placeholder:text-stone-300"
+          />
+        </div>
+
+        <div>
+          <label class="text-[11px] font-black uppercase text-stone-600 block mb-1">
+            Konfirmasi Ulang 6-Digit PIN *
+          </label>
+          <input
+            type="password"
+            id="confirmPinInput"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            placeholder="Ulangi 6 angka PIN..."
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-[#d6c3b0] bg-[#fcfaf7] text-base font-mono font-bold tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-700 placeholder:text-stone-300"
+          />
+        </div>
+
+        <div>
+          <label class="text-[11px] font-black uppercase text-stone-600 block mb-1">
+            Nomor WhatsApp / HP Aktif (Opsional)
+          </label>
+          <input
+            type="tel"
+            id="phonePinInput"
+            placeholder="0812xxxx"
+            class="w-full px-3.5 py-2 rounded-xl border border-[#d6c3b0] bg-[#fcfaf7] text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-700"
+          />
+          <span class="text-[10px] text-stone-500 mt-0.5 block">Agar Anda juga bisa login langsung menggunakan No. WhatsApp Anda</span>
+        </div>
+
+        <label class="flex items-center space-x-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 cursor-pointer">
+          <input type="checkbox" id="rememberMeNew" checked class="w-4 h-4 accent-emerald-700 rounded cursor-pointer" />
+          <span class="text-xs font-bold text-emerald-950">Ingat saya di HP ini (otomatis buka tanpa ketik ulang PIN)</span>
+        </label>
+
+        <div id="pinSetupError" class="hidden p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold text-center"></div>
+
+        <div class="pt-1 flex items-center gap-2">
+          <button
+            type="button"
+            onclick="cancelPinFlow()"
+            class="w-1/3 py-2.5 bg-stone-200 hover:bg-stone-300 active:scale-[0.98] text-stone-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="btnSavePin"
+            class="w-2/3 py-2.5 bg-[#065f46] hover:bg-[#064e3b] active:scale-[0.98] text-white rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center space-x-1 cursor-pointer"
+          >
+            <span>🔒 Simpan PIN & Buka Kartu</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 2. PIN Verification Card (Untuk Akun yang Sudah Terlindungi PIN) -->
+    <div id="pinVerifyCard" class="hidden bg-white rounded-2xl p-4 sm:p-5 shadow-md border-2 border-emerald-600 space-y-3.5 animate-fadeIn">
+      <div class="flex items-start space-x-3">
+        <div class="p-2.5 rounded-xl bg-amber-100 text-amber-800 shrink-0 text-xl">
+          🔒
+        </div>
+        <div>
+          <h2 class="text-sm sm:text-base font-extrabold text-stone-900">Masukkan PIN Keamanan</h2>
+          <p class="text-xs text-stone-600 mt-0.5 leading-relaxed">
+            Akun milik <b id="pinVerifyEmpName" class="text-emerald-900">-</b> (<span id="pinVerifyEmpCode" class="font-mono text-emerald-800">-</span>) dilindungi PIN. Masukkan 6-digit PIN rahasia Anda:
+          </p>
+        </div>
+      </div>
+
+      <form id="pinVerifyForm" onsubmit="handlePinVerifySubmit(event)" class="space-y-3">
+        <div>
+          <input
+            type="password"
+            id="verifyPinInput"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            placeholder="• • • • • •"
+            required
+            class="w-full px-3.5 py-3 rounded-xl border-2 border-emerald-600 bg-[#fcfaf7] text-xl font-mono font-black tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-700 placeholder:text-stone-300"
+          />
+        </div>
+
+        <label class="flex items-center space-x-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 cursor-pointer">
+          <input type="checkbox" id="rememberMeVerify" checked class="w-4 h-4 accent-emerald-700 rounded cursor-pointer" />
+          <span class="text-xs font-bold text-emerald-950">Ingat saya di HP ini (otomatis masuk selanjutnya)</span>
+        </label>
+
+        <div id="pinVerifyError" class="hidden p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold text-center"></div>
+
+        <div class="flex items-center justify-between text-xs pt-0.5">
+          <button
+            type="button"
+            onclick="showForgotPinInfo()"
+            class="text-emerald-800 hover:text-emerald-900 underline font-semibold cursor-pointer"
+          >
+            ❓ Lupa PIN?
+          </button>
+          <span class="text-[11px] text-stone-500 font-medium">Karyawan lain dilarang masuk</span>
+        </div>
+
+        <div class="pt-1 flex items-center gap-2">
+          <button
+            type="button"
+            onclick="cancelPinFlow()"
+            class="w-1/3 py-2.5 bg-stone-200 hover:bg-stone-300 active:scale-[0.98] text-stone-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            Ganti NIK
+          </button>
+          <button
+            type="submit"
+            id="btnVerifyPin"
+            class="w-2/3 py-2.5 bg-[#065f46] hover:bg-[#064e3b] active:scale-[0.98] text-white rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center space-x-1 cursor-pointer"
+          >
+            <span>🔓 Buka Kartu Belanja</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
     <!-- Employee Result Section -->
     <div id="resultSection" class="hidden space-y-4">
 
@@ -115,9 +266,15 @@
               <div class="text-[9px] text-white/80 font-medium">Bente Tualan • Berlaku di Toko Utama & Cabang Mill</div>
             </div>
           </div>
-          <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider">
-            AKTIF
-          </span>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="px-2 py-0.5 rounded-md bg-teal-400/20 text-teal-200 border border-teal-300/30 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+              <span>🛡️</span>
+              <span>PIN Aktif</span>
+            </span>
+            <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider">
+              AKTIF
+            </span>
+          </div>
         </div>
 
         <!-- Employee Identity -->
@@ -181,6 +338,13 @@
           class="py-2.5 px-3 bg-white hover:bg-stone-50 text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-extrabold flex items-center justify-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
         >
           <span>🔄 Segarkan Saldo</span>
+        </button>
+        <button
+          type="button"
+          onclick="lockCard()"
+          class="col-span-2 py-2 px-3 bg-stone-100 hover:bg-rose-50 text-rose-700 border border-stone-300 hover:border-rose-300 rounded-xl text-xs font-extrabold flex items-center justify-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
+        >
+          <span>🔒 Kunci Kartu & Keluar dari HP Ini</span>
         </button>
       </div>
 
@@ -247,6 +411,7 @@
     const MAX_ALLOWANCE = 2000000;
 
     let currentEmployeeData = null;
+    let pendingEmployeeData = null;
 
     function formatRupiah(num) {
       const val = Math.round(Number(num) || 0);
@@ -261,8 +426,23 @@
         .replace(/"/g, '&quot;');
     }
 
+    async function hashPin(pin, salt) {
+      const enc = new TextEncoder();
+      const rawText = 'KOPMSL:' + String(salt || '').toLowerCase().trim() + ':' + String(pin).trim();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(rawText));
+      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
     function cleanAddressText(addr) {
-      return String(addr || '').replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '').trim() || 'Koperasi PT. MSL';
+      return String(addr || '')
+        .replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '')
+        .replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '')
+        .trim() || 'Koperasi PT. MSL';
+    }
+
+    function extractPinHash(addr) {
+      const m = String(addr || '').match(/\[PIN:([a-f0-9]{32,64})\]/i);
+      return m ? m[1].toLowerCase() : null;
     }
 
     function extractResetMonth(addr, explicitReset) {
@@ -275,6 +455,25 @@
       if (storeId === 'store-koperasimsl-cabang') return 'Cabang Mill';
       if (storeId === 'store-koperasimsl') return 'Toko Utama';
       return storeId || 'Koperasi MSL';
+    }
+
+    function hideAllCards() {
+      document.getElementById('searchCard').classList.add('hidden');
+      document.getElementById('candidateListBox').classList.add('hidden');
+      document.getElementById('pinSetupCard').classList.add('hidden');
+      document.getElementById('pinVerifyCard').classList.add('hidden');
+      document.getElementById('resultSection').classList.add('hidden');
+    }
+
+    function cancelPinFlow() {
+      pendingEmployeeData = null;
+      hideAllCards();
+      document.getElementById('searchCard').classList.remove('hidden');
+      document.getElementById('queryInput').focus();
+    }
+
+    function showForgotPinInfo() {
+      alert('ℹ️ BANTUAN LUPA PIN KARYAWAN:\n\nDemi keamanan saldo kuota belanja Anda, PIN tidak dapat dilihat oleh orang lain.\n\nUntuk Reset PIN:\nSilakan temui Kasir atau Admin Koperasi Karyawan PT. MSL dengan membawa KTP atau ID Card asli Anda. Kasir memiliki tombol "Reset PIN" di komputer kasir untuk mengizinkan Anda membuat PIN baru di HP.');
     }
 
     async function sbFetch(path) {
@@ -355,6 +554,7 @@
       }
 
       const emp = exact || matches[0];
+      const pinHash = extractPinHash(emp.address) || emp.pin_hash || null;
       const resetMonth = extractResetMonth(emp.address, emp.last_allowance_reset);
       const isNewMonth = Boolean(resetMonth && resetMonth !== currentMonth);
       const allowance = Math.min(MAX_ALLOWANCE, Math.max(0, Number(emp.monthly_allowance || emp.credit_limit) || MAX_ALLOWANCE));
@@ -433,6 +633,9 @@
             name: emp.name,
             phone: emp.phone || '-',
             address: cleanAddressText(emp.address),
+            raw_address: emp.address,
+            has_pin: Boolean(pinHash),
+            pin_hash: pinHash,
             store_id: emp.store_id || 'store-koperasimsl',
             store_name: getStoreLabel(emp.store_id),
             type: 'KARYAWAN',
@@ -456,49 +659,56 @@
 
       const loader = document.getElementById('loadingIndicator');
       const errBox = document.getElementById('errorMessage');
-      const resultSec = document.getElementById('resultSection');
       const candidateBox = document.getElementById('candidateListBox');
 
       loader.classList.remove('hidden');
       errBox.classList.add('hidden');
       candidateBox.classList.add('hidden');
-      resultSec.classList.add('hidden');
 
       try {
+        let resolvedData = null;
+
         // 1. Coba LAN Server lokal terlebih dahulu
         const lanData = await tryLanPortal(q);
         if (lanData) {
-          loader.classList.add('hidden');
-          renderEmployeeData(lanData);
-          return;
+          resolvedData = lanData;
+        } else {
+          // 2. Query langsung ke Supabase Cloud / Master Koperasi MSL
+          const cloudRes = await fetchCloudEmployeePortal(q);
+          if (cloudRes.notFound) {
+            loader.classList.add('hidden');
+            errBox.textContent = 'Data karyawan tidak ditemukan. Pastikan NIK (contoh: 52/5221/0911/324) atau Nama sesuai daftar karyawan PT. MSL.';
+            errBox.classList.remove('hidden');
+            return;
+          }
+
+          if (cloudRes.candidates) {
+            loader.classList.add('hidden');
+            const listEl = document.getElementById('candidateListItems');
+            listEl.innerHTML = cloudRes.candidates.map(c => `
+              <button type="button" onclick="selectCandidate('${escapeHtml(c.code || c.name)}')" class="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors flex items-center justify-between gap-2">
+                <div>
+                  <div class="font-bold text-xs text-stone-900">${escapeHtml(c.name)}</div>
+                  <div class="text-[10px] text-stone-500">${escapeHtml(cleanAddressText(c.address))}</div>
+                </div>
+                <span class="font-mono text-[10.5px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded shrink-0">${escapeHtml(c.code)}</span>
+              </button>
+            `).join('');
+            candidateBox.classList.remove('hidden');
+            return;
+          }
+
+          resolvedData = cloudRes.data;
         }
 
-        // 2. Query langsung ke Supabase Cloud / Master Koperasi MSL
-        const cloudRes = await fetchCloudEmployeePortal(q);
         loader.classList.add('hidden');
-
-        if (cloudRes.notFound) {
-          errBox.textContent = 'Data karyawan tidak ditemukan. Pastikan NIK (contoh: 52/5221/0911/324) atau Nama sesuai daftar karyawan PT. MSL.';
+        if (!resolvedData || !resolvedData.employee) {
+          errBox.textContent = 'Gagal memproses data karyawan.';
           errBox.classList.remove('hidden');
           return;
         }
 
-        if (cloudRes.candidates) {
-          const listEl = document.getElementById('candidateListItems');
-          listEl.innerHTML = cloudRes.candidates.map(c => `
-            <button type="button" onclick="selectCandidate('${escapeHtml(c.code || c.name)}')" class="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors flex items-center justify-between gap-2">
-              <div>
-                <div class="font-bold text-xs text-stone-900">${escapeHtml(c.name)}</div>
-                <div class="text-[10px] text-stone-500">${escapeHtml(cleanAddressText(c.address))}</div>
-              </div>
-              <span class="font-mono text-[10.5px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded shrink-0">${escapeHtml(c.code)}</span>
-            </button>
-          `).join('');
-          candidateBox.classList.remove('hidden');
-          return;
-        }
-
-        renderEmployeeData(cloudRes.data);
+        processEmployeeAuthAndDisplay(resolvedData);
       } catch (err) {
         loader.classList.add('hidden');
         errBox.textContent = 'Gagal memuat data koperasi: ' + (err.message || 'Periksa koneksi internet Anda.');
@@ -510,8 +720,173 @@
       handleSearch(null, code);
     }
 
+    function processEmployeeAuthAndDisplay(resolvedData) {
+      pendingEmployeeData = resolvedData;
+      const emp = resolvedData.employee;
+      const codeStr = (emp.code || emp.id).toLowerCase();
+      const sessionKey = 'msl_pin_auth_' + codeStr;
+      const savedHash = localStorage.getItem(sessionKey);
+
+      // 1. Cek Auto-Login (HP pemilik asli yang sudah verifikasi sebelumnya)
+      if (emp.has_pin && savedHash && savedHash.toLowerCase() === (emp.pin_hash || '').toLowerCase()) {
+        hideAllCards();
+        renderEmployeeData(resolvedData);
+        return;
+      }
+
+      // 2. Jika karyawan belum membuat PIN (Aktivasi Baru)
+      if (!emp.has_pin) {
+        hideAllCards();
+        document.getElementById('pinSetupEmpName').textContent = emp.name;
+        document.getElementById('pinSetupEmpCode').textContent = emp.code || emp.id;
+        document.getElementById('newPinInput').value = '';
+        document.getElementById('confirmPinInput').value = '';
+        document.getElementById('phonePinInput').value = (emp.phone && emp.phone !== '-') ? emp.phone : '';
+        document.getElementById('pinSetupError').classList.add('hidden');
+        document.getElementById('pinSetupCard').classList.remove('hidden');
+        setTimeout(() => document.getElementById('newPinInput').focus(), 150);
+        return;
+      }
+
+      // 3. Jika sudah punya PIN tapi belum terverifikasi di HP ini
+      hideAllCards();
+      document.getElementById('pinVerifyEmpName').textContent = emp.name;
+      document.getElementById('pinVerifyEmpCode').textContent = emp.code || emp.id;
+      document.getElementById('verifyPinInput').value = '';
+      document.getElementById('pinVerifyError').classList.add('hidden');
+      document.getElementById('pinVerifyCard').classList.remove('hidden');
+      setTimeout(() => document.getElementById('verifyPinInput').focus(), 150);
+    }
+
+    async function handlePinSetupSubmit(e) {
+      e.preventDefault();
+      const pin1 = document.getElementById('newPinInput').value.trim();
+      const pin2 = document.getElementById('confirmPinInput').value.trim();
+      const phoneVal = document.getElementById('phonePinInput').value.trim();
+      const rememberMe = document.getElementById('rememberMeNew').checked;
+      const errBox = document.getElementById('pinSetupError');
+      errBox.classList.add('hidden');
+
+      if (!/^\d{6}$/.test(pin1)) {
+        errBox.textContent = 'PIN harus berupa 6 angka (contoh: 123456).';
+        errBox.classList.remove('hidden');
+        return;
+      }
+      if (pin1 !== pin2) {
+        errBox.textContent = 'Konfirmasi PIN tidak cocok dengan PIN pertama.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      const emp = pendingEmployeeData.employee;
+      const btn = document.getElementById('btnSavePin');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳ Menyimpan PIN Aman...</span>';
+
+      try {
+        const salt = (emp.code || emp.id).toLowerCase();
+        const pinHash = await hashPin(pin1, salt);
+
+        const baseAddr = String(emp.raw_address || emp.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+        const newAddr = `${baseAddr} [PIN:${pinHash}]`.trim();
+        const updatePayload = {
+          address: newAddr,
+          updated_at: new Date().toISOString()
+        };
+        if (phoneVal && phoneVal !== '-') {
+          updatePayload.phone = phoneVal;
+          emp.phone = phoneVal;
+        }
+
+        // 1. Simpan ke Supabase Cloud
+        try {
+          await fetch(SUPABASE_URL + '/rest/v1/customers?id=eq.' + encodeURIComponent(emp.id), {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_KEY
+            },
+            body: JSON.stringify(updatePayload)
+          });
+        } catch (sbErr) {
+          console.warn('Cloud PIN update warning:', sbErr);
+        }
+
+        // 2. Simpan ke LAN Server jika terhubung
+        try {
+          await fetch('/api/lan/employee/set-pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: emp.code || emp.id,
+              pin_hash: pinHash,
+              phone: phoneVal || emp.phone
+            })
+          });
+        } catch {}
+
+        // Update objek lokal
+        emp.has_pin = true;
+        emp.pin_hash = pinHash;
+        emp.address = cleanAddressText(newAddr);
+        emp.raw_address = newAddr;
+
+        // Simpan sesi ke localStorage bila dipilih "Ingat saya"
+        if (rememberMe) {
+          const sessionKey = 'msl_pin_auth_' + (emp.code || emp.id).toLowerCase();
+          localStorage.setItem(sessionKey, pinHash);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔒 Simpan PIN & Buka Kartu</span>';
+        hideAllCards();
+        renderEmployeeData(pendingEmployeeData);
+        alert('✅ PIN Keamanan Berhasil Diaktifkan!\n\nKartu belanja dan kuota Anda sekarang terlindungi. Rekan lain tidak dapat membuka portal ini tanpa PIN rahasia Anda.');
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔒 Simpan PIN & Buka Kartu</span>';
+        errBox.textContent = 'Gagal menyimpan PIN: ' + (err.message || 'Periksa koneksi Anda.');
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    async function handlePinVerifySubmit(e) {
+      e.preventDefault();
+      const pinInput = document.getElementById('verifyPinInput').value.trim();
+      const rememberMe = document.getElementById('rememberMeVerify').checked;
+      const errBox = document.getElementById('pinVerifyError');
+      errBox.classList.add('hidden');
+
+      if (!/^\d{6}$/.test(pinInput)) {
+        errBox.textContent = 'Masukkan 6 digit angka PIN Anda.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      const emp = pendingEmployeeData.employee;
+      const salt = (emp.code || emp.id).toLowerCase();
+      const inputHash = await hashPin(pinInput, salt);
+
+      if (inputHash.toLowerCase() !== String(emp.pin_hash || '').toLowerCase()) {
+        errBox.textContent = '❌ PIN salah! Karyawan lain dilarang mengakses akun ini. Jika Anda lupa PIN, hubungi kasir koperasi.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      // PIN Benar!
+      if (rememberMe) {
+        const sessionKey = 'msl_pin_auth_' + (emp.code || emp.id).toLowerCase();
+        localStorage.setItem(sessionKey, emp.pin_hash);
+      }
+
+      hideAllCards();
+      renderEmployeeData(pendingEmployeeData);
+    }
+
     function renderEmployeeData(data) {
       currentEmployeeData = data;
+      hideAllCards();
       const emp = data.employee;
       const resultSec = document.getElementById('resultSection');
       const codeStr = emp.code || emp.id;
@@ -644,8 +1019,26 @@
       resultSec.scrollIntoView({ behavior: 'smooth' });
     }
 
+    function lockCard() {
+      if (currentEmployeeData && currentEmployeeData.employee) {
+        const codeStr = (currentEmployeeData.employee.code || currentEmployeeData.employee.id).toLowerCase();
+        localStorage.removeItem('msl_pin_auth_' + codeStr);
+      }
+      currentEmployeeData = null;
+      pendingEmployeeData = null;
+      hideAllCards();
+      document.getElementById('searchCard').classList.remove('hidden');
+      document.getElementById('queryInput').value = '';
+      document.getElementById('queryInput').focus();
+      alert('🔒 Kartu berhasil dikunci dan keluar dari perangkat ini.');
+    }
+
     function refreshData() {
-      handleSearch();
+      if (currentEmployeeData && currentEmployeeData.employee) {
+        handleSearch(null, currentEmployeeData.employee.code || currentEmployeeData.employee.name);
+      } else {
+        handleSearch();
+      }
     }
 
     function downloadCardImage() {
