@@ -1,0 +1,534 @@
+import { db } from '../db';
+import type { Customer, MemberDepositMutation, Transaction } from '../types';
+import { lanService } from './lanService';
+import { syncService } from './syncService';
+import { formatRupiah } from './escposService';
+
+export interface EmployeeAllowanceRecord {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  store_id: string;
+  store_name: string;
+  monthly_allowance: number;
+  deposit_balance: number;
+  spent_this_month: number;
+  trx_count_this_month: number;
+  utilization_percent: number;
+  last_allowance_reset: string;
+  updated_at: string;
+}
+
+export interface EmployeeAllowanceReportSummary {
+  monthKey: string;
+  monthFormatted: string;
+  totalEmployees: number;
+  totalAllowance: number;
+  totalSpent: number;
+  totalRemaining: number;
+  overallUtilization: number;
+  employees: EmployeeAllowanceRecord[];
+}
+
+export class EmployeeAllowanceService {
+  /**
+   * Format bulan sekarang (YYYY-MM), misal "2026-11"
+   */
+  public getCurrentMonthKey(): string {
+    return new Date().toISOString().slice(0, 7);
+  }
+
+  /**
+   * Format nama bulan ramah pengguna (misal "November 2026")
+   */
+  public formatMonthLabel(monthKey: string): string {
+    try {
+      const [y, m] = monthKey.split('-');
+      const d = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+      return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    } catch {
+      return monthKey;
+    }
+  }
+
+  /**
+   * Pengecekan dan eksekusi Otomatis Reset Saldo Karyawan Bulanan saat aplikasi dibuka
+   */
+  public async checkAndAutoResetMonthlyAllowance(): Promise<number> {
+    try {
+      const currentMonth = this.getCurrentMonthKey();
+      const allCustomers = await db.customers.toArray();
+      const employees = allCustomers.filter((c) => c.type === 'KARYAWAN');
+
+      const needReset = employees.filter((e) => !e.last_allowance_reset || e.last_allowance_reset !== currentMonth);
+      if (needReset.length === 0) return 0;
+
+      console.log(`[EmployeeAllowance] Ditemukan ${needReset.length} karyawan belum reset kuota bulan ${currentMonth}. Menjalankan auto-reset...`);
+
+      const now = new Date().toISOString();
+      let resetCount = 0;
+
+      for (const emp of needReset) {
+        const allowance = Number(emp.monthly_allowance) || 2000000;
+        const oldBalance = Number(emp.deposit_balance) || 0;
+        const newBalance = allowance;
+
+        const updatedEmp: Customer = {
+          ...emp,
+          deposit_balance: newBalance,
+          monthly_allowance: allowance,
+          last_allowance_reset: currentMonth,
+          updated_at: now
+        };
+
+        await db.customers.put(updatedEmp);
+
+        const mutation: MemberDepositMutation = {
+          id: `dep-reset-${emp.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          customer_id: emp.id,
+          customer_name: emp.name,
+          customer_code: emp.code,
+          type: 'MONTHLY_RESET',
+          amount: allowance,
+          balance_before: oldBalance,
+          balance_after: newBalance,
+          payment_method: 'SYSTEM',
+          store_id: emp.store_id || 'store-01',
+          store_name: emp.store_name || 'Cabang Utama',
+          cashier_id: 'SYSTEM',
+          cashier_name: 'Auto Reset Bulanan',
+          receipt_number: `RESET-${currentMonth}`,
+          notes: `Auto Reset Kuota Saldo Karyawan Bulanan (${this.formatMonthLabel(currentMonth)})`,
+          created_at: now
+        };
+
+        await db.memberDeposits.put(mutation);
+        resetCount++;
+
+        // Broadcast perubahan
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedEmp }));
+          window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: updatedEmp, mutation } }));
+        }
+      }
+
+      // Sync ke server LAN jika aktif
+      if (lanService.isLanActive()) {
+        await lanService.resetEmployeeAllowance().catch(() => {});
+      }
+
+      console.log(`[EmployeeAllowance] Berhasil auto-reset kuota saldo ${resetCount} karyawan ke Rp 2.000.000`);
+      return resetCount;
+    } catch (err) {
+      console.warn('[EmployeeAllowance] Gagal auto-reset:', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Reset Saldo Kuota Karyawan secara Manual oleh Admin (Bisa 1 Karyawan atau Semua)
+   */
+  public async resetEmployeeAllowance(customerId?: string, customAmount?: number): Promise<{ success: boolean; count: number; message: string }> {
+    try {
+      const currentMonth = this.getCurrentMonthKey();
+      const now = new Date().toISOString();
+      const allCustomers = await db.customers.toArray();
+      let targets = allCustomers.filter((c) => c.type === 'KARYAWAN');
+
+      if (customerId) {
+        targets = targets.filter((c) => c.id === customerId || c.code === customerId);
+      }
+
+      if (targets.length === 0) {
+        return { success: false, count: 0, message: 'Tidak ada data karyawan yang ditemukan.' };
+      }
+
+      let count = 0;
+      for (const emp of targets) {
+        const allowance = customAmount !== undefined ? customAmount : (Number(emp.monthly_allowance) || 2000000);
+        const oldBalance = Number(emp.deposit_balance) || 0;
+        const newBalance = allowance;
+
+        const updatedEmp: Customer = {
+          ...emp,
+          deposit_balance: newBalance,
+          monthly_allowance: allowance,
+          last_allowance_reset: currentMonth,
+          updated_at: now
+        };
+
+        await db.customers.put(updatedEmp);
+
+        const mutation: MemberDepositMutation = {
+          id: `dep-reset-${emp.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          customer_id: emp.id,
+          customer_name: emp.name,
+          customer_code: emp.code,
+          type: 'MONTHLY_RESET',
+          amount: allowance,
+          balance_before: oldBalance,
+          balance_after: newBalance,
+          payment_method: 'SYSTEM',
+          store_id: emp.store_id || 'store-01',
+          store_name: emp.store_name || 'Cabang Utama',
+          cashier_id: 'ADMIN',
+          cashier_name: 'Admin',
+          receipt_number: `RESET-${currentMonth}`,
+          notes: `Reset Kuota Saldo Karyawan Bulanan (${this.formatMonthLabel(currentMonth)})`,
+          created_at: now
+        };
+
+        await db.memberDeposits.put(mutation);
+        count++;
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedEmp }));
+          window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: updatedEmp, mutation } }));
+        }
+      }
+
+      // Sync ke LAN Server
+      if (lanService.isLanActive()) {
+        lanService.resetEmployeeAllowance(customerId, customAmount).catch(() => {});
+      }
+
+      return {
+        success: true,
+        count,
+        message: `Berhasil mereset saldo kuota ${count} karyawan menjadi ${formatRupiah(customAmount || 2000000)}.`
+      };
+    } catch (err: any) {
+      console.error('[EmployeeAllowance] Gagal reset manual:', err);
+      return { success: false, count: 0, message: err.message || 'Gagal mereset saldo karyawan.' };
+    }
+  }
+
+  /**
+   * Edit / Sesuaikan Saldo atau Plafon Karyawan secara Spesifik
+   */
+  public async adjustEmployee(
+    customerId: string,
+    updates: { deposit_balance?: number; monthly_allowance?: number; notes?: string }
+  ): Promise<{ success: boolean; data?: Customer; message: string }> {
+    try {
+      const emp = await db.customers.get(customerId);
+      if (!emp) {
+        return { success: false, message: 'Karyawan tidak ditemukan.' };
+      }
+
+      const now = new Date().toISOString();
+      const oldBalance = Number(emp.deposit_balance) || 0;
+      const newBalance = updates.deposit_balance !== undefined ? Math.max(0, Number(updates.deposit_balance)) : oldBalance;
+      const newAllowance = updates.monthly_allowance !== undefined ? Math.max(0, Number(updates.monthly_allowance)) : (Number(emp.monthly_allowance) || 2000000);
+
+      const updatedEmp: Customer = {
+        ...emp,
+        type: 'KARYAWAN',
+        deposit_balance: newBalance,
+        monthly_allowance: newAllowance,
+        updated_at: now
+      };
+
+      await db.customers.put(updatedEmp);
+
+      if (newBalance !== oldBalance) {
+        const mutation: MemberDepositMutation = {
+          id: `dep-adj-${emp.id}-${Date.now()}`,
+          customer_id: emp.id,
+          customer_name: emp.name,
+          customer_code: emp.code,
+          type: 'ADJUSTMENT',
+          amount: Math.abs(newBalance - oldBalance),
+          balance_before: oldBalance,
+          balance_after: newBalance,
+          payment_method: 'SYSTEM',
+          store_id: emp.store_id || 'store-01',
+          store_name: emp.store_name || 'Cabang Utama',
+          cashier_id: 'ADMIN',
+          cashier_name: 'Admin',
+          notes: updates.notes || 'Penyesuaian Saldo Karyawan oleh Admin',
+          created_at: now
+        };
+        await db.memberDeposits.put(mutation);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedEmp }));
+      }
+
+      if (lanService.isLanActive()) {
+        lanService.adjustEmployeeAllowance(customerId, updates).catch(() => {});
+      }
+
+      await syncService.syncCustomerChange(updatedEmp).catch(() => {});
+
+      return { success: true, data: updatedEmp, message: `Data saldo karyawan "${updatedEmp.name}" berhasil diperbarui.` };
+    } catch (err: any) {
+      console.error('[EmployeeAllowance] Gagal adjust employee:', err);
+      return { success: false, message: err.message || 'Gagal memperbarui data karyawan.' };
+    }
+  }
+
+  /**
+   * Menghitung Laporan Rekapitulasi Saldo & Pemakaian Belanja Karyawan Bulanan
+   */
+  public generateMonthlyReport(
+    customers: Customer[],
+    transactions: Transaction[],
+    monthKey: string = this.getCurrentMonthKey()
+  ): EmployeeAllowanceReportSummary {
+    const employees = customers.filter((c) => c.type === 'KARYAWAN');
+
+    // Filter transaksi belanja yang dibayar menggunakan SALDO pada bulan terpilih
+    const monthTrx = transactions.filter((t) => {
+      if (t.payment_method !== 'SALDO') return false;
+      const tMonth = (t.created_at || '').slice(0, 7);
+      return tMonth === monthKey;
+    });
+
+    const records: EmployeeAllowanceRecord[] = employees.map((emp) => {
+      const empIdLower = (emp.id || '').toLowerCase();
+      const empCodeLower = (emp.code || '').toLowerCase();
+      const empNameLower = (emp.name || '').toLowerCase();
+
+      // Transaksi yang cocok dengan karyawan ini
+      const empSales = monthTrx.filter((t) => {
+        const tMemberId = (t.member_id || '').toLowerCase();
+        const tCustName = (t.customer_name || '').toLowerCase();
+        return (
+          tMemberId === empIdLower ||
+          tMemberId === empCodeLower ||
+          (tCustName && tCustName === empNameLower)
+        );
+      });
+
+      const spent = empSales.reduce((sum, t) => sum + (Number(t.grand_total) || 0), 0);
+      const allowance = Number(emp.monthly_allowance) || 2000000;
+      const currentBalance = Number(emp.deposit_balance) || 0;
+      const utilization = allowance > 0 ? Math.min(100, (spent / allowance) * 100) : 0;
+
+      return {
+        id: emp.id,
+        code: emp.code || '-',
+        name: emp.name,
+        phone: emp.phone || '-',
+        store_id: emp.store_id || 'store-01',
+        store_name: emp.store_name || 'Cabang Utama',
+        monthly_allowance: allowance,
+        deposit_balance: currentBalance,
+        spent_this_month: spent,
+        trx_count_this_month: empSales.length,
+        utilization_percent: Math.round(utilization * 10) / 10,
+        last_allowance_reset: emp.last_allowance_reset || '-',
+        updated_at: emp.updated_at || '-'
+      };
+    });
+
+    // Urutkan berdasarkan pemakaian tertinggi atau nama
+    records.sort((a, b) => b.spent_this_month - a.spent_this_month || a.name.localeCompare(b.name));
+
+    const totalAllowance = records.reduce((s, r) => s + r.monthly_allowance, 0);
+    const totalSpent = records.reduce((s, r) => s + r.spent_this_month, 0);
+    const totalRemaining = records.reduce((s, r) => s + r.deposit_balance, 0);
+    const overallUtilization = totalAllowance > 0 ? Math.round((totalSpent / totalAllowance) * 1000) / 10 : 0;
+
+    return {
+      monthKey,
+      monthFormatted: this.formatMonthLabel(monthKey),
+      totalEmployees: records.length,
+      totalAllowance,
+      totalSpent,
+      totalRemaining,
+      overallUtilization,
+      employees: records
+    };
+  }
+
+  /**
+   * Cetak Laporan Saldo Karyawan Bulanan ke Format Dokumen A4 / Print Dialog
+   */
+  public printEmployeeAllowanceReport(report: EmployeeAllowanceReportSummary, storeName = 'CV. Tumbuh Makmur Air Conindo'): void {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Laporan Saldo Karyawan - ${report.monthFormatted}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1f2937; margin: 0; padding: 10px; font-size: 11px; }
+    .header { text-align: center; border-bottom: 2px solid #96633b; padding-bottom: 12px; margin-bottom: 16px; }
+    .header h1 { margin: 0; font-size: 18px; color: #5c3c26; }
+    .header h2 { margin: 4px 0 0 0; font-size: 13px; color: #4b5563; font-weight: normal; }
+    .kpi-container { display: flex; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
+    .kpi-card { flex: 1; background: #faf5f0; border: 1px solid #e7d8cb; border-radius: 8px; padding: 10px; text-align: center; }
+    .kpi-label { font-size: 10px; color: #7c5c43; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+    .kpi-value { font-size: 15px; font-weight: bold; color: #3d2617; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #5c3c26; color: #ffffff; padding: 8px 6px; font-size: 10.5px; text-align: left; }
+    th.num, td.num { text-align: right; }
+    th.center, td.center { text-align: center; }
+    td { padding: 6px; border-bottom: 1px solid #e5e7eb; font-size: 10.5px; }
+    tr:nth-child(even) { background-color: #fdfaf7; }
+    .progress-bar { background: #e5e7eb; border-radius: 4px; height: 6px; width: 60px; display: inline-block; overflow: hidden; vertical-align: middle; margin-right: 4px; }
+    .progress-fill { background: #10b981; height: 100%; }
+    .footer { margin-top: 24px; display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; }
+    .signature-box { text-align: center; width: 180px; margin-top: 30px; }
+    .signature-line { border-bottom: 1px solid #000; margin-top: 50px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${storeName}</h1>
+    <h2>LAPORAN REKAPITULASI SALDO & KUOTA BELANJA KARYAWAN</h2>
+    <div style="font-size: 11px; font-weight: bold; margin-top: 4px; color: #84532d;">Periode: ${report.monthFormatted}</div>
+  </div>
+
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Karyawan</div>
+      <div class="kpi-value">${report.totalEmployees} Orang</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Plafon Kuota</div>
+      <div class="kpi-value">${formatRupiah(report.totalAllowance)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Belanja Terpakai</div>
+      <div class="kpi-value" style="color: #b91c1c;">${formatRupiah(report.totalSpent)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Sisa Saldo Kuota</div>
+      <div class="kpi-value" style="color: #047857;">${formatRupiah(report.totalRemaining)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Persentase Penyerapan</div>
+      <div class="kpi-value">${report.overallUtilization}%</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="center" style="width: 30px;">No</th>
+        <th>NIK / Kode</th>
+        <th>Nama Karyawan</th>
+        <th>Cabang / Toko</th>
+        <th class="num">Plafon Bulanan</th>
+        <th class="num">Terpakai Bulan Ini</th>
+        <th class="num">Sisa Saldo</th>
+        <th class="center">Utilisasi (%)</th>
+        <th class="center">Terakhir Reset</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${report.employees.map((e, idx) => `
+        <tr>
+          <td class="center">${idx + 1}</td>
+          <td style="font-family: monospace; font-weight: bold;">${e.code}</td>
+          <td><b>${e.name}</b></td>
+          <td>${e.store_name}</td>
+          <td class="num">${formatRupiah(e.monthly_allowance)}</td>
+          <td class="num" style="color: #b91c1c; font-weight: bold;">${formatRupiah(e.spent_this_month)}</td>
+          <td class="num" style="color: #047857; font-weight: bold;">${formatRupiah(e.deposit_balance)}</td>
+          <td class="center">
+            <span class="progress-bar"><span class="progress-fill" style="width: ${Math.min(100, e.utilization_percent)}%;"></span></span>
+            ${e.utilization_percent}%
+          </td>
+          <td class="center" style="font-size: 9.5px; color: #6b7280;">${e.last_allowance_reset}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background: #f4ede6; font-weight: bold;">
+        <td colspan="4" class="num" style="padding: 8px;">TOTAL</td>
+        <td class="num" style="padding: 8px;">${formatRupiah(report.totalAllowance)}</td>
+        <td class="num" style="padding: 8px; color: #b91c1c;">${formatRupiah(report.totalSpent)}</td>
+        <td class="num" style="padding: 8px; color: #047857;">${formatRupiah(report.totalRemaining)}</td>
+        <td class="center" style="padding: 8px;">${report.overallUtilization}%</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="footer">
+    <div>Dicetak otomatis pada: ${new Date().toLocaleString('id-ID')}</div>
+    <div style="display: flex; gap: 40px;">
+      <div class="signature-box">
+        <div>Dibuat Oleh,</div>
+        <div class="signature-line"></div>
+        <div>( Kasir / Admin )</div>
+      </div>
+      <div class="signature-box">
+        <div>Mengetahui,</div>
+        <div class="signature-line"></div>
+        <div>( Manajemen / HRD )</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 400);
+    };
+  </script>
+</body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
+  /**
+   * Ekspor Laporan Saldo Karyawan ke File CSV
+   */
+  public exportEmployeeAllowanceCSV(report: EmployeeAllowanceReportSummary): void {
+    const headers = [
+      'No',
+      'NIK/Kode',
+      'Nama Karyawan',
+      'Cabang/Toko',
+      'Plafon Bulanan (Rp)',
+      'Terpakai Bulan Ini (Rp)',
+      'Sisa Saldo (Rp)',
+      'Utilisasi (%)',
+      'Transaksi (Nota)',
+      'Terakhir Reset'
+    ];
+
+    const rows = report.employees.map((e, idx) => [
+      idx + 1,
+      `"${e.code}"`,
+      `"${e.name}"`,
+      `"${e.store_name}"`,
+      e.monthly_allowance,
+      e.spent_this_month,
+      e.deposit_balance,
+      `${e.utilization_percent}%`,
+      e.trx_count_this_month,
+      `"${e.last_allowance_reset}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [
+      headers.join(';'),
+      ...rows.map((r) => r.join(';'))
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Laporan_Saldo_Karyawan_${report.monthKey}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+export const employeeAllowanceService = new EmployeeAllowanceService();

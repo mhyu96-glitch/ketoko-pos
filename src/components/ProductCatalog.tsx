@@ -39,6 +39,17 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [displayLimit, setDisplayLimit] = useState<number>(48);
   const sortRef = useRef<HTMLDivElement>(null);
+  const lastClickTimeRef = useRef<{ [key: string]: number }>({});
+
+  const handleSafeAddToCart = (prod: Product, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (prod.stock <= 0) return;
+    const now = Date.now();
+    const lastTime = lastClickTimeRef.current[prod.id] || 0;
+    if (now - lastTime < 350) return; // Proteksi anti-double click / double tap
+    lastClickTimeRef.current[prod.id] = now;
+    onAddToCart(prod);
+  };
 
   // Debounce search query so we don't filter 24K items on every keystroke
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
@@ -220,7 +231,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
               return (
                 <div
                   key={prod.id}
-                  onClick={() => !isOutOfStock && onAddToCart(prod)}
+                  onClick={(e) => handleSafeAddToCart(prod, e)}
                   className={`group relative bg-white rounded-2xl p-2.5 sm:p-3 border border-[#e4d5c7] shadow-2xs hover:shadow-md hover:border-[#b8957c] transition-all flex flex-col justify-between cursor-pointer active:scale-95 ${
                     isOutOfStock ? 'opacity-60 cursor-not-allowed bg-[#fcf8f4]' : ''
                   }`}
@@ -272,10 +283,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                     {/* Circular Add Button */}
                     <button
                       disabled={isOutOfStock}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isOutOfStock) onAddToCart(prod);
-                      }}
+                      onClick={(e) => handleSafeAddToCart(prod, e)}
                       title="Tambah ke nota"
                       className={`bg-[#96633b] hover:bg-[#83532e] disabled:opacity-30 text-white rounded-full flex items-center justify-center shadow-xs hover:shadow-md active:scale-90 transition-all shrink-0 ml-1 ${
                         isTouchscreenMode ? 'w-7 h-7 sm:w-8 sm:h-8' : 'w-6 h-6 sm:w-7 sm:h-7'

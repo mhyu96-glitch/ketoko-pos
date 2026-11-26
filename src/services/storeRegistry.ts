@@ -60,6 +60,44 @@ export const DEFAULT_REGISTERED_STORES: RegisteredStoreInfo[] = [
     isClean: true,
     clusterId: 'cluster-default',
     clusterName: 'Cluster 1 (Default Cloud)'
+  },
+  {
+    id: 'store-koperasimsl',
+    name: 'Koperasi MSL',
+    branch: 'Toko Utama (MSL-01)',
+    branchId: 'MSL-01',
+    ownerName: 'Pengurus Koperasi MSL',
+    phone: '08123456789',
+    subdomain: 'koperasimsl',
+    onlineDomain: 'https://koperasiMSL.ketokopos.online',
+    localServer: 'http://localhost:5858',
+    licensePlan: 'PRO KOPERASI (1.500 Karyawan)',
+    adminUser: 'admin (Pengurus Koperasi)',
+    cashierUser: 'kasir (Kasir Toko Utama MSL)',
+    productsCount: '0 Produk (Siap Input Data)',
+    status: 'ONLINE',
+    isClean: true,
+    clusterId: 'cluster-koperasi-msl',
+    clusterName: 'Cluster Koperasi MSL'
+  },
+  {
+    id: 'store-koperasimsl-cabang',
+    name: 'Koperasi MSL (Cabang 1)',
+    branch: 'Toko Cabang (MSL-02)',
+    branchId: 'MSL-02',
+    ownerName: 'Pengurus Koperasi MSL',
+    phone: '08123456789',
+    subdomain: 'koperasimsl-cabang',
+    onlineDomain: 'https://koperasimsl-cabang.ketokopos.online',
+    localServer: 'http://localhost:5858',
+    licensePlan: 'PRO KOPERASI (Cabang 1)',
+    adminUser: 'admin (Pengurus Cabang)',
+    cashierUser: 'kasir (Kasir Cabang MSL)',
+    productsCount: '0 Produk (Siap Input Data)',
+    status: 'ONLINE',
+    isClean: true,
+    clusterId: 'cluster-koperasi-msl',
+    clusterName: 'Cluster Koperasi MSL'
   }
 ];
 
@@ -127,6 +165,12 @@ export function resolveStoreFromCurrentHost(): RegisteredStoreInfo {
 
         if (sub === 'borneoetam') {
           return DEFAULT_REGISTERED_STORES[1];
+        }
+        if (sub === 'koperasimsl') {
+          return DEFAULT_REGISTERED_STORES[2];
+        }
+        if (sub === 'koperasimsl-cabang') {
+          return DEFAULT_REGISTERED_STORES[3];
         }
 
         // Dynamic sub-tenant fallback

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+  <title>Portal Cek Saldo & Kartu Belanja Karyawan Koperasi</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet"/>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- JsBarcode & QRCode CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- HTML2Canvas CDN for saving card image -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #f7f3ee;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .card-gradient {
+      background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 85%, #0f766e 100%);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-[#2d1b11] flex flex-col justify-between">
+  
+  <!-- Header App Bar -->
+  <header class="bg-[#4d3221] text-white py-3.5 px-4 shadow-md sticky top-0 z-30">
+    <div class="max-w-md mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-lg shadow-inner">
+          🏪
+        </div>
+        <div>
+          <h1 class="text-sm font-extrabold leading-tight tracking-tight">KOPERASI KARYAWAN</h1>
+          <p class="text-[10px] text-amber-200/90 font-medium">Toko Utama & Toko Cabang</p>
+        </div>
+      </div>
+      <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+        Live Online
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="max-w-md mx-auto w-full px-4 py-5 space-y-4 flex-1">
+    
+    <!-- Search Box Card -->
+    <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#ebdccf] space-y-3">
+      <div>
+        <h2 class="text-base font-extrabold text-[#4d3221]">Cek Saldo & Buka Kartu Digital</h2>
+        <p class="text-xs text-[#7c5c43] mt-0.5">Masukkan NIK, Kode Karyawan, atau No. WhatsApp Anda</p>
+      </div>
+
+      <form id="searchForm" onsubmit="handleSearch(event)" class="space-y-2.5">
+        <div class="relative">
+          <input 
+            type="text" 
+            id="queryInput" 
+            placeholder="Contoh: KRY-001 atau 0812xxxx" 
+            required
+            class="w-full px-3.5 py-3 rounded-xl border border-[#ddc3aa] bg-[#fcfaf7] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#96633b] focus:border-transparent placeholder:text-stone-400 font-mono"
+          />
+        </div>
+        <button 
+          type="submit" 
+          id="btnSearch"
+          class="w-full py-3 bg-[#96633b] hover:bg-[#83532e] active:scale-[0.98] text-white rounded-xl text-xs font-extrabold tracking-wide shadow-sm flex items-center justify-center space-x-2 transition-all cursor-pointer"
+        >
+          <span>🔍 Buka Kartu & Cek Saldo</span>
+        </button>
+      </form>
+
+      <div id="loadingIndicator" class="hidden text-center py-3 text-xs text-[#7c5c43] font-semibold animate-pulse">
+        ⏳ Mengambil data saldo terpusat...
+      </div>
+      <div id="errorMessage" class="hidden p-3 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-semibold text-center">
+      </div>
+    </div>
+
+    <!-- Employee Card Section (Hidden Initially) -->
+    <div id="resultSection" class="hidden space-y-4 animate-fadeIn">
+      
+      <!-- Digital ID Card (CR80 Standard Ratio) -->
+      <div id="cardContainer" class="card-gradient text-white rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden border border-emerald-400/30">
+        <!-- Background Pattern -->
+        <div class="absolute -right-8 -bottom-8 w-36 h-36 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
+        <div class="absolute -left-8 -top-8 w-28 h-28 bg-emerald-400/10 rounded-full blur-lg pointer-events-none"></div>
+
+        <!-- Card Header -->
+        <div class="flex items-center justify-between pb-3 border-b border-white/15">
+          <div class="flex items-center space-x-2">
+            <span class="text-xl">💳</span>
+            <div>
+              <div class="text-[11px] font-black tracking-wider text-emerald-200 uppercase">KARTU BELANJA KARYAWAN</div>
+              <div class="text-[9px] text-white/80 font-medium">Koperasi Toko Utama & Cabang</div>
+            </div>
+          </div>
+          <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider shadow-xs">
+            OMNI-BRANCH
+          </span>
+        </div>
+
+        <!-- Employee Info -->
+        <div class="pt-3.5 pb-2">
+          <div class="text-[10px] uppercase font-bold tracking-wider text-emerald-200/80">NAMA KARYAWAN</div>
+          <div id="empName" class="text-lg font-black text-white tracking-tight leading-snug">Nama Karyawan</div>
+          <div class="flex items-center space-x-2 mt-1">
+            <span id="empCode" class="font-mono text-xs font-bold text-amber-300 bg-black/20 px-2 py-0.5 rounded border border-white/10">KRY-001</span>
+            <span id="empStore" class="text-[10px] text-emerald-100/90 font-medium truncate">Cabang Utama</span>
+          </div>
+        </div>
+
+        <!-- Balance Highlights -->
+        <div class="my-3 p-3 bg-black/25 backdrop-blur-xs rounded-xl border border-white/10 flex items-center justify-between">
+          <div>
+            <div class="text-[9.5px] uppercase font-bold text-emerald-200">SISA SALDO KUOTA BULAN INI</div>
+            <div id="empBalance" class="text-2xl font-black text-amber-300 font-mono tracking-tight">Rp 2.000.000</div>
+          </div>
+          <div class="text-right">
+            <div class="text-[9px] text-white/70">Plafon Bulanan</div>
+            <div id="empAllowance" class="text-xs font-bold font-mono text-emerald-100">Rp 2.000.000</div>
+          </div>
+        </div>
+
+        <!-- Barcode & QR Code Section -->
+        <div class="bg-white rounded-xl p-2.5 text-center text-[#1f2937] space-y-1.5 shadow-sm">
+          <div class="text-[9px] font-bold text-stone-500 uppercase tracking-wider">
+            Tunjukkan Barcode ini ke Kasir saat Pembayaran
+          </div>
+          <div class="flex items-center justify-center py-1">
+            <svg id="barcodeSvg" class="max-w-full h-12"></svg>
+          </div>
+          <div id="barcodeCodeText" class="font-mono font-bold text-xs tracking-widest text-[#1f2937]">KRY-001</div>
+        </div>
+
+        <!-- Reset Cycle Info Footer -->
+        <div class="mt-3 flex items-center justify-between text-[9.5px] text-emerald-100/80">
+          <span>🔄 Auto-reset tiap tanggal 1 awal bulan</span>
+          <span id="resetMonthBadge" class="font-bold text-amber-300">Bulan Ini: Aktif</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons for Employee -->
+      <div class="grid grid-cols-2 gap-2">
+        <button 
+          type="button" 
+          onclick="downloadCardImage()" 
+          class="py-2.5 px-3 bg-white hover:bg-[#faf5f0] text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+        >
+          <span>📥 Simpan Kartu</span>
+        </button>
+        <button 
+          type="button" 
+          onclick="refreshData()" 
+          class="py-2.5 px-3 bg-white hover:bg-[#faf5f0] text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+        >
+          <span>🔄 Segarkan Saldo</span>
+        </button>
+      </div>
+
+      <!-- Spending Summary Card -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-[#ebdccf] space-y-2.5">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-extrabold uppercase text-[#5c3c26] tracking-wider">Penggunaan Kuota Bulan Ini</h3>
+          <span id="percentBadge" class="text-xs font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">0% Terpakai</span>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden border border-stone-200">
+          <div id="utilizationBar" class="bg-emerald-600 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+
+        <div class="flex justify-between text-[11px] text-[#7c5c43] pt-0.5">
+          <span>Terpakai: <b id="spentAmount" class="font-mono text-red-700">Rp 0</b></span>
+          <span>Sisa: <b id="remainingAmount" class="font-mono text-emerald-800">Rp 2.000.000</b></span>
+        </div>
+      </div>
+
+      <!-- Recent Transactions Accordion -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-[#ebdccf] space-y-2">
+        <h3 class="text-xs font-extrabold uppercase text-[#5c3c26] tracking-wider flex items-center justify-between">
+          <span>🧾 Riwayat Belanja Bulan Ini</span>
+          <span id="trxCountBadge" class="text-[10px] font-bold text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">0 Transaksi</span>
+        </h3>
+        
+        <div id="trxListContainer" class="divide-y divide-stone-100 text-xs">
+          <div class="py-3 text-center text-stone-400 text-xs">Belum ada transaksi belanja bulan ini.</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="max-w-md mx-auto w-full py-4 text-center text-[10px] text-stone-500 space-y-1">
+    <p>&copy; Koperasi Karyawan • Sistem Kasir Multi-Cabang</p>
+    <p>Kartu digital ini resmi dan berlaku di seluruh cabang toko koperasi.</p>
+  </footer>
+
+  <script>
+    let currentEmployeeData = null;
+
+    function formatRupiah(num) {
+      const val = Number(num) || 0;
+      return 'Rp ' + val.toLocaleString('id-ID');
+    }
+
+    async function handleSearch(e) {
+      if (e) e.preventDefault();
+      const q = document.getElementById('queryInput').value.trim();
+      if (!q) return;
+
+      const loader = document.getElementById('loadingIndicator');
+      const errBox = document.getElementById('errorMessage');
+      const resultSec = document.getElementById('resultSection');
+
+      loader.classList.remove('hidden');
+      errBox.classList.add('hidden');
+      resultSec.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/lan/employee/portal?q=' + encodeURIComponent(q));
+        const json = await res.json();
+
+        loader.classList.add('hidden');
+        if (!res.ok || json.status !== 'success') {
+          errBox.textContent = json.error || 'Data karyawan tidak ditemukan. Periksa kembali NIK atau No HP Anda.';
+          errBox.classList.remove('hidden');
+          return;
+        }
+
+        renderEmployeeData(json.data);
+      } catch (err) {
+        loader.classList.add('hidden');
+        errBox.textContent = 'Gagal terhubung ke server koperasi: ' + err.message;
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    function renderEmployeeData(data) {
+      currentEmployeeData = data;
+      const emp = data.employee;
+      const resultSec = document.getElementById('resultSection');
+
+      document.getElementById('empName').textContent = emp.name;
+      document.getElementById('empCode').textContent = emp.code || emp.id;
+      document.getElementById('empStore').textContent = emp.store_name || 'Semua Cabang';
+      document.getElementById('empBalance').textContent = formatRupiah(emp.deposit_balance);
+      document.getElementById('empAllowance').textContent = formatRupiah(emp.monthly_allowance);
+      document.getElementById('barcodeCodeText').textContent = emp.code || emp.id;
+
+      // Render Barcode SVG using JsBarcode
+      try {
+        JsBarcode('#barcodeSvg', emp.code || emp.id, {
+          format: 'CODE128',
+          width: 2,
+          height: 48,
+          displayValue: false,
+          margin: 0
+        });
+      } catch (e) {
+        console.warn('Barcode render fallback:', e);
+      }
+
+      // Spending & Progress
+      const allowance = Number(emp.monthly_allowance) || 2000000;
+      const spent = Number(emp.spent_this_month) || 0;
+      const balance = Number(emp.deposit_balance) || 0;
+      const percent = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
+
+      document.getElementById('spentAmount').textContent = formatRupiah(spent);
+      document.getElementById('remainingAmount').textContent = formatRupiah(balance);
+      document.getElementById('percentBadge').textContent = percent + '% Terpakai';
+      document.getElementById('utilizationBar').style.width = percent + '%';
+
+      // Transactions List
+      const trxContainer = document.getElementById('trxListContainer');
+      const trxs = data.transactions || [];
+      document.getElementById('trxCountBadge').textContent = trxs.length + ' Transaksi';
+
+      if (trxs.length === 0) {
+        trxContainer.innerHTML = '<div class="py-4 text-center text-stone-400 text-xs">Belum ada transaksi belanja bulan ini.</div>';
+      } else {
+        trxContainer.innerHTML = trxs.map(t => {
+          const dateStr = new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+          const timeStr = new Date(t.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+          const itemCount = (t.items || []).reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
+          return `
+            <div class="py-2.5 flex items-center justify-between">
+              <div>
+                <div class="font-bold text-[#4d3221]">${t.receipt_number}</div>
+                <div class="text-[10px] text-stone-500 font-medium">${dateStr} ${timeStr} • ${itemCount} Barang</div>
+              </div>
+              <div class="text-right">
+                <div class="font-mono font-bold text-red-700">-${formatRupiah(t.grand_total)}</div>
+                <div class="text-[9.5px] font-extrabold text-emerald-700 uppercase">Potong Saldo</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      resultSec.classList.remove('hidden');
+      resultSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function refreshData() {
+      handleSearch();
+    }
+
+    function downloadCardImage() {
+      const card = document.getElementById('cardContainer');
+      if (!card) return;
+
+      html2canvas(card, {
+        scale: 2,
+        backgroundColor: null,
+        useCORS: true
+      }).then(canvas => {
+        const link = document.createElement('a');
+        const code = currentEmployeeData?.employee?.code || 'Karyawan';
+        link.download = `Kartu_Belanja_${code}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }).catch(err => {
+        alert('Gagal mengunduh gambar kartu: ' + err.message);
+      });
+    }
+
+    // Auto-search if query param ?q= is present in URL
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const q = urlParams.get('q');
+      if (q) {
+        document.getElementById('queryInput').value = q;
+        handleSearch();
+      }
+    });
+  </script>
+</body>
+</html>

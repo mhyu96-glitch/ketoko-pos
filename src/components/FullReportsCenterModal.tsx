@@ -23,7 +23,12 @@ import {
   RefreshCw,
   Users,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Smartphone,
+  ShieldCheck,
+  Award,
+  CheckCircle,
+  RotateCcw
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile, Customer } from '../types';
@@ -37,11 +42,12 @@ import {
 import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
+import { employeeAllowanceService, type EmployeeAllowanceReport } from '../services/employeeAllowanceService';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items';
+  initialTab?: 'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items' | 'employee_allowance';
   userRole?: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | 'MANAGER';
   cashierName?: string;
   branchId?: string;
@@ -58,10 +64,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   cashierName = 'Kasir Toko',
   branchId = 'BR-01'
 }) => {
-  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'profit' | 'inventory' | 'payment' | 'customer_items' | 'employee_allowance'>(initialTab);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+
+  // Employee Allowance Report States
+  const [employeeReport, setEmployeeReport] = useState<EmployeeAllowanceReport | null>(null);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXHAUSTED'>('ALL');
+  const [isResettingEmployees, setIsResettingEmployees] = useState(false);
   
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all' | 'custom'>('all');
   
@@ -600,11 +612,83 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     return { modal, qty, sales, profit };
   }, [filteredCustomerReportGroups]);
 
+  // Load and refresh Employee Allowance Report
+  useEffect(() => {
+    if (isOpen) {
+      employeeAllowanceService.generateMonthlyReport().then(setEmployeeReport).catch(console.error);
+    }
+  }, [isOpen, activeTab, transactions, customers]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!employeeReport) return [];
+    let list = employeeReport.employees;
+    if (employeeStatusFilter === 'ACTIVE') {
+      list = list.filter(e => e.status === 'ACTIVE');
+    } else if (employeeStatusFilter === 'EXHAUSTED') {
+      list = list.filter(e => e.status === 'EXHAUSTED');
+    }
+    const q = employeeSearchTerm.trim().toLowerCase();
+    if (q) {
+      list = list.filter(e =>
+        e.name.toLowerCase().includes(q) ||
+        e.code.toLowerCase().includes(q) ||
+        e.phone.includes(q)
+      );
+    }
+    return list;
+  }, [employeeReport, employeeStatusFilter, employeeSearchTerm]);
+
+  const handleResetAllEmployeesFromReport = async () => {
+    const totalEmp = employeeReport?.summary.total_employees || 0;
+    if (!confirm(`Konfirmasi Reset Saldo Bulanan:\n\nReset saldo kuota ${totalEmp} karyawan kembali ke plafon default (Rp 2.000.000)?\n\nTransaksi pemakaian bulan berjalan akan mulai dari kuota baru.`)) {
+      return;
+    }
+    setIsResettingEmployees(true);
+    try {
+      const res = await employeeAllowanceService.resetEmployeeAllowance();
+      if (res.success) {
+        const updated = await employeeAllowanceService.generateMonthlyReport();
+        setEmployeeReport(updated);
+        alert(`Berhasil! Saldo kuota ${res.reset_count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
+      } else {
+        alert('Gagal reset: ' + (res.message || 'Error'));
+      }
+    } catch (err: any) {
+      alert('Error saat reset: ' + (err.message || ''));
+    } finally {
+      setIsResettingEmployees(false);
+    }
+  };
+
+  const handleResetSingleFromReport = async (empId: string, name: string, targetAllowance: number) => {
+    if (!confirm(`Reset saldo kuota bulanan karyawan "${name}" kembali ke ${formatRupiah(targetAllowance)}?`)) {
+      return;
+    }
+    try {
+      const res = await employeeAllowanceService.resetEmployeeAllowance(empId, targetAllowance);
+      if (res.success) {
+        const updated = await employeeAllowanceService.generateMonthlyReport();
+        setEmployeeReport(updated);
+      } else {
+        alert('Gagal reset: ' + (res.message || 'Error'));
+      }
+    } catch (err: any) {
+      alert('Error saat reset: ' + (err.message || ''));
+    }
+  };
+
   // Export active report to A4 PDF with Official Letterhead
   const handleExportPDF = () => {
     const savedStore = localStorage.getItem('ketoko_store_profile');
     const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
     const periodLabel = dateFilter === 'custom' ? `${startDate} s/d ${endDate}` : dateFilter === 'today' ? 'Hari Ini (' + new Date().toLocaleDateString('id-ID') + ')' : dateFilter === '7days' ? '7 Hari Terakhir' : dateFilter === 'month' ? 'Bulan Ini (' + new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ')' : 'Seluruh Waktu';
+
+    if (activeTab === 'employee_allowance') {
+      if (employeeReport) {
+        employeeAllowanceService.printEmployeeAllowanceReport(employeeReport, storeProfile);
+      }
+      return;
+    }
 
     if (activeTab === 'sales') {
       exportReportToPDF({
@@ -816,6 +900,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
   // Export active report to CSV
   const handleExportCSV = () => {
+    if (activeTab === 'employee_allowance') {
+      if (employeeReport) {
+        employeeAllowanceService.exportEmployeeAllowanceCSV(employeeReport);
+      }
+      return;
+    }
+
     if (activeTab === 'customer_items') {
       const savedStore = localStorage.getItem('ketoko_store_profile');
       const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
@@ -1085,6 +1176,18 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
             >
               <Users className="w-3.5 h-3.5 text-blue-600" />
               <span>Laporan Pelanggan</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('employee_allowance')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border flex items-center space-x-1.5 shadow-2xs active:scale-95 ${
+                activeTab === 'employee_allowance'
+                  ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
+                  : 'bg-white text-emerald-800 hover:bg-emerald-50 border-emerald-300'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Saldo & Kuota Karyawan</span>
             </button>
           </div>
 
@@ -2098,6 +2201,279 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: REKAPITULASI KUOTA & SALDO KARYAWAN KOPERASI (1.500 Karyawan, Rp 2 Jt) */}
+          {activeTab === 'employee_allowance' && (
+            <div className="space-y-6 animate-fadeIn">
+              
+              {/* Summary Header & Info Card */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-950 text-white shadow-md border border-emerald-700/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center space-x-3.5">
+                  <div className="p-3 rounded-2xl bg-emerald-800/80 text-emerald-200 border border-emerald-600/50 shadow-inner">
+                    <Smartphone className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2 flex-wrap">
+                      <h4 className="font-black text-lg text-white tracking-tight">
+                        Rekapitulasi Saldo & Kuota Karyawan Koperasi
+                      </h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-800 text-emerald-200 border border-emerald-500/50 uppercase tracking-wider">
+                        Periode: {employeeReport?.period_name || new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-100 font-medium mt-0.5">
+                      Sistem kuota belanja bulanan Rp 2.000.000 per karyawan. Auto-reset tiap tanggal 1 awal bulan dan akses kartu digital via HP.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Action Reset All */}
+                <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleResetAllEmployeesFromReport}
+                    disabled={isResettingEmployees}
+                    className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs active:scale-95 disabled:opacity-50"
+                    title="Reset saldo seluruh karyawan ke Rp 2.000.000"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-amber-100 ${isResettingEmployees ? 'animate-spin' : ''}`} />
+                    <span>{isResettingEmployees ? 'Mereset...' : '🔄 Reset Semua ke Rp 2 Jt'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 5 KPI Summary Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Total Karyawan */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Karyawan</span>
+                  <div className="text-2xl font-black text-[#332219] mt-2">
+                    {employeeReport?.summary.total_employees.toLocaleString('id-ID') || 0}
+                    <span className="text-xs font-semibold text-[#856b59] ml-1">Orang</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-700 font-medium mt-1">
+                    {employeeReport?.summary.exhausted_count || 0} kuota habis
+                  </div>
+                </div>
+
+                {/* Total Plafon Anggaran */}
+                <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Plafon Kuota</span>
+                  <div className="text-xl font-black font-mono text-[#332219] mt-2">
+                    {formatRupiah(employeeReport?.summary.total_allowance_budget || 0)}
+                  </div>
+                  <div className="text-[10px] text-stone-500 font-medium mt-1">
+                    Default Rp 2.000.000 / bln
+                  </div>
+                </div>
+
+                {/* Total Kuota Terpakai */}
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">Total Kuota Terpakai</span>
+                  <div className="text-xl font-black font-mono text-rose-900 mt-2">
+                    {formatRupiah(employeeReport?.summary.total_spent || 0)}
+                  </div>
+                  <div className="text-[10px] text-rose-700 font-medium mt-1">
+                    Belanja potong saldo bulan ini
+                  </div>
+                </div>
+
+                {/* Sisa Saldo Tersedia */}
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Sisa Saldo Kuota</span>
+                  <div className="text-xl font-black font-mono text-emerald-900 mt-2">
+                    {formatRupiah(employeeReport?.summary.total_remaining_balance || 0)}
+                  </div>
+                  <div className="text-[10px] text-emerald-700 font-medium mt-1">
+                    Bisa dibelanjakan di kasir
+                  </div>
+                </div>
+
+                {/* % Utilisasi Saldo */}
+                <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-800">Tingkat Penyerapan</span>
+                  <div className="text-2xl font-black font-mono text-indigo-900 mt-2">
+                    {employeeReport?.summary.utilization_rate || 0}%
+                  </div>
+                  <div className="w-full bg-indigo-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                    <div
+                      className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(employeeReport?.summary.utilization_rate || 0, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Toolbar & Filter Karyawan */}
+              <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative w-64 sm:w-80">
+                    <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={employeeSearchTerm}
+                      onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                      placeholder="Cari NIK, nama karyawan, nomor HP..."
+                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-stone-200 text-xs font-medium focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 bg-stone-50"
+                    />
+                  </div>
+
+                  <select
+                    value={employeeStatusFilter}
+                    onChange={(e) => setEmployeeStatusFilter(e.target.value as any)}
+                    className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 focus:border-emerald-600"
+                  >
+                    <option value="ALL">Semua Status ({employeeReport?.employees.length || 0})</option>
+                    <option value="ACTIVE">🟢 Masih Ada Kuota ({employeeReport?.employees.filter(e => e.status === 'ACTIVE').length || 0})</option>
+                    <option value="EXHAUSTED">🔴 Kuota Habis (Rp 0) ({employeeReport?.summary.exhausted_count || 0})</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-stone-500 font-medium">
+                    Menampilkan <b>{filteredEmployees.length}</b> dari {employeeReport?.summary.total_employees || 0} Karyawan
+                  </span>
+                </div>
+              </div>
+
+              {/* Table of Employees */}
+              <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
+                <div className="py-2.5 px-4 bg-emerald-50 border-b border-emerald-200 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-800" />
+                    <span className="text-xs font-black text-emerald-950 uppercase tracking-wider">
+                      Daftar Anggota Karyawan & Sisa Kuota Belanja Bulanan
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-800 bg-white px-2.5 py-0.5 rounded-full border border-emerald-300">
+                    Plafon Kuota Reset Tiap Tanggal 1
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-[500px]">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="sticky top-0 bg-[#e6f4ea] text-emerald-950 z-10 font-bold border-b border-emerald-200">
+                      <tr>
+                        <th className="py-2.5 px-3 text-center w-12">No</th>
+                        <th className="py-2.5 px-3 text-left w-28">NIK / Kode</th>
+                        <th className="py-2.5 px-4 text-left">Nama Karyawan</th>
+                        <th className="py-2.5 px-3 text-left w-36">No. WhatsApp</th>
+                        <th className="py-2.5 px-3 text-right w-36">Plafon Kuota</th>
+                        <th className="py-2.5 px-3 text-right w-36 text-rose-700">Terpakai</th>
+                        <th className="py-2.5 px-3 text-right w-36 text-emerald-800">Sisa Saldo</th>
+                        <th className="py-2.5 px-4 text-center w-36">% Terpakai</th>
+                        <th className="py-2.5 px-3 text-center w-28">Status</th>
+                        <th className="py-2.5 px-3 text-center w-24">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-emerald-100 font-medium">
+                      {filteredEmployees.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="py-12 text-center text-stone-500">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-40 text-emerald-800" />
+                            <p className="font-bold text-sm">Tidak ada data karyawan yang cocok</p>
+                            <p className="text-xs opacity-75 mt-0.5">Daftarkan karyawan dengan tipe "KARYAWAN" di Master Data Member</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredEmployees.map((emp, idx) => {
+                          const percentUsed = emp.allowance > 0 ? Math.min(Math.round((emp.spent / emp.allowance) * 100), 100) : 0;
+                          return (
+                            <tr key={emp.customer_id} className="hover:bg-emerald-50/50 transition-colors">
+                              <td className="py-2.5 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span className="font-mono font-bold text-stone-800 px-2 py-0.5 rounded bg-stone-100 border border-stone-200">
+                                  {emp.code || emp.customer_id}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <div className="font-bold text-stone-900 text-sm flex items-center space-x-1.5">
+                                  <span>{emp.name}</span>
+                                </div>
+                                <div className="text-[10px] text-stone-500">
+                                  Reset Terakhir: {emp.last_reset || 'Awal Bulan'}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-stone-700 whitespace-nowrap">
+                                {emp.phone || '-'}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-stone-800 whitespace-nowrap">
+                                {formatRupiah(emp.allowance)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
+                                {formatRupiah(emp.spent)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-300 text-xs inline-block">
+                                  {formatRupiah(emp.remaining_balance)}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-center">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-full bg-stone-200 rounded-full h-2 overflow-hidden">
+                                    <div
+                                      className={`h-2 rounded-full ${
+                                        percentUsed >= 100 ? 'bg-rose-600' : percentUsed >= 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                                      }`}
+                                      style={{ width: `${percentUsed}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-mono font-bold text-stone-600 w-8 text-right">
+                                    {percentUsed}%
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                {emp.status === 'EXHAUSTED' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
+                                    Habis
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    Aktif
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetSingleFromReport(emp.customer_id, emp.name, emp.allowance)}
+                                  className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs transition-colors"
+                                  title={`Reset saldo kuota ${emp.name} ke ${formatRupiah(emp.allowance)}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                    {filteredEmployees.length > 0 && (
+                      <tfoot className="bg-[#e6f4ea] font-black text-emerald-950 border-t-2 border-emerald-500">
+                        <tr>
+                          <td colSpan={4} className="py-3 px-4 uppercase text-xs">
+                            TOTAL ({filteredEmployees.length} Karyawan)
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-stone-900">
+                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.allowance, 0))}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-rose-800">
+                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.spent, 0))}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-emerald-900 text-sm">
+                            {formatRupiah(filteredEmployees.reduce((s, e) => s + e.remaining_balance, 0))}
+                          </td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+
             </div>
           )}
 

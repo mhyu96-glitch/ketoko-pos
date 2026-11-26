@@ -532,9 +532,14 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     }
   };
 
+  const lastPaymentTriggerRef = useRef<number>(0);
+
   // Process payment directly without opening duplicate modal
   const handleTriggerPayment = () => {
+    const now = Date.now();
+    if (now - lastPaymentTriggerRef.current < 1200) return; // Proteksi ketat anti-double click / double submit
     if (cartItems.length === 0 || isPaymentProcessing) return;
+    lastPaymentTriggerRef.current = now;
     if (selectedPaymentMethod === 'SALDO') {
       if (!customerName && !memberId) {
         alert('Silakan pilih Anggota / Konsumen terlebih dahulu untuk pembayaran menggunakan Saldo Member.');
@@ -567,7 +572,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
           searchInput.focus();
           searchInput.select();
         }
-      } else if (e.key === 'F4') {
+      } else if (e.key === 'F4' || e.key === 'F9') {
         e.preventDefault();
         if (!isPaymentProcessing) handleTriggerPayment();
       } else if (e.key === 'F7') {
@@ -582,7 +587,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         if (cartItems.length > 0) {
           handleHoldCurrentCart();
         }
-      } else if (e.key === 'F9') {
+      } else if (e.key === 'F10') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('ketoko_open_cash_drawer'));
       } else if (e.key === 'F12') {

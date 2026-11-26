@@ -136,11 +136,13 @@ export interface Customer {
   store_id?: string;
   store_name?: string;
   access_scope?: 'HOME_ONLY' | 'ALL_STORES';
-  type?: 'RETAIL' | 'WHOLESALE' | 'MEMBER';
+  type?: 'RETAIL' | 'WHOLESALE' | 'MEMBER' | 'KARYAWAN';
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
   deposit_balance?: number; // Saldo Simpanan / Deposit Anggota Terpusat
+  monthly_allowance?: number; // Plafon Saldo Karyawan Bulanan (default Rp 2.000.000)
+  last_allowance_reset?: string; // Format "YYYY-MM" (misal "2026-11")
   discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
   notes?: string;
   created_at?: string;
@@ -152,11 +154,11 @@ export interface MemberDepositMutation {
   customer_id: string;
   customer_name?: string;
   customer_code?: string;
-  type: 'TOPUP' | 'PAYMENT' | 'REFUND' | 'ADJUSTMENT';
+  type: 'TOPUP' | 'PAYMENT' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_RESET';
   amount: number;
   balance_before: number;
   balance_after: number;
-  payment_method?: 'CASH' | 'TRANSFER' | 'QRIS' | 'DEBIT';
+  payment_method?: 'CASH' | 'TRANSFER' | 'QRIS' | 'DEBIT' | 'SYSTEM';
   store_id: string;
   store_name?: string;
   cashier_id?: string;

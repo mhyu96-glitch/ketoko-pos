@@ -41,6 +41,7 @@ import { AppUpdateNotifierModal } from './components/AppUpdateNotifierModal';
 import { checkForAppUpdates, type AppVersionInfo } from './services/updateService';
 import { LanSettingsModal } from './components/LanSettingsModal';
 import { lanService } from './services/lanService';
+import { employeeAllowanceService } from './services/employeeAllowanceService';
 import QRCode from 'qrcode';
 import { SuperadminPortalView } from './components/SuperadminPortalView';
 import { usePWA } from './hooks/usePWA';
@@ -642,6 +643,7 @@ export const App: React.FC = () => {
           await db.transactions.bulkPut(centralTrx);
         }
         await lanService.fetchCustomersFromLan().catch(() => {});
+        employeeAllowanceService.checkAndAutoResetMonthlyAllowance().catch(() => {});
       } catch (err) {
         // LAN offline or unreachable, fallback to local IndexedDB
       }
@@ -842,6 +844,16 @@ export const App: React.FC = () => {
               db.syncQueue.delete(trxId).catch(() => {});
               setTransactions((prev) => prev.filter((t) => t.id !== trxId));
               window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+            }
+            if (event.data?.updated_stocks && Array.isArray(event.data.updated_stocks)) {
+              const stockMap = new Map<string, number>(event.data.updated_stocks.map((s: any) => [s.id, Number(s.stock) || 0]));
+              for (const s of event.data.updated_stocks) {
+                db.products.update(s.id, { stock: Number(s.stock) || 0 }).catch(() => {});
+              }
+              setProducts((prev) => prev.map(p => {
+                const s = stockMap.get(p.id);
+                return s !== undefined ? { ...p, stock: s } : p;
+              }));
             }
             return;
           }

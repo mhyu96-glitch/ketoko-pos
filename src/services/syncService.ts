@@ -1171,7 +1171,7 @@ export class SyncService {
     // 5. Kembalikan stok fisik barang yang terjual di nota ini (update lokal cepat & broadcast cloud)
     if (trx && Array.isArray(trx.items)) {
       for (const item of trx.items) {
-        const prodId = item.product_id;
+        const prodId = item.product_id || (item as any).id;
         const addQty = Number(item.qty) || 0;
         if (prodId && addQty > 0) {
           const prod = await db.products.get(prodId);
@@ -1265,23 +1265,25 @@ export class SyncService {
     const productIds = new Set<string>();
     if (oldTrx && Array.isArray(oldTrx.items)) {
       for (const it of oldTrx.items) {
-        if (it.product_id) productIds.add(String(it.product_id));
+        const pid = it.product_id || (it as any).id;
+        if (pid) productIds.add(String(pid));
       }
     }
     if (Array.isArray(finalTrx.items)) {
       for (const it of finalTrx.items) {
-        if (it.product_id) productIds.add(String(it.product_id));
+        const pid = it.product_id || (it as any).id;
+        if (pid) productIds.add(String(pid));
       }
     }
 
     // 2. Hitung delta stok untuk setiap produk dan perbarui stok di Dexie & Supabase
     for (const pId of productIds) {
       const oldQty = (oldTrx?.items || [])
-        .filter((it) => String(it.product_id) === pId)
+        .filter((it) => String(it.product_id || (it as any).id) === pId)
         .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
 
       const newQty = (finalTrx.items || [])
-        .filter((it) => String(it.product_id) === pId)
+        .filter((it) => String(it.product_id || (it as any).id) === pId)
         .reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
 
       const stockDelta = oldQty - newQty; // Positif = kembalikan ke stok, Negatif = potong stok

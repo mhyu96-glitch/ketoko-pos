@@ -545,6 +545,84 @@ class LanService {
   }
 
   /**
+   * Reset Saldo Kuota Karyawan Bulanan ke Plafon (Rp 2.000.000)
+   */
+  public async resetEmployeeAllowance(customerId?: string, amount?: number): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const candidates = [
+        this.config.serverUrl,
+        typeof window !== 'undefined' ? window.location.origin : '',
+        'http://127.0.0.1:5858',
+        'http://localhost:5858'
+      ].filter(u => u && !u.startsWith('file:') && u !== 'null');
+      const uniqueCandidates = Array.from(new Set(candidates.map(u => u.replace(/\/+$/, ''))));
+
+      for (const base of uniqueCandidates) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(`${base}/api/lan/employees/reset-allowance`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify({ customer_id: customerId, amount }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const json = await res.json();
+            return { success: true, data: json.data };
+          }
+        } catch {}
+      }
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+    return { success: false, error: 'Tidak dapat terhubung ke server terpusat' };
+  }
+
+  /**
+   * Edit / Sesuaikan Saldo atau Plafon Karyawan
+   */
+  public async adjustEmployeeAllowance(customerId: string, data: { deposit_balance?: number; monthly_allowance?: number; notes?: string }): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const candidates = [
+        this.config.serverUrl,
+        typeof window !== 'undefined' ? window.location.origin : '',
+        'http://127.0.0.1:5858',
+        'http://localhost:5858'
+      ].filter(u => u && !u.startsWith('file:') && u !== 'null');
+      const uniqueCandidates = Array.from(new Set(candidates.map(u => u.replace(/\/+$/, ''))));
+
+      for (const base of uniqueCandidates) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(`${base}/api/lan/employees/adjust-allowance`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify({ customer_id: customerId, ...data }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const json = await res.json();
+            return { success: true, data: json.data };
+          }
+        } catch {}
+      }
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+    return { success: false, error: 'Tidak dapat terhubung ke server terpusat' };
+  }
+
+  /**
    * Ambil Riwayat Mutasi Saldo Member dari Server
    */
   public async fetchMemberDeposits(customerId?: string): Promise<any[]> {
