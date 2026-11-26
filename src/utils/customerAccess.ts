@@ -3,6 +3,9 @@ import { getStoredStores, RegisteredStoreInfo, resolveStoreFromCurrentHost } fro
 
 export type CustomerAccessScope = 'HOME_ONLY' | 'ALL_STORES';
 
+/** Plafon maksimal saldo kuota belanja bulanan karyawan Koperasi (Rp 2.000.000, reset tiap tanggal 1) */
+export const MAX_EMPLOYEE_ALLOWANCE = 2000000;
+
 export interface BranchAccessCheckResult {
   allowed: boolean;
   homeStoreId: string;
@@ -11,6 +14,98 @@ export interface BranchAccessCheckResult {
   activeStoreName: string;
   scope: CustomerAccessScope;
   reason?: string;
+}
+
+export interface ParsedEmployeeMeta {
+  unit_profile: string;
+  afdeling: string;
+  job_code: string;
+  emp_status: string;
+  clean_address: string;
+  reset_month: string;
+}
+
+/**
+ * Membatasi plafon kuota karyawan maksimal Rp 2.000.000
+ */
+export function clampEmployeeAllowance(val?: number | null): number {
+  const num = Number(val);
+  if (isNaN(num) || num <= 0) return MAX_EMPLOYEE_ALLOWANCE;
+  return Math.min(MAX_EMPLOYEE_ALLOWANCE, Math.round(num));
+}
+
+/**
+ * Membatasi sisa saldo karyawan antara Rp 0 s/d maksimal plafon (Rp 2.000.000)
+ */
+export function clampEmployeeBalance(val?: number | null, maxAllowance = MAX_EMPLOYEE_ALLOWANCE): number {
+  const cap = Math.min(MAX_EMPLOYEE_ALLOWANCE, Math.max(0, Number(maxAllowance) || MAX_EMPLOYEE_ALLOWANCE));
+  if (val === undefined || val === null || isNaN(Number(val))) return cap;
+  return Math.min(cap, Math.max(0, Math.round(Number(val))));
+}
+
+/**
+ * Membersihkan tag metadata [RST:YYYY-MM] dari teks alamat untuk tampilan UI
+ */
+export function formatCustomerAddressDisplay(address?: string | null): string {
+  if (!address) return '-';
+  const cleaned = String(address).replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '').trim();
+  return cleaned || '-';
+}
+
+/**
+ * Mengekstrak informasi Unit, Afdeling, Jabatan, Status, dan Bulan Reset dari objek Customer / teks alamat
+ */
+export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEmployeeMeta {
+  const rawAddr = String(customer?.address || '');
+  const rstMatch = rawAddr.match(/\[RST:(\d{4}-\d{2})\]/i);
+  const reset_month = customer?.last_allowance_reset || (rstMatch ? rstMatch[1] : '');
+  const clean_address = formatCustomerAddressDisplay(rawAddr);
+
+  let unit_profile = customer?.unit_profile || '';
+  let afdeling = customer?.afdeling || '';
+  let job_code = customer?.job_code || '';
+  let emp_status = customer?.emp_status || '';
+
+  // Parse pola "MSL INTI-1 • Afd A • MANDOR PANEN (KT)" bila field eksplisit belum terisi
+  if ((!unit_profile || !afdeling || !job_code) && clean_address.includes('•')) {
+    const parts = clean_address.split('•').map((p) => p.trim());
+    if (!unit_profile && parts[0]) unit_profile = parts[0];
+    if (!afdeling && parts[1]) {
+      afdeling = parts[1].replace(/^Afd\s*:?\s*/i, '').trim();
+    }
+    if (parts[2]) {
+      const stMatch = parts[2].match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      if (stMatch) {
+        if (!job_code) job_code = stMatch[1].trim();
+        if (!emp_status) emp_status = stMatch[2].trim();
+      } else if (!job_code) {
+        job_code = parts[2];
+      }
+    }
+  }
+
+  return {
+    unit_profile: unit_profile || (customer?.store_id === 'store-koperasimsl-cabang' ? 'MSL MILL-1' : 'UMUM'),
+    afdeling: afdeling || (customer?.store_id === 'store-koperasimsl-cabang' ? 'MILL' : 'UMUM'),
+    job_code: job_code || '-',
+    emp_status: emp_status || '-',
+    clean_address,
+    reset_month
+  };
+}
+
+/**
+ * Menyusun string address dengan tag [RST:YYYY-MM] agar sinkron ke kolom standar Supabase
+ */
+export function encodeEmployeeAddressWithReset(
+  cleanAddress: string,
+  resetMonth?: string | null,
+  isEmployee?: boolean
+): string {
+  const base = formatCustomerAddressDisplay(cleanAddress);
+  if (!isEmployee) return base;
+  const month = (resetMonth || new Date().toISOString().slice(0, 7)).trim();
+  return `${base === '-' ? 'Koperasi PT. MSL' : base} [RST:${month}]`;
 }
 
 /**
@@ -60,25 +155,16 @@ export function getStoreDisplayName(storeId?: string | null, fallbackName?: stri
     return String(fallbackName).trim();
   }
   if (normalized === 'store-01') return 'Cabang Samarinda (BR-01)';
-  if (normalized === 'store-koperasimsl') return 'Koperasi MSL (Toko Utama)';
-  if (normalized === 'store-koperasimsl-cabang') return 'Koperasi MSL (Cabang 1)';
+  if (normalized === 'store-koperasimsl') return 'Koperasi Karyawan PT. MSL (Toko Utama)';
+  if (normalized === 'store-koperasimsl-cabang') return 'Koperasi Karyawan PT. MSL (Cabang Mill)';
   return normalized;
 }
 
 /**
  * Mendapatkan ID Cluster Bisnis untuk isolasi toko (misal Koperasi MSL vs Tumbuh Makmur).
- * Toko dalam satu cluster (misal Toko Utama & Cabang Koperasi) berbagi data anggota.
- * Toko beda cluster (misal CV Tumbuh Makmur vs Koperasi MSL) TERISOLASI TOTAL!
  */
 export function getStoreClusterId(storeId?: string | null): string {
   const normalized = normalizeStoreId(storeId);
-  try {
-    const stores: RegisteredStoreInfo[] = getStoredStores();
-    const found = stores.find((s) => s.id === normalized);
-    if (found?.clusterId) return found.clusterId;
-  } catch {}
-
-  // Heuristic fallbacks jika storeRegistry belum selesai hydrate
   if (normalized.startsWith('store-koperasimsl')) {
     return 'cluster-koperasi-msl';
   }
@@ -88,18 +174,22 @@ export function getStoreClusterId(storeId?: string | null): string {
   if (normalized === 'store-01') {
     return 'cluster-tumbuhmakmur';
   }
+  try {
+    const stores: RegisteredStoreInfo[] = getStoredStores();
+    const found = stores.find((s) => s.id === normalized);
+    if (found?.clusterId) return found.clusterId;
+  } catch {}
   return `cluster-${normalized}`;
 }
 
 /**
  * Mengambil daftar toko/cabang yang hanya satu cluster dengan toko aktif.
- * Digunakan agar dropdown cabang di MemberModal tidak menampilkan toko dari bisnis lain.
  */
 export function getStoresForCluster(activeStoreId?: string | null): RegisteredStoreInfo[] {
   const activeCluster = getStoreClusterId(activeStoreId);
   try {
     const allStores = getStoredStores();
-    const filtered = allStores.filter((s) => (s.clusterId || getStoreClusterId(s.id)) === activeCluster);
+    const filtered = allStores.filter((s) => getStoreClusterId(s.id) === activeCluster);
     if (filtered.length > 0) return filtered;
   } catch {}
   return [];
@@ -107,7 +197,6 @@ export function getStoresForCluster(activeStoreId?: string | null): RegisteredSt
 
 /**
  * Memeriksa apakah pelanggan berasal dari cluster toko yang sama dengan toko aktif.
- * Pelanggan CV Tumbuh Makmur (store-01) TIDAK BOLEH tampil di Toko Koperasi MSL, dan sebaliknya!
  */
 export function isCustomerBelongsToStoreOrCluster(
   customerStoreId?: string | null,
@@ -116,10 +205,8 @@ export function isCustomerBelongsToStoreOrCluster(
   const normCustomerStore = normalizeStoreId(customerStoreId);
   const normActiveStore = normalizeStoreId(activeStoreId || getCurrentActiveStoreId());
 
-  // Cocok ID toko secara langsung
   if (normCustomerStore === normActiveStore) return true;
 
-  // Cocok cluster bisnis (misal: store-koperasimsl dengan store-koperasimsl-cabang)
   const custCluster = getStoreClusterId(normCustomerStore);
   const activeCluster = getStoreClusterId(normActiveStore);
 
@@ -164,7 +251,6 @@ export function checkCustomerBranchAccess(
   const scope = normalizeAccessScope(customer.access_scope);
   const label = customer.name || customer.code || 'Pelanggan ini';
 
-  // 1. ISOLASI BISNIS/CLUSTER: Jika toko pelanggan bukan dalam cluster yang sama, TOLAK MUTLAK!
   if (!isCustomerBelongsToStoreOrCluster(homeStoreId, resolvedActiveId)) {
     return {
       allowed: false,
@@ -177,7 +263,6 @@ export function checkCustomerBranchAccess(
     };
   }
 
-  // 2. Dalam cluster yang sama (misal: Toko Utama vs Cabang 1 Koperasi MSL)
   if (scope === 'ALL_STORES' || homeStoreId === resolvedActiveId) {
     return {
       allowed: true,

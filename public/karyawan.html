@@ -1,108 +1,108 @@
-  <!DOCTYPE html>
-  <html lang="id">
-  <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-    <title>Portal Cek Saldo & Kartu Belanja Karyawan Koperasi</title>
-    
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet"/>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+  <title>Kartu Member Digital — Koperasi Karyawan PT. Muaratoyu Subur Lestari</title>
 
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- JsBarcode & QRCode CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-    <!-- HTML2Canvas CDN for saving card image -->
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet"/>
 
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-              mono: ['JetBrains Mono', 'monospace']
-            }
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
           }
         }
-      };
-    </script>
+      }
+    };
+  </script>
 
-    <style>
-      body {
-        background-color: #f7f3ee;
-        font-family: 'Plus Jakarta Sans', sans-serif;
+  <style>
+    body {
+      background-color: #f4efe9;
+      font-family: 'Plus Jakarta Sans', sans-serif;
     }
     .card-gradient {
-      background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 85%, #0f766e 100%);
+      background: linear-gradient(135deg, #022c22 0%, #064e3b 45%, #047857 85%, #0f766e 100%);
     }
   </style>
 </head>
 <body class="min-h-screen text-[#2d1b11] flex flex-col justify-between">
-  
+
   <!-- Header App Bar -->
-  <header class="bg-[#4d3221] text-white py-3.5 px-4 shadow-md sticky top-0 z-30">
-    <div class="max-w-md mx-auto flex items-center justify-between">
-      <div class="flex items-center space-x-2.5">
-        <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-lg shadow-inner">
-          🏪
+  <header class="bg-gradient-to-r from-[#022c22] via-[#064e3b] to-[#065f46] text-white py-3.5 px-4 shadow-md sticky top-0 z-30 border-b border-emerald-700/60">
+    <div class="max-w-md mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center space-x-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center text-lg shadow-inner shrink-0">
+          🌴
         </div>
-        <div>
-          <h1 class="text-sm font-extrabold leading-tight tracking-tight">KOPERASI KARYAWAN</h1>
-          <p class="text-[10px] text-amber-200/90 font-medium">Toko Utama & Toko Cabang</p>
+        <div class="min-w-0">
+          <h1 class="text-xs sm:text-sm font-extrabold leading-tight tracking-tight truncate">KOPERASI KARYAWAN PT. MSL</h1>
+          <p class="text-[10px] text-emerald-200/90 font-medium truncate">PT. Muaratoyu Subur Lestari • Utama & Cabang Mill</p>
         </div>
       </div>
-      <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-        Live Online
+      <span class="px-2 py-0.5 rounded-full text-[9.5px] font-extrabold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30 shrink-0">
+        Reset Tgl 1
       </span>
     </div>
   </header>
 
-  <!-- Main Content Container -->
-  <main class="max-w-md mx-auto w-full px-4 py-5 space-y-4 flex-1">
-    
-    <!-- Search Box Card -->
-    <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#ebdccf] space-y-3">
+  <!-- Main Content -->
+  <main class="max-w-md mx-auto w-full px-4 py-4 space-y-4 flex-1">
+
+    <!-- Search Card -->
+    <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#e5d6c8] space-y-3">
       <div>
-        <h2 class="text-base font-extrabold text-[#4d3221]">Cek Saldo & Buka Kartu Digital</h2>
-        <p class="text-xs text-[#7c5c43] mt-0.5">Masukkan NIK, Kode Karyawan, atau No. WhatsApp Anda</p>
+        <h2 class="text-base font-extrabold text-[#064e3b]">Cek Saldo & Kartu Belanja Digital</h2>
+        <p class="text-xs text-stone-600 mt-0.5">Masukkan <b>NIK Karyawan</b> (contoh: <code class="font-mono text-emerald-800 bg-emerald-50 px-1 rounded">52/5221/0911/324</code>) atau <b>Nama Lengkap</b> Anda</p>
       </div>
 
       <form id="searchForm" onsubmit="handleSearch(event)" class="space-y-2.5">
         <div class="relative">
-          <input 
-            type="text" 
-            id="queryInput" 
-            placeholder="Contoh: KRY-001 atau 0812xxxx" 
+          <input
+            type="text"
+            id="queryInput"
+            placeholder="Ketik NIK atau Nama Karyawan..."
             required
-            class="w-full px-3.5 py-3 rounded-xl border border-[#ddc3aa] bg-[#fcfaf7] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#96633b] focus:border-transparent placeholder:text-stone-400 font-mono"
+            class="w-full px-3.5 py-3 rounded-xl border border-[#d6c3b0] bg-[#fcfaf7] text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-transparent placeholder:text-stone-400"
           />
         </div>
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           id="btnSearch"
-          class="w-full py-3 bg-[#96633b] hover:bg-[#83532e] active:scale-[0.98] text-white rounded-xl text-xs font-extrabold tracking-wide shadow-sm flex items-center justify-center space-x-2 transition-all cursor-pointer"
+          class="w-full py-3 bg-[#065f46] hover:bg-[#064e3b] active:scale-[0.98] text-white rounded-xl text-xs font-extrabold tracking-wide shadow-sm flex items-center justify-center space-x-2 transition-all cursor-pointer"
         >
-          <span>🔍 Buka Kartu & Cek Saldo</span>
+          <span>🔍 Buka Kartu & Cek Saldo Saya</span>
         </button>
       </form>
 
-      <div id="loadingIndicator" class="hidden text-center py-3 text-xs text-[#7c5c43] font-semibold animate-pulse">
-        ⏳ Mengambil data saldo terpusat...
+      <div id="loadingIndicator" class="hidden text-center py-3 text-xs text-emerald-800 font-semibold animate-pulse">
+        ⏳ Mengambil data saldo & pembelian terakhir dari server koperasi...
       </div>
-      <div id="errorMessage" class="hidden p-3 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-semibold text-center">
+      <div id="errorMessage" class="hidden p-3 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold text-center"></div>
+
+      <!-- Candidate Picker when multiple employees match a partial name -->
+      <div id="candidateListBox" class="hidden space-y-1.5 pt-1">
+        <div class="text-[11px] font-extrabold text-stone-600 uppercase">Pilih Nama Anda:</div>
+        <div id="candidateListItems" class="max-h-56 overflow-y-auto divide-y divide-stone-100 border border-stone-200 rounded-xl bg-stone-50"></div>
       </div>
     </div>
 
-    <!-- Employee Card Section (Hidden Initially) -->
-    <div id="resultSection" class="hidden space-y-4 animate-fadeIn">
-      
-      <!-- Digital ID Card (CR80 Standard Ratio) -->
+    <!-- Employee Result Section -->
+    <div id="resultSection" class="hidden space-y-4">
+
+      <!-- Digital ID Card -->
       <div id="cardContainer" class="card-gradient text-white rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden border border-emerald-400/30">
-        <!-- Background Pattern -->
         <div class="absolute -right-8 -bottom-8 w-36 h-36 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
         <div class="absolute -left-8 -top-8 w-28 h-28 bg-emerald-400/10 rounded-full blur-lg pointer-events-none"></div>
 
@@ -111,211 +111,530 @@
           <div class="flex items-center space-x-2">
             <span class="text-xl">💳</span>
             <div>
-              <div class="text-[11px] font-black tracking-wider text-emerald-200 uppercase">KARTU BELANJA KARYAWAN</div>
-              <div class="text-[9px] text-white/80 font-medium">Koperasi Toko Utama & Cabang</div>
+              <div class="text-[10.5px] font-black tracking-wider text-amber-300 uppercase">KOPERASI KARYAWAN PT. MSL</div>
+              <div class="text-[9px] text-white/80 font-medium">Bente Tualan • Berlaku di Toko Utama & Cabang Mill</div>
             </div>
           </div>
-          <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider shadow-xs">
-            OMNI-BRANCH
+          <span class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider">
+            AKTIF
           </span>
         </div>
 
-        <!-- Employee Info -->
-        <div class="pt-3.5 pb-2">
-          <div class="text-[10px] uppercase font-bold tracking-wider text-emerald-200/80">NAMA KARYAWAN</div>
+        <!-- Employee Identity -->
+        <div class="pt-3 pb-2">
+          <div class="text-[9.5px] uppercase font-bold tracking-wider text-emerald-200/80">NAMA KARYAWAN</div>
           <div id="empName" class="text-lg font-black text-white tracking-tight leading-snug">Nama Karyawan</div>
-          <div class="flex items-center space-x-2 mt-1">
-            <span id="empCode" class="font-mono text-xs font-bold text-amber-300 bg-black/20 px-2 py-0.5 rounded border border-white/10">KRY-001</span>
-            <span id="empStore" class="text-[10px] text-emerald-100/90 font-medium truncate">Cabang Utama</span>
+          <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <span id="empCode" class="font-mono text-xs font-bold text-amber-300 bg-black/30 px-2 py-0.5 rounded border border-white/15">NIK</span>
+            <span id="empMetaBadge" class="text-[10px] text-emerald-100 bg-white/10 px-2 py-0.5 rounded font-semibold">Unit • Afdeling</span>
           </div>
         </div>
 
-        <!-- Balance Highlights -->
-        <div class="my-3 p-3 bg-black/25 backdrop-blur-xs rounded-xl border border-white/10 flex items-center justify-between">
+        <!-- Balance Box (Max 2 Juta, Reset Tgl 1) -->
+        <div class="my-2.5 p-3 bg-black/30 rounded-xl border border-white/15 flex items-center justify-between">
           <div>
             <div class="text-[9.5px] uppercase font-bold text-emerald-200">SISA SALDO KUOTA BULAN INI</div>
             <div id="empBalance" class="text-2xl font-black text-amber-300 font-mono tracking-tight">Rp 2.000.000</div>
           </div>
           <div class="text-right">
-            <div class="text-[9px] text-white/70">Plafon Bulanan</div>
+            <div class="text-[9px] text-white/70">Maks Plafon / Bln</div>
             <div id="empAllowance" class="text-xs font-bold font-mono text-emerald-100">Rp 2.000.000</div>
           </div>
         </div>
 
-        <!-- Barcode & QR Code Section -->
-        <div class="bg-white rounded-xl p-2.5 text-center text-[#1f2937] space-y-1.5 shadow-sm">
-          <div class="text-[9px] font-bold text-stone-500 uppercase tracking-wider">
-            Tunjukkan Barcode ini ke Kasir saat Pembayaran
+        <!-- Barcode + QR Code Box -->
+        <div class="bg-white rounded-xl p-2.5 text-[#1f2937] shadow-sm">
+          <div class="text-[9px] font-extrabold text-stone-500 uppercase tracking-wider text-center mb-1.5">
+            Tunjukkan ke Scanner Kasir Saat Belanja
           </div>
-          <div class="flex items-center justify-center py-1">
-            <svg id="barcodeSvg" class="max-w-full h-12"></svg>
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex-1 flex flex-col items-center justify-center overflow-hidden">
+              <svg id="barcodeSvg" class="max-w-full h-12"></svg>
+              <div id="barcodeCodeText" class="font-mono font-extrabold text-[11px] tracking-wider text-stone-900 mt-0.5">NIK</div>
+            </div>
+            <div class="shrink-0 border-l border-stone-200 pl-2 flex flex-col items-center">
+              <canvas id="qrCanvas" class="w-14 h-14"></canvas>
+              <span class="text-[8px] font-bold text-stone-500">QR KASIR</span>
+            </div>
           </div>
-          <div id="barcodeCodeText" class="font-mono font-bold text-xs tracking-widest text-[#1f2937]">KRY-001</div>
         </div>
 
-        <!-- Reset Cycle Info Footer -->
-        <div class="mt-3 flex items-center justify-between text-[9.5px] text-emerald-100/80">
-          <span>🔄 Auto-reset tiap tanggal 1 awal bulan</span>
-          <span id="resetMonthBadge" class="font-bold text-amber-300">Bulan Ini: Aktif</span>
+        <!-- Reset Cycle Footer -->
+        <div class="mt-2.5 flex items-center justify-between text-[9.5px] text-emerald-100/90">
+          <span>🔄 Reset otomatis ke Rp 2.000.000 tiap Tanggal 1</span>
+          <span id="resetMonthBadge" class="font-bold text-amber-300">Periode Aktif</span>
         </div>
       </div>
 
-      <!-- Action Buttons for Employee -->
+      <!-- Action Buttons -->
       <div class="grid grid-cols-2 gap-2">
-        <button 
-          type="button" 
-          onclick="downloadCardImage()" 
-          class="py-2.5 px-3 bg-white hover:bg-[#faf5f0] text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+        <button
+          type="button"
+          onclick="downloadCardImage()"
+          class="py-2.5 px-3 bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-extrabold flex items-center justify-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
         >
-          <span>📥 Simpan Kartu</span>
+          <span>📥 Simpan Kartu di HP</span>
         </button>
-        <button 
-          type="button" 
-          onclick="refreshData()" 
-          class="py-2.5 px-3 bg-white hover:bg-[#faf5f0] text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+        <button
+          type="button"
+          onclick="refreshData()"
+          class="py-2.5 px-3 bg-white hover:bg-stone-50 text-[#5c3c26] border border-[#ddc3aa] rounded-xl text-xs font-extrabold flex items-center justify-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
         >
           <span>🔄 Segarkan Saldo</span>
         </button>
       </div>
 
-      <!-- Spending Summary Card -->
+      <!-- HIGHLIGHT: BARANG TERAKHIR DIBELI & NOMINALNYA -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border-2 border-amber-300/80 space-y-2.5">
+        <div class="flex items-center justify-between border-b border-amber-100 pb-2">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-base">🛒</span>
+            <h3 class="text-xs font-black uppercase text-[#5c3c26] tracking-wider">Barang Terakhir Dibeli & Nominal</h3>
+          </div>
+          <span id="lastTrxDateBadge" class="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full">-</span>
+        </div>
+
+        <div id="lastPurchaseContainer" class="text-xs text-stone-600">
+          <div class="py-3 text-center text-stone-400">Belum ada riwayat pembelian tercatat.</div>
+        </div>
+      </div>
+
+      <!-- Penggunaan Kuota Bulan Ini -->
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-[#ebdccf] space-y-2.5">
         <div class="flex items-center justify-between">
-          <h3 class="text-xs font-extrabold uppercase text-[#5c3c26] tracking-wider">Penggunaan Kuota Bulan Ini</h3>
+          <h3 class="text-xs font-extrabold uppercase text-[#5c3c26] tracking-wider">Pemakaian Kuota Bulan Ini</h3>
           <span id="percentBadge" class="text-xs font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">0% Terpakai</span>
         </div>
-        
-        <!-- Progress Bar -->
+
         <div class="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden border border-stone-200">
           <div id="utilizationBar" class="bg-emerald-600 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
         </div>
 
         <div class="flex justify-between text-[11px] text-[#7c5c43] pt-0.5">
-          <span>Terpakai: <b id="spentAmount" class="font-mono text-red-700">Rp 0</b></span>
-          <span>Sisa: <b id="remainingAmount" class="font-mono text-emerald-800">Rp 2.000.000</b></span>
+          <span>Terpakai Bulan Ini: <b id="spentAmount" class="font-mono text-rose-700">Rp 0</b></span>
+          <span>Sisa Kuota: <b id="remainingAmount" class="font-mono text-emerald-800">Rp 2.000.000</b></span>
         </div>
       </div>
 
-      <!-- Recent Transactions Accordion -->
+      <!-- Riwayat Belanja Bulan Ini -->
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-[#ebdccf] space-y-2">
         <h3 class="text-xs font-extrabold uppercase text-[#5c3c26] tracking-wider flex items-center justify-between">
-          <span>🧾 Riwayat Belanja Bulan Ini</span>
-          <span id="trxCountBadge" class="text-[10px] font-bold text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">0 Transaksi</span>
+          <span>🧾 Riwayat Nota Bulan Ini</span>
+          <span id="trxCountBadge" class="text-[10px] font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded">0 Nota</span>
         </h3>
-        
+
         <div id="trxListContainer" class="divide-y divide-stone-100 text-xs">
           <div class="py-3 text-center text-stone-400 text-xs">Belum ada transaksi belanja bulan ini.</div>
         </div>
       </div>
 
-    </div>
+      <!-- Info Kartu Fisik untuk Karyawan Tanpa HP -->
+      <div class="bg-emerald-50/80 rounded-2xl p-3.5 border border-emerald-200 text-[11px] text-emerald-900 leading-relaxed">
+        <b>💡 Info Karyawan Tanpa HP:</b> Bagi rekan karyawan yang tidak membawa/memiliki HP, kartu belanja fisik ber-barcode resmi telah disediakan dan dapat diminta/dicetak langsung melalui Admin atau Kasir Koperasi.
+      </div>
 
+    </div>
   </main>
 
-  <!-- Footer -->
-  <footer class="max-w-md mx-auto w-full py-4 text-center text-[10px] text-stone-500 space-y-1">
-    <p>&copy; Koperasi Karyawan • Sistem Kasir Multi-Cabang</p>
-    <p>Kartu digital ini resmi dan berlaku di seluruh cabang toko koperasi.</p>
+  <footer class="max-w-md mx-auto w-full py-4 px-4 text-center text-[10px] text-stone-500 space-y-1">
+    <p class="font-bold text-stone-600">KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI</p>
+    <p>Bente Tualan, Kec. Long Kali, Kab. Paser • Plafon Maks Rp 2.000.000 (Reset Tiap Tgl 1)</p>
   </footer>
 
   <script>
+    const SUPABASE_URL = 'https://quhjgsoqjcumckoshjtv.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1aGpnc29xamN1bWNrb3NoanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDE0MTQsImV4cCI6MjEwNTc3NzQxNH0.fh79f6QFSdBA3QD8f7vFZ7P1z29ilPeFq_htxy_OKgM';
+    const MAX_ALLOWANCE = 2000000;
+
     let currentEmployeeData = null;
 
     function formatRupiah(num) {
-      const val = Number(num) || 0;
+      const val = Math.round(Number(num) || 0);
       return 'Rp ' + val.toLocaleString('id-ID');
     }
 
-    async function handleSearch(e) {
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function cleanAddressText(addr) {
+      return String(addr || '').replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '').trim() || 'Koperasi PT. MSL';
+    }
+
+    function extractResetMonth(addr, explicitReset) {
+      if (explicitReset) return explicitReset;
+      const m = String(addr || '').match(/\[RST:(\d{4}-\d{2})\]/i);
+      return m ? m[1] : '';
+    }
+
+    function getStoreLabel(storeId) {
+      if (storeId === 'store-koperasimsl-cabang') return 'Cabang Mill';
+      if (storeId === 'store-koperasimsl') return 'Toko Utama';
+      return storeId || 'Koperasi MSL';
+    }
+
+    async function sbFetch(path) {
+      const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_KEY
+        }
+      });
+      if (!res.ok) throw new Error('Cloud HTTP ' + res.status);
+      return await res.json();
+    }
+
+    async function tryLanPortal(q) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2800);
+      try {
+        const res = await fetch('/api/lan/employee/portal?q=' + encodeURIComponent(q) + '&store_id=store-koperasimsl', {
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return null;
+        const json = await res.json();
+        if (res.ok && json.status === 'success' && json.data) return json.data;
+        return null;
+      } catch {
+        clearTimeout(timer);
+        return null;
+      }
+    }
+
+    async function fetchCloudEmployeePortal(q) {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const cleanQ = q.trim();
+      let matches = [];
+
+      try {
+        // 1. Exact code or phone or partial name in Koperasi MSL stores
+        const enc = encodeURIComponent(cleanQ);
+        const rows = await sbFetch(
+          `customers?store_id=in.(store-koperasimsl,store-koperasimsl-cabang)&type=eq.KARYAWAN&or=(code.ilike.${enc},code.ilike.*${enc}*,name.ilike.*${enc}*,phone.ilike.*${enc}*)&limit=25`
+        );
+        if (Array.isArray(rows)) matches = rows;
+      } catch (e) {
+        console.warn('Supabase customer lookup fallback to static JSON:', e);
+      }
+
+      // 2. Fallback to static master JSON if Cloud returned empty or offline
+      if (matches.length === 0) {
+        try {
+          const staticRes = await fetch('/data/koperasi_msl_employees.json');
+          if (staticRes.ok) {
+            const allEmp = await staticRes.json();
+            const lower = cleanQ.toLowerCase();
+            matches = (allEmp || []).filter(c =>
+              (c.code || '').toLowerCase() === lower ||
+              (c.code || '').toLowerCase().includes(lower) ||
+              (c.name || '').toLowerCase().includes(lower) ||
+              (c.phone && c.phone !== '-' && c.phone.includes(cleanQ))
+            ).slice(0, 25);
+          }
+        } catch {}
+      }
+
+      if (matches.length === 0) {
+        return { notFound: true };
+      }
+
+      // Prioritize exact NIK / code or exact name match
+      const exact = matches.find(c =>
+        (c.code || '').toLowerCase() === cleanQ.toLowerCase() ||
+        (c.name || '').toLowerCase() === cleanQ.toLowerCase()
+      );
+
+      if (!exact && matches.length > 1) {
+        return { candidates: matches };
+      }
+
+      const emp = exact || matches[0];
+      const resetMonth = extractResetMonth(emp.address, emp.last_allowance_reset);
+      const isNewMonth = Boolean(resetMonth && resetMonth !== currentMonth);
+      const allowance = Math.min(MAX_ALLOWANCE, Math.max(0, Number(emp.monthly_allowance || emp.credit_limit) || MAX_ALLOWANCE));
+
+      let rawBalance = allowance;
+      if (!isNewMonth) {
+        if (emp.deposit_balance !== undefined && emp.deposit_balance !== null) {
+          rawBalance = Number(emp.deposit_balance);
+        } else if (emp.current_debt !== undefined && emp.current_debt !== null) {
+          rawBalance = allowance - (Number(emp.current_debt) || 0);
+        }
+      }
+
+      // Fetch employee transactions from Supabase Cloud
+      let allEmpTrx = [];
+      try {
+        const byId = await sbFetch(
+          `transactions?store_id=in.(store-koperasimsl,store-koperasimsl-cabang)&customer_id=eq.${encodeURIComponent(emp.id)}&order=created_at.desc&limit=25`
+        );
+        const byName = await sbFetch(
+          `transactions?store_id=in.(store-koperasimsl,store-koperasimsl-cabang)&customer_name=ilike.${encodeURIComponent(emp.name)}&order=created_at.desc&limit=25`
+        );
+        const map = new Map();
+        [...(byId || []), ...(byName || [])].forEach(t => {
+          if (t && t.id) map.set(t.id, t);
+        });
+        allEmpTrx = Array.from(map.values()).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
+        if (allEmpTrx.length > 0) {
+          const idsParam = allEmpTrx.slice(0, 20).map(t => `"${t.id}"`).join(',');
+          const itemsRows = await sbFetch(`transaction_items?transaction_id=in.(${encodeURIComponent(idsParam)})&order=created_at.asc`);
+          const itemsByTrx = new Map();
+          (itemsRows || []).forEach(it => {
+            if (!itemsByTrx.has(it.transaction_id)) itemsByTrx.set(it.transaction_id, []);
+            itemsByTrx.get(it.transaction_id).push({
+              name: it.product_name || 'Barang',
+              qty: Number(it.qty) || 1,
+              unit: it.unit || 'Pcs',
+              price: Number(it.unit_price) || 0,
+              subtotal: Number(it.subtotal) || ((Number(it.qty) || 1) * (Number(it.unit_price) || 0))
+            });
+          });
+          allEmpTrx = allEmpTrx.map(t => ({
+            ...t,
+            items: itemsByTrx.get(t.id) || []
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase transactions lookup warning:', e);
+      }
+
+      const monthSaldoTrx = allEmpTrx.filter(t =>
+        t.payment_method === 'SALDO' && String(t.created_at || '').startsWith(currentMonth)
+      );
+      const spentFromTrx = monthSaldoTrx.reduce((s, t) => s + (Number(t.grand_total) || 0), 0);
+      const finalBalance = Math.min(allowance, Math.max(0, spentFromTrx > 0 ? Math.min(rawBalance, allowance - spentFromTrx) : rawBalance));
+      const finalSpent = Math.max(spentFromTrx, allowance - finalBalance);
+
+      const topTrx = allEmpTrx.length > 0 ? allEmpTrx[0] : null;
+      const lastTransaction = topTrx ? {
+        id: topTrx.id,
+        receipt_number: topTrx.receipt_number,
+        cashier_name: topTrx.cashier_name || 'Kasir Koperasi',
+        store_id: topTrx.store_id,
+        payment_method: topTrx.payment_method || 'SALDO',
+        grand_total: Number(topTrx.grand_total) || 0,
+        created_at: topTrx.created_at,
+        items: topTrx.items || []
+      } : null;
+
+      return {
+        data: {
+          employee: {
+            id: emp.id,
+            code: emp.code || emp.id,
+            name: emp.name,
+            phone: emp.phone || '-',
+            address: cleanAddressText(emp.address),
+            store_id: emp.store_id || 'store-koperasimsl',
+            store_name: getStoreLabel(emp.store_id),
+            type: 'KARYAWAN',
+            monthly_allowance: allowance,
+            deposit_balance: finalBalance,
+            spent_this_month: finalSpent,
+            current_month: currentMonth
+          },
+          last_transaction: lastTransaction,
+          transactions: monthSaldoTrx
+        }
+      };
+    }
+
+    async function handleSearch(e, forcedQuery) {
       if (e) e.preventDefault();
-      const q = document.getElementById('queryInput').value.trim();
+      const inputEl = document.getElementById('queryInput');
+      if (forcedQuery) inputEl.value = forcedQuery;
+      const q = inputEl.value.trim();
       if (!q) return;
 
       const loader = document.getElementById('loadingIndicator');
       const errBox = document.getElementById('errorMessage');
       const resultSec = document.getElementById('resultSection');
+      const candidateBox = document.getElementById('candidateListBox');
 
       loader.classList.remove('hidden');
       errBox.classList.add('hidden');
+      candidateBox.classList.add('hidden');
       resultSec.classList.add('hidden');
 
       try {
-        const res = await fetch('/api/lan/employee/portal?q=' + encodeURIComponent(q) + '&store_id=store-koperasimsl');
-        const json = await res.json();
+        // 1. Coba LAN Server lokal terlebih dahulu
+        const lanData = await tryLanPortal(q);
+        if (lanData) {
+          loader.classList.add('hidden');
+          renderEmployeeData(lanData);
+          return;
+        }
 
+        // 2. Query langsung ke Supabase Cloud / Master Koperasi MSL
+        const cloudRes = await fetchCloudEmployeePortal(q);
         loader.classList.add('hidden');
-        if (!res.ok || json.status !== 'success') {
-          errBox.textContent = json.error || 'Data karyawan tidak ditemukan. Periksa kembali NIK atau No HP Anda.';
+
+        if (cloudRes.notFound) {
+          errBox.textContent = 'Data karyawan tidak ditemukan. Pastikan NIK (contoh: 52/5221/0911/324) atau Nama sesuai daftar karyawan PT. MSL.';
           errBox.classList.remove('hidden');
           return;
         }
 
-        renderEmployeeData(json.data);
+        if (cloudRes.candidates) {
+          const listEl = document.getElementById('candidateListItems');
+          listEl.innerHTML = cloudRes.candidates.map(c => `
+            <button type="button" onclick="selectCandidate('${escapeHtml(c.code || c.name)}')" class="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors flex items-center justify-between gap-2">
+              <div>
+                <div class="font-bold text-xs text-stone-900">${escapeHtml(c.name)}</div>
+                <div class="text-[10px] text-stone-500">${escapeHtml(cleanAddressText(c.address))}</div>
+              </div>
+              <span class="font-mono text-[10.5px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded shrink-0">${escapeHtml(c.code)}</span>
+            </button>
+          `).join('');
+          candidateBox.classList.remove('hidden');
+          return;
+        }
+
+        renderEmployeeData(cloudRes.data);
       } catch (err) {
         loader.classList.add('hidden');
-        errBox.textContent = 'Gagal terhubung ke server koperasi: ' + err.message;
+        errBox.textContent = 'Gagal memuat data koperasi: ' + (err.message || 'Periksa koneksi internet Anda.');
         errBox.classList.remove('hidden');
       }
+    }
+
+    function selectCandidate(code) {
+      handleSearch(null, code);
     }
 
     function renderEmployeeData(data) {
       currentEmployeeData = data;
       const emp = data.employee;
       const resultSec = document.getElementById('resultSection');
+      const codeStr = emp.code || emp.id;
+
+      const allowance = Math.min(MAX_ALLOWANCE, Number(emp.monthly_allowance) || MAX_ALLOWANCE);
+      const balance = Math.min(allowance, Math.max(0, Number(emp.deposit_balance) || 0));
+      const spent = Math.max(Number(emp.spent_this_month) || 0, allowance - balance);
 
       document.getElementById('empName').textContent = emp.name;
-      document.getElementById('empCode').textContent = emp.code || emp.id;
-      document.getElementById('empStore').textContent = emp.store_name || 'Semua Cabang';
-      document.getElementById('empBalance').textContent = formatRupiah(emp.deposit_balance);
-      document.getElementById('empAllowance').textContent = formatRupiah(emp.monthly_allowance);
-      document.getElementById('barcodeCodeText').textContent = emp.code || emp.id;
+      document.getElementById('empCode').textContent = codeStr;
+      document.getElementById('empMetaBadge').textContent = cleanAddressText(emp.address);
+      document.getElementById('empBalance').textContent = formatRupiah(balance);
+      document.getElementById('empAllowance').textContent = formatRupiah(allowance);
+      document.getElementById('barcodeCodeText').textContent = codeStr;
 
-      // Render Barcode SVG using JsBarcode
+      const monthLabel = new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+      document.getElementById('resetMonthBadge').textContent = 'Kuota ' + monthLabel;
+
+      // Render 1D Barcode (CODE128)
       try {
-        JsBarcode('#barcodeSvg', emp.code || emp.id, {
+        JsBarcode('#barcodeSvg', codeStr, {
           format: 'CODE128',
-          width: 2,
-          height: 48,
+          width: 1.7,
+          height: 44,
           displayValue: false,
           margin: 0
         });
       } catch (e) {
-        console.warn('Barcode render fallback:', e);
+        console.warn('Barcode error:', e);
       }
 
-      // Spending & Progress
-      const allowance = Number(emp.monthly_allowance) || 2000000;
-      const spent = Number(emp.spent_this_month) || 0;
-      const balance = Number(emp.deposit_balance) || 0;
-      const percent = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
+      // Render 2D QR Code
+      try {
+        const qrCanvas = document.getElementById('qrCanvas');
+        if (window.QRCode && qrCanvas) {
+          QRCode.toCanvas(qrCanvas, codeStr, { width: 56, margin: 0 });
+        }
+      } catch (e) {
+        console.warn('QR error:', e);
+      }
 
+      // Render Last Purchase Card (Barang Terakhir Dibeli & Nominalnya)
+      const lastTrx = data.last_transaction || ((data.transactions && data.transactions.length > 0) ? data.transactions[0] : null);
+      const lastBox = document.getElementById('lastPurchaseContainer');
+      const lastDateBadge = document.getElementById('lastTrxDateBadge');
+
+      if (!lastTrx) {
+        lastDateBadge.textContent = 'Belum Belanja';
+        lastBox.innerHTML = '<div class="py-3 text-center text-stone-400">Belum ada riwayat pembelian barang tercatat.</div>';
+      } else {
+        const dt = new Date(lastTrx.created_at);
+        const dtFormatted = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) + ' • ' +
+                            dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        lastDateBadge.textContent = dtFormatted;
+
+        const items = Array.isArray(lastTrx.items) ? lastTrx.items : [];
+        const itemsHtml = items.length > 0
+          ? items.map(it => {
+              const nm = escapeHtml(it.name || it.product_name || 'Barang');
+              const q = Number(it.qty) || 1;
+              const unit = escapeHtml(it.unit || 'Pcs');
+              const sub = Number(it.subtotal || it.subtotal_item) || (q * (Number(it.price || it.price_applied || it.unit_price) || 0));
+              return `
+                <div class="flex items-center justify-between py-1 text-xs">
+                  <div class="text-stone-800 font-semibold pr-2">
+                    <span class="font-mono text-emerald-800 font-bold">${q} ${unit}</span> × ${nm}
+                  </div>
+                  <div class="font-mono font-bold text-stone-900 shrink-0">${formatRupiah(sub)}</div>
+                </div>
+              `;
+            }).join('')
+          : '<div class="text-[11px] text-stone-500 italic py-1">Rincian item tercatat pada nota kasir</div>';
+
+        lastBox.innerHTML = `
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-[10.5px] text-stone-500">
+              <span>Nota: <b class="font-mono text-stone-700">${escapeHtml(lastTrx.receipt_number)}</b></span>
+              <span>📍 <b>${escapeHtml(getStoreLabel(lastTrx.store_id))}</b></span>
+            </div>
+            <div class="bg-amber-50/60 rounded-xl px-3 py-2 border border-amber-200/70 divide-y divide-amber-200/50">
+              ${itemsHtml}
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs font-extrabold text-[#5c3c26]">Total Nominal Belanja Terakhir:</span>
+              <span class="font-mono text-base font-black text-rose-700">${formatRupiah(lastTrx.grand_total)}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      // Render Progress Bar
+      const percent = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
       document.getElementById('spentAmount').textContent = formatRupiah(spent);
       document.getElementById('remainingAmount').textContent = formatRupiah(balance);
       document.getElementById('percentBadge').textContent = percent + '% Terpakai';
       document.getElementById('utilizationBar').style.width = percent + '%';
 
-      // Transactions List
+      // Render Monthly Transactions List with item names
       const trxContainer = document.getElementById('trxListContainer');
       const trxs = data.transactions || [];
-      document.getElementById('trxCountBadge').textContent = trxs.length + ' Transaksi';
+      document.getElementById('trxCountBadge').textContent = trxs.length + ' Nota';
 
       if (trxs.length === 0) {
-        trxContainer.innerHTML = '<div class="py-4 text-center text-stone-400 text-xs">Belum ada transaksi belanja bulan ini.</div>';
+        trxContainer.innerHTML = '<div class="py-4 text-center text-stone-400 text-xs">Belum ada transaksi potong saldo bulan ini.</div>';
       } else {
         trxContainer.innerHTML = trxs.map(t => {
-          const dateStr = new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-          const timeStr = new Date(t.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-          const itemCount = (t.items || []).reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
+          const d = new Date(t.created_at);
+          const dateStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+          const timeStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+          const itemList = (t.items || []).map(it => `${Number(it.qty) || 1}x ${it.product_name || it.name || 'Barang'}`).join(', ');
           return `
-            <div class="py-2.5 flex items-center justify-between">
-              <div>
-                <div class="font-bold text-[#4d3221]">${t.receipt_number}</div>
-                <div class="text-[10px] text-stone-500 font-medium">${dateStr} ${timeStr} • ${itemCount} Barang</div>
+            <div class="py-2.5 space-y-1">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="font-bold text-[#4d3221] font-mono text-[11.5px]">${escapeHtml(t.receipt_number)}</div>
+                  <div class="text-[10px] text-stone-500 font-medium">${dateStr} ${timeStr} • ${escapeHtml(getStoreLabel(t.store_id))}</div>
+                </div>
+                <div class="text-right">
+                  <div class="font-mono font-bold text-rose-700">-${formatRupiah(t.grand_total)}</div>
+                  <div class="text-[9px] font-extrabold text-emerald-700 uppercase">Potong Saldo</div>
+                </div>
               </div>
-              <div class="text-right">
-                <div class="font-mono font-bold text-red-700">-${formatRupiah(t.grand_total)}</div>
-                <div class="text-[9.5px] font-extrabold text-emerald-700 uppercase">Potong Saldo</div>
-              </div>
+              ${itemList ? `<div class="text-[10.5px] text-stone-600 bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">${escapeHtml(itemList)}</div>` : ''}
             </div>
           `;
         }).join('');
@@ -332,15 +651,10 @@
     function downloadCardImage() {
       const card = document.getElementById('cardContainer');
       if (!card) return;
-
-      html2canvas(card, {
-        scale: 2,
-        backgroundColor: null,
-        useCORS: true
-      }).then(canvas => {
+      html2canvas(card, { scale: 2, backgroundColor: null, useCORS: true }).then(canvas => {
         const link = document.createElement('a');
-        const code = currentEmployeeData?.employee?.code || 'Karyawan';
-        link.download = `Kartu_Belanja_${code}.png`;
+        const code = (currentEmployeeData?.employee?.code || 'Karyawan').replace(/[^a-zA-Z0-9_-]/g, '_');
+        link.download = `Kartu_Koperasi_MSL_${code}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
       }).catch(err => {
@@ -348,7 +662,6 @@
       });
     }
 
-    // Auto-search if query param ?q= is present in URL
     window.addEventListener('DOMContentLoaded', () => {
       const urlParams = new URLSearchParams(window.location.search);
       const q = urlParams.get('q');

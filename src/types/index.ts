@@ -140,9 +140,13 @@ export interface Customer {
   credit_limit?: number;
   current_receivable?: number;
   current_debt?: number;
-  deposit_balance?: number; // Saldo Simpanan / Deposit Anggota Terpusat
-  monthly_allowance?: number; // Plafon Saldo Karyawan Bulanan (default Rp 2.000.000)
+  deposit_balance?: number; // Saldo Simpanan / Deposit Anggota Terpusat (Karyawan maks Rp 2.000.000)
+  monthly_allowance?: number; // Plafon Saldo Karyawan Bulanan (maks Rp 2.000.000, reset tiap tgl 1)
   last_allowance_reset?: string; // Format "YYYY-MM" (misal "2026-11")
+  unit_profile?: string; // Unit kebun/pabrik, misal "MSL INTI-1", "MSL PLASMA MUNGGU", "MSL MILL-1"
+  afdeling?: string; // Afdeling / Divisi, misal "A".."L", "UMUM", "MUNGGU", "TOYU", "TUALAN", "MILL"
+  job_code?: string; // Jabatan karyawan, misal "MANDOR PANEN", "PEMANEN", "SATPAM"
+  emp_status?: string; // Status kepegawaian, misal "KT", "KK", "KP"
   discount_percent?: number; // Persentase diskon member (misal 5 untuk 5%)
   notes?: string;
   created_at?: string;

@@ -63,43 +63,60 @@ export const DEFAULT_REGISTERED_STORES: RegisteredStoreInfo[] = [
   },
   {
     id: 'store-koperasimsl',
-    name: 'Koperasi MSL',
-    branch: 'Toko Utama (MSL-01)',
+    name: 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI',
+    branch: 'Bente Tualan, Kec. Long Kali, Kab. Paser (Toko Utama)',
     branchId: 'MSL-01',
-    ownerName: 'Pengurus Koperasi MSL',
-    phone: '08123456789',
+    ownerName: 'SATRIA HARDIANSYAH',
+    phone: '-',
     subdomain: 'koperasimsl',
     onlineDomain: 'https://koperasiMSL.ketokopos.online',
     localServer: 'http://localhost:5858',
-    licensePlan: 'PRO KOPERASI (1.500 Karyawan)',
-    adminUser: 'admin (Pengurus Koperasi)',
-    cashierUser: 'kasir (Kasir Toko Utama MSL)',
-    productsCount: '0 Produk (Siap Input Data)',
+    licensePlan: 'PRO KOPERASI (1.601 Karyawan)',
+    adminUser: 'SATRIA HARDIANSYAH (Admin)',
+    cashierUser: 'SINTA NELA (Kasir Utama)',
+    productsCount: '308 Produk Koperasi',
     status: 'ONLINE',
     isClean: true,
     clusterId: 'cluster-koperasi-msl',
-    clusterName: 'Cluster Koperasi MSL'
+    clusterName: 'Cluster Koperasi PT. MSL'
   },
   {
     id: 'store-koperasimsl-cabang',
-    name: 'Koperasi MSL (Cabang 1)',
-    branch: 'Toko Cabang (MSL-02)',
+    name: 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI - MILL',
+    branch: 'Bente Tualan, Kec. Long Kali, Kab. Paser (Cabang Mill)',
     branchId: 'MSL-02',
-    ownerName: 'Pengurus Koperasi MSL',
-    phone: '08123456789',
+    ownerName: 'SATRIA HARDIANSYAH',
+    phone: '-',
     subdomain: 'koperasimsl-cabang',
     onlineDomain: 'https://koperasimsl-cabang.ketokopos.online',
     localServer: 'http://localhost:5858',
-    licensePlan: 'PRO KOPERASI (Cabang 1)',
-    adminUser: 'admin (Pengurus Cabang)',
-    cashierUser: 'kasir (Kasir Cabang MSL)',
-    productsCount: '0 Produk (Siap Input Data)',
+    licensePlan: 'PRO KOPERASI (Cabang Mill)',
+    adminUser: 'SATRIA HARDIANSYAH (Admin)',
+    cashierUser: 'NORBAYAH (Kasir Mill)',
+    productsCount: '308 Produk Koperasi',
     status: 'ONLINE',
     isClean: true,
     clusterId: 'cluster-koperasi-msl',
-    clusterName: 'Cluster Koperasi MSL'
+    clusterName: 'Cluster Koperasi PT. MSL'
   }
 ];
+
+function mergeWithDefaultStores(list: RegisteredStoreInfo[]): RegisteredStoreInfo[] {
+  const byId = new Map<string, RegisteredStoreInfo>();
+  for (const item of list) {
+    if (item && item.id) byId.set(item.id, item);
+  }
+  // Pastikan definisi resmi toko utama & koperasi MSL selalu up-to-date
+  for (const def of DEFAULT_REGISTERED_STORES) {
+    const existing = byId.get(def.id);
+    if (!existing || def.id.startsWith('store-koperasimsl')) {
+      byId.set(def.id, { ...(existing || {}), ...def });
+    } else if (!existing.clusterId || (def.id !== 'store-01' && existing.clusterId === 'cluster-default')) {
+      byId.set(def.id, { ...existing, clusterId: def.clusterId, clusterName: def.clusterName });
+    }
+  }
+  return Array.from(byId.values());
+}
 
 /**
  * Get current list of registered stores from localStorage with fallback
@@ -111,7 +128,7 @@ export function getStoredStores(): RegisteredStoreInfo[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return mergeWithDefaultStores(parsed);
       }
     }
   } catch {}
@@ -233,10 +250,11 @@ export async function fetchStoresFromCloud(): Promise<RegisteredStoreInfo[]> {
 
     const cloudStores: RegisteredStoreInfo[] = data.metadata.stores;
     if (Array.isArray(cloudStores) && cloudStores.length > 0) {
+      const merged = mergeWithDefaultStores(cloudStores);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('ketoko_registered_stores', JSON.stringify(cloudStores));
+        localStorage.setItem('ketoko_registered_stores', JSON.stringify(merged));
       }
-      return cloudStores;
+      return merged;
     }
   } catch (err) {
     console.warn('[StoreRegistry] Gagal fetch stores dari cloud:', err);

@@ -71,7 +71,10 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   // Employee Allowance Report States
   const [employeeReport, setEmployeeReport] = useState<EmployeeAllowanceReport | null>(null);
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
-  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXHAUSTED'>('ALL');
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXHAUSTED' | 'SHOPPED' | 'NOT_SHOPPED'>('ALL');
+  const [employeeMonth, setEmployeeMonth] = useState<string>(() => employeeAllowanceService.getCurrentMonthKey());
+  const [employeeAfdelingFilter, setEmployeeAfdelingFilter] = useState<string>('ALL');
+  const [showAfdelingSummaryTable, setShowAfdelingSummaryTable] = useState(true);
   const [isResettingEmployees, setIsResettingEmployees] = useState(false);
   
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all' | 'custom'>('all');
@@ -614,9 +617,9 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   // Load and refresh Employee Allowance Report
   useEffect(() => {
     if (isOpen) {
-      employeeAllowanceService.generateMonthlyReport(customers, transactions).then(setEmployeeReport).catch(console.error);
+      employeeAllowanceService.generateMonthlyReport(customers, transactions, employeeMonth).then(setEmployeeReport).catch(console.error);
     }
-  }, [isOpen, activeTab, transactions, customers]);
+  }, [isOpen, activeTab, transactions, customers, employeeMonth]);
 
   const filteredEmployees = useMemo(() => {
     if (!employeeReport) return [];
@@ -625,17 +628,39 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       list = list.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE');
     } else if (employeeStatusFilter === 'EXHAUSTED') {
       list = list.filter((e: EmployeeAllowanceRecord) => e.status === 'EXHAUSTED');
+    } else if (employeeStatusFilter === 'SHOPPED') {
+      list = list.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0);
+    } else if (employeeStatusFilter === 'NOT_SHOPPED') {
+      list = list.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0);
+    }
+    if (employeeAfdelingFilter !== 'ALL') {
+      list = list.filter((e: EmployeeAllowanceRecord) => (e.afdeling || 'UMUM').toUpperCase() === employeeAfdelingFilter.toUpperCase());
     }
     const q = employeeSearchTerm.trim().toLowerCase();
     if (q) {
       list = list.filter((e: EmployeeAllowanceRecord) =>
         e.name.toLowerCase().includes(q) ||
         e.code.toLowerCase().includes(q) ||
-        e.phone.includes(q)
+        e.phone.includes(q) ||
+        (e.afdeling && e.afdeling.toLowerCase().includes(q))
       );
     }
     return list;
-  }, [employeeReport, employeeStatusFilter, employeeSearchTerm]);
+  }, [employeeReport, employeeStatusFilter, employeeAfdelingFilter, employeeSearchTerm]);
+
+  const afdelingOptions = useMemo(() => {
+    if (!employeeReport) return [];
+    const set = new Set<string>();
+    employeeReport.employees.forEach((e: EmployeeAllowanceRecord) => {
+      set.add((e.afdeling || 'UMUM').toUpperCase());
+    });
+    return Array.from(set).sort();
+  }, [employeeReport]);
+
+  const afdelingSummaries = useMemo(() => {
+    if (!employeeReport) return [];
+    return employeeAllowanceService.generateAfdelingSummaries(employeeReport.employees);
+  }, [employeeReport]);
 
   const handleResetAllEmployeesFromReport = async () => {
     const totalEmp = employeeReport?.summary.total_employees || 0;
@@ -683,8 +708,12 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     const periodLabel = dateFilter === 'custom' ? `${startDate} s/d ${endDate}` : dateFilter === 'today' ? 'Hari Ini (' + new Date().toLocaleDateString('id-ID') + ')' : dateFilter === '7days' ? '7 Hari Terakhir' : dateFilter === 'month' ? 'Bulan Ini (' + new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ')' : 'Seluruh Waktu';
 
     if (activeTab === 'employee_allowance') {
-      if (employeeReport) {
-        employeeAllowanceService.printEmployeeAllowanceReport(employeeReport, storeProfile?.name || 'Koperasi MSL');
+      const rpt = employeeReport;
+      if (rpt) {
+        employeeAllowanceService.printEmployeeAllowanceReport(
+          { ...rpt, employees: filteredEmployees },
+          'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI'
+        );
       }
       return;
     }
@@ -901,7 +930,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const handleExportCSV = () => {
     if (activeTab === 'employee_allowance') {
       if (employeeReport) {
-        employeeAllowanceService.exportEmployeeAllowanceCSV(employeeReport);
+        employeeAllowanceService.exportEmployeeAllowanceCSV({ ...employeeReport, employees: filteredEmployees });
       }
       return;
     }
@@ -2228,8 +2257,26 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Action Reset All */}
-                <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+                {/* Quick Action Reset All & Print Afdeling Payroll */}
+                <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const savedStore = localStorage.getItem('ketoko_store_profile');
+                      const sp: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
+                      employeeAllowanceService.printAfdelingSummaryReport(
+                        afdelingSummaries,
+                        employeeReport?.monthFormatted || 'November 2026',
+                        sp?.name || 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI'
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-950 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs active:scale-95 border border-emerald-600/50"
+                    title="Cetak format A4 Rekapitulasi Pemakaian Belanja per Afdeling untuk Bagian Payroll / HRD"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>🖨️ Cetak Rekap Payroll Afdeling</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleResetAllEmployeesFromReport}
@@ -2319,15 +2366,47 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     />
                   </div>
 
+                  <input
+                    type="month"
+                    value={employeeMonth}
+                    max={employeeAllowanceService.getCurrentMonthKey()}
+                    onChange={(e) => setEmployeeMonth(e.target.value || employeeAllowanceService.getCurrentMonthKey())}
+                    title="Pilih periode bulan (histori potong gaji bulan lalu tetap utuh walau saldo sudah di-reset Tgl 1)"
+                    className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-xs font-bold text-amber-950 focus:border-amber-600"
+                  />
+
                   <select
                     value={employeeStatusFilter}
                     onChange={(e) => setEmployeeStatusFilter(e.target.value as any)}
                     className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 focus:border-emerald-600"
                   >
                     <option value="ALL">Semua Status ({employeeReport?.employees.length || 0})</option>
+                    <option value="SHOPPED">🛒 Sudah Belanja / Potong Gaji ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0).length || 0})</option>
+                    <option value="NOT_SHOPPED">⚪ Belum Belanja ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0).length || 0})</option>
                     <option value="ACTIVE">🟢 Masih Ada Kuota ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE').length || 0})</option>
                     <option value="EXHAUSTED">🔴 Kuota Habis (Rp 0) ({employeeReport?.summary.exhausted_count || 0})</option>
                   </select>
+
+                  {/* Filter Afdeling */}
+                  <select
+                    value={employeeAfdelingFilter}
+                    onChange={(e) => setEmployeeAfdelingFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-950 focus:border-emerald-600"
+                  >
+                    <option value="ALL">Semua Afdeling ({employeeReport?.employees.length || 0})</option>
+                    {afdelingOptions.map(afd => {
+                      const count = (employeeReport?.employees || []).filter(e => (e.afdeling || 'UMUM').toUpperCase() === afd).length;
+                      return <option key={afd} value={afd}>Afdeling {afd} ({count} Org)</option>;
+                    })}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAfdelingSummaryTable(prev => !prev)}
+                    className="px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 text-xs font-bold text-stone-700 hover:bg-stone-100 transition-colors"
+                  >
+                    {showAfdelingSummaryTable ? '📊 Sembunyikan Rekap Afdeling' : '📊 Tampilkan Rekap Afdeling'}
+                  </button>
                 </div>
 
                 <div className="flex items-center space-x-2">
@@ -2336,6 +2415,68 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* Tabel Ringkasan Pemakaian Per Afdeling (Dasar Potongan Payroll HRD) */}
+              {showAfdelingSummaryTable && (
+                <div className="bg-white rounded-2xl border border-emerald-300 shadow-sm overflow-hidden animate-fadeIn">
+                  <div className="py-2.5 px-4 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-base">📋</span>
+                      <span className="text-xs font-black uppercase tracking-wider">
+                        Rekapitulasi Pemakaian Kuota Belanja Per Afdeling (Dasar Potong Gaji Payroll)
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full text-emerald-100">
+                      Total: {afdelingSummaries.length} Divisi/Afdeling
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-[300px]">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead className="sticky top-0 bg-[#e6f4ea] text-emerald-950 z-10 font-bold border-b border-emerald-200">
+                        <tr>
+                          <th className="py-2 px-3 text-center w-12">No</th>
+                          <th className="py-2 px-3 text-left">Unit Kerja</th>
+                          <th className="py-2 px-4 text-left">Afdeling / Divisi</th>
+                          <th className="py-2 px-3 text-center">Jumlah Karyawan</th>
+                          <th className="py-2 px-3 text-right">Total Plafon</th>
+                          <th className="py-2 px-3 text-right text-rose-700">Total Terpakai (Potong Gaji)</th>
+                          <th className="py-2 px-3 text-right text-emerald-800">Sisa Saldo</th>
+                          <th className="py-2 px-3 text-center">Penyerapan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-emerald-100 font-medium">
+                        {afdelingSummaries.map((s, idx) => (
+                          <tr key={idx} className="hover:bg-emerald-50/60 transition-colors">
+                            <td className="py-2 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
+                            <td className="py-2 px-3 font-bold text-stone-800">{s.unit}</td>
+                            <td className="py-2 px-4 font-black text-emerald-900">Afdeling {s.afdeling}</td>
+                            <td className="py-2 px-3 text-center font-mono font-bold text-stone-700">{s.totalEmployees} Org</td>
+                            <td className="py-2 px-3 text-right font-mono text-stone-700">{formatRupiah(s.totalAllowance)}</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-rose-700">{formatRupiah(s.totalSpent)}</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-800">{formatRupiah(s.totalRemaining)}</td>
+                            <td className="py-2 px-3 text-center font-mono font-bold text-stone-600">{s.utilizationRate}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-[#dcfce7] font-black text-emerald-950 border-t-2 border-emerald-500">
+                        <tr>
+                          <td colSpan={3} className="py-2.5 px-3 uppercase text-xs">TOTAL KESELURUHAN</td>
+                          <td className="py-2.5 px-3 text-center font-mono">{afdelingSummaries.reduce((a, b) => a + b.totalEmployees, 0)} Org</td>
+                          <td className="py-2.5 px-3 text-right font-mono">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalAllowance, 0))}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-rose-800">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalSpent, 0))}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-emerald-900">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalRemaining, 0))}</td>
+                          <td className="py-2.5 px-3 text-center font-mono">
+                            {afdelingSummaries.reduce((a, b) => a + b.totalAllowance, 0) > 0 
+                              ? (afdelingSummaries.reduce((a, b) => a + b.totalSpent, 0) / afdelingSummaries.reduce((a, b) => a + b.totalAllowance, 0) * 100).toFixed(1)
+                              : 0}%
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Table of Employees */}
               <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">

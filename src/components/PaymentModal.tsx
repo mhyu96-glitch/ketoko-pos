@@ -16,12 +16,19 @@ import {
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
 import type { Customer } from '../types';
-import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
+import {
+  filterCustomersForStore,
+  getCurrentActiveStoreId,
+  MAX_EMPLOYEE_ALLOWANCE,
+  clampEmployeeBalance,
+  parseEmployeeMeta
+} from '../utils/customerAccess';
 
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   grandTotal: number;
+  memberId?: string;
   customerName?: string;
   customDate?: string;
   onProcessPayment: (paymentData: {
@@ -41,6 +48,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   isOpen,
   onClose,
   grandTotal,
+  memberId = '',
   customerName: initialCustomerName = '',
   customDate,
   onProcessPayment,
@@ -71,19 +79,31 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const changeReturned = Math.max(0, cashGiven - grandTotal);
   const remainingTempo = Math.max(0, grandTotal - dpGiven);
 
+  const selectedSaldoCustomer = customerList.find((c) => {
+    if (memberId && (c.id === memberId || c.code?.toLowerCase() === memberId.toLowerCase())) {
+      return true;
+    }
+    const q = customerName.trim().toLowerCase();
+    if (!q) return false;
+    return c.name.toLowerCase() === q || c.code?.toLowerCase() === q;
+  });
+
   const isFormValid = () => {
     if (paymentMethod === 'CASH') return cashGiven >= grandTotal;
     if (paymentMethod === 'TEMPO') return customerName.trim().length > 0 && dueDate.length > 0;
     if (paymentMethod === 'SALDO') {
-      const selected = customerList.find(c => c.name.toLowerCase() === customerName.toLowerCase());
-      return Boolean(selected && (Number(selected.deposit_balance) || 0) >= grandTotal);
+      if (!selectedSaldoCustomer) return false;
+      const availableBalance = selectedSaldoCustomer.type === 'KARYAWAN'
+        ? clampEmployeeBalance(selectedSaldoCustomer.deposit_balance, selectedSaldoCustomer.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
+        : (Number(selectedSaldoCustomer.deposit_balance) || 0);
+      return availableBalance >= grandTotal;
     }
     return true;
   };
 
   useEffect(() => {
     if (isOpen) {
-      setPaymentMethod('CASH');
+      setPaymentMethod(memberId ? 'SALDO' : 'CASH');
       setCashGiven(grandTotal);
       setDpGiven(0);
       setNotes('');
@@ -110,7 +130,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         }, 100);
       }
     }
-  }, [isOpen, grandTotal, initialCustomerName, isTouchscreenMode]);
+  }, [isOpen, grandTotal, memberId, initialCustomerName, isTouchscreenMode]);
 
   if (!isOpen) return null;
 
@@ -135,6 +155,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           payment_method: paymentMethod,
           cash_given: paymentMethod === 'CASH' ? cashGiven : grandTotal,
           change_returned: paymentMethod === 'CASH' ? changeReturned : 0,
+          customer_name: paymentMethod === 'SALDO' ? (selectedSaldoCustomer?.name || customerName.trim()) : undefined,
           custom_created_at: customDate || undefined
         });
       }
@@ -420,6 +441,101 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
           )}
 
+          {/* SALDO KUOTA KARYAWAN / ANGGOTA SECTION */}
+          {paymentMethod === 'SALDO' && (() => {
+            const availSaldo = selectedSaldoCustomer
+              ? (selectedSaldoCustomer.type === 'KARYAWAN'
+                  ? clampEmployeeBalance(selectedSaldoCustomer.deposit_balance, selectedSaldoCustomer.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
+                  : (Number(selectedSaldoCustomer.deposit_balance) || 0))
+              : 0;
+            const afterSaldo = Math.max(0, availSaldo - grandTotal);
+            const isInsufficient = Boolean(selectedSaldoCustomer && availSaldo < grandTotal);
+            const empMeta = selectedSaldoCustomer ? parseEmployeeMeta(selectedSaldoCustomer) : null;
+
+            return (
+              <div className="space-y-3 bg-emerald-50/80 p-3.5 rounded-2xl border border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-emerald-900 font-bold text-xs">
+                    <Wallet className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>Potong Saldo Kuota Karyawan / Anggota</span>
+                  </div>
+                  <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                    Maks Rp 2 Jt • Reset Tgl 1
+                  </span>
+                </div>
+
+                {!memberId && (
+                  <div>
+                    <label className="text-[11px] font-bold text-emerald-950 mb-1 block">
+                      Cari / Scan NIK atau Nama Karyawan <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="saldo-customer-suggestions"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Ketik NIK (52/5221/...) atau Nama Karyawan"
+                      className="w-full px-3 py-2 bg-white text-[#3d2617] font-bold text-xs rounded-xl border border-emerald-300 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200 shadow-2xs"
+                    />
+                    <datalist id="saldo-customer-suggestions">
+                      {customerList.slice(0, 300).map((c) => (
+                        <option key={c.id} value={c.code || c.name}>
+                          {c.name} ({c.code}) — Saldo: {formatRupiah(Number(c.deposit_balance) || 0)}
+                        </option>
+                      ))}
+                    </datalist>
+                  </div>
+                )}
+
+                {selectedSaldoCustomer ? (
+                  <div className="bg-white rounded-xl p-3 border border-emerald-200 space-y-2 text-xs">
+                    <div className="flex items-start justify-between gap-2 border-b border-stone-100 pb-2">
+                      <div>
+                        <div className="font-black text-sm text-stone-900">{selectedSaldoCustomer.name}</div>
+                        <div className="font-mono text-[11px] text-emerald-800 font-bold">
+                          NIK: {selectedSaldoCustomer.code || selectedSaldoCustomer.id}
+                        </div>
+                        {empMeta && empMeta.clean_address !== '-' && (
+                          <div className="text-[10px] text-stone-500 mt-0.5">{empMeta.clean_address}</div>
+                        )}
+                      </div>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                        {selectedSaldoCustomer.type === 'KARYAWAN' ? 'KARYAWAN' : 'MEMBER'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-600 font-semibold">Sisa Kuota Saat Ini:</span>
+                      <span className="font-mono font-black text-emerald-800 text-sm">{formatRupiah(availSaldo)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-600 font-semibold">Potong Belanja Ini:</span>
+                      <span className="font-mono font-bold text-rose-700">-{formatRupiah(grandTotal)}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1.5 border-t border-dashed border-emerald-200">
+                      <span className="font-extrabold text-emerald-950">Sisa Kuota Setelah Belanja:</span>
+                      <span className={`font-mono font-black text-base ${isInsufficient ? 'text-rose-700' : 'text-emerald-700'}`}>
+                        {isInsufficient ? 'Saldo Kurang!' : formatRupiah(afterSaldo)}
+                      </span>
+                    </div>
+
+                    {isInsufficient && (
+                      <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[11px] flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                        <span>Sisa saldo tidak cukup (Kurang {formatRupiah(grandTotal - availSaldo)}). Plafon maks Rp 2.000.000/bulan.</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-semibold text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>Pilih atau scan kartu/barcode karyawan terlebih dahulu untuk memotong saldo kuota.</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* TEMPO / PIUTANG PELANGGAN SECTION */}
           {paymentMethod === 'TEMPO' && (
             <div className="space-y-3 bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200">
@@ -542,6 +658,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             className={`w-full py-3.5 text-white font-black text-sm rounded-2xl shadow-lg flex items-center justify-center space-x-2 transition-all active:scale-[0.98] ${
               paymentMethod === 'TEMPO'
                 ? 'bg-[#b45309] hover:bg-[#92400e] shadow-[#b45309]/20'
+                : paymentMethod === 'SALDO'
+                ? 'bg-emerald-700 hover:bg-emerald-800 shadow-emerald-700/20'
                 : 'bg-[#96633b] hover:bg-[#83532e] shadow-[#96633b]/20'
             } disabled:opacity-40 disabled:cursor-not-allowed`}
           >
@@ -551,6 +669,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <>
                 <CheckCircle className="w-5 h-5 text-amber-200" />
                 <span>SIMPAN BON TEMPO (SISA: {formatRupiah(remainingTempo)})</span>
+              </>
+            ) : paymentMethod === 'SALDO' ? (
+              <>
+                <CheckCircle className="w-5 h-5 text-emerald-200" />
+                <span>POTONG SALDO & CETAK STRUK ({formatRupiah(grandTotal)})</span>
               </>
             ) : (
               <>

@@ -17,8 +17,10 @@ import { generateBarcodeSvg, drawBarcodeToCanvas } from '../utils/barcodeGenerat
 import { formatRupiah } from '../services/escposService';
 import {
   checkCustomerBranchAccess,
+  formatCustomerAddressDisplay,
   getCurrentActiveStoreId,
   getStoreDisplayName,
+  MAX_EMPLOYEE_ALLOWANCE,
   normalizeAccessScope,
   normalizeStoreId
 } from '../utils/customerAccess';
@@ -35,9 +37,10 @@ export const MemberCardModal: React.FC<MemberCardModalProps> = ({
   isOpen,
   onClose,
   member,
-  storeName = 'KOPERASI KARYAWAN BERKAH SEJAHTERA',
+  storeName,
   onApplyToPos
 }) => {
+  const resolvedStoreName = storeName || getStoreDisplayName(getCurrentActiveStoreId());
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [cardTheme, setCardTheme] = useState<'emerald' | 'indigo' | 'dark'>('emerald');
@@ -47,10 +50,12 @@ export const MemberCardModal: React.FC<MemberCardModalProps> = ({
 
   const memberCode = member?.code || member?.id || 'MBR-001';
   const memberName = member?.name || 'Pelanggan Member';
-  const memberPhone = member?.phone && member.phone !== '-' ? member.phone : '0812-xxxx-xxxx';
-  const memberAddress = member?.address && member.address !== '-' ? member.address : 'Samarinda Kota';
-  const creditLimit = member?.credit_limit || 1500000;
-  const depositBalance = Number(member?.deposit_balance) || 0;
+  const memberPhone = member?.phone && member.phone !== '-' ? member.phone : '-';
+  const cleanAddr = formatCustomerAddressDisplay(member?.address);
+  const memberAddress = cleanAddr !== '-' ? cleanAddr : 'Bente Tualan, Kab. Paser';
+  const isEmployee = member?.type === 'KARYAWAN';
+  const creditLimit = isEmployee ? Math.min(MAX_EMPLOYEE_ALLOWANCE, Number(member?.monthly_allowance || member?.credit_limit) || MAX_EMPLOYEE_ALLOWANCE) : (member?.credit_limit || 1500000);
+  const depositBalance = isEmployee ? Math.min(creditLimit, Math.max(0, Number(member?.deposit_balance) || 0)) : (Number(member?.deposit_balance) || 0);
   const homeStoreId = normalizeStoreId(member?.store_id);
   const homeStoreName = getStoreDisplayName(homeStoreId, member?.store_name);
   const accessScope = normalizeAccessScope(member?.access_scope);
@@ -217,8 +222,8 @@ export const MemberCardModal: React.FC<MemberCardModalProps> = ({
 
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 22px "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(storeName.toUpperCase(), 98, 54);
+    ctx.font = 'bold 20px "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(resolvedStoreName.toUpperCase().slice(0, 42), 98, 54);
 
     ctx.fillStyle = theme === 'emerald' ? '#a7f3d0' : theme === 'indigo' ? '#c7d2fe' : '#e2e8f0';
     ctx.font = 'bold 12px "Segoe UI", Roboto, sans-serif';
@@ -389,9 +394,9 @@ export const MemberCardModal: React.FC<MemberCardModalProps> = ({
     ctx.fillRect(6, 6, canvas.width - 12, 44);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px "Segoe UI", sans-serif';
+    ctx.font = 'bold 14px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(storeName.toUpperCase(), canvas.width / 2, 32);
+    ctx.fillText(resolvedStoreName.toUpperCase().slice(0, 44), canvas.width / 2, 32);
 
     // Member Name & NIK
     ctx.fillStyle = '#0f172a';
@@ -504,7 +509,7 @@ Berikut adalah data kartu & barcode keanggotaan Koperasi Anda:
 3. Scanner kasir akan otomatis memindai barcode/QR dan mencatat belanja atau memotong saldo Anda secara otomatis.
 
 Terima kasih.
-*${storeName}*`;
+*${resolvedStoreName}*`;
 
     if (cleanPhone && cleanPhone.length >= 9) {
       const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
@@ -574,16 +579,16 @@ Terima kasih.
       <body>
         <div class="card-container">
           <div class="header">
-            <div class="store-name">${storeName}</div>
-            <div class="badge">KARTU ANGGOTA RESMI</div>
+            <div class="store-name">${resolvedStoreName}</div>
+            <div class="badge">${isEmployee ? 'KARTU KARYAWAN' : 'KARTU ANGGOTA'}</div>
           </div>
           <div class="body-content">
             <div class="member-info">
               <h2 class="member-name">${memberName}</h2>
               <div class="member-code">${memberCode}</div>
-              <div class="member-sub">📞 ${memberPhone}</div>
+              ${memberPhone !== '-' ? `<div class="member-sub">📞 ${memberPhone}</div>` : ''}
               <div class="member-sub">📍 ${memberAddress}</div>
-              <div class="member-sub" style="color: #6ee7b7; font-weight: bold; margin-top: 1mm;">💵 Saldo: ${formatRupiah(depositBalance)} • ${branchBadgeText}</div>
+              <div class="member-sub" style="color: #6ee7b7; font-weight: bold; margin-top: 1mm;">${isEmployee ? `Plafon Rp 2.000.000/Bln • Reset Tgl 1` : `💵 Saldo: ${formatRupiah(depositBalance)}`} • ${branchBadgeText}</div>
             </div>
             <div class="qr-box">
               <img src="${qrDataUrl}" alt="QR Member" />
@@ -711,8 +716,8 @@ Terima kasih.
                   ★
                 </div>
                 <div>
-                  <h4 className="text-xs sm:text-sm font-black tracking-wide text-white uppercase">{storeName}</h4>
-                  <p className="text-[10px] text-white/60 tracking-wider">KARTU ANGGOTA RESMI • DIGITAL ID</p>
+                  <h4 className="text-xs sm:text-sm font-black tracking-wide text-white uppercase">{resolvedStoreName}</h4>
+                  <p className="text-[10px] text-white/60 tracking-wider">KARTU BELANJA KARYAWAN • FISIK & DIGITAL</p>
                 </div>
               </div>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/30">

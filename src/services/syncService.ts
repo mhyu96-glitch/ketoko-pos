@@ -6,27 +6,111 @@ import type { Transaction, Product, Customer, MemberDepositMutation } from '../t
 import { lanService } from './lanService';
 import { notifySaleToTelegram } from './telegramService';
 import { resolveStoreFromCurrentHost } from './storeRegistry';
-import { normalizeStoreId, normalizeAccessScope, getStoreDisplayName, isCustomerBelongsToStoreOrCluster } from '../utils/customerAccess';
+import {
+  normalizeStoreId,
+  normalizeAccessScope,
+  getStoreDisplayName,
+  isCustomerBelongsToStoreOrCluster,
+  MAX_EMPLOYEE_ALLOWANCE,
+  clampEmployeeAllowance,
+  clampEmployeeBalance,
+  parseEmployeeMeta,
+  encodeEmployeeAddressWithReset
+} from '../utils/customerAccess';
+
+function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: Customer): Customer {
+  const sid = c.store_id ? String(c.store_id).trim() : fallbackStoreId;
+  const meta = parseEmployeeMeta(c);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const isEmployee = c.type === 'KARYAWAN' || existing?.type === 'KARYAWAN';
+
+  if (isEmployee) {
+    const allowance = clampEmployeeAllowance(
+      c.monthly_allowance ?? existing?.monthly_allowance ?? c.credit_limit ?? MAX_EMPLOYEE_ALLOWANCE
+    );
+    const resetMonth = meta.reset_month || existing?.last_allowance_reset || currentMonth;
+    const isNewMonth = resetMonth !== currentMonth;
+
+    let balance = allowance;
+    if (!isNewMonth) {
+      if (c.deposit_balance !== undefined && c.deposit_balance !== null) {
+        balance = clampEmployeeBalance(Number(c.deposit_balance), allowance);
+      } else if (c.current_debt !== undefined && c.current_debt !== null) {
+        balance = clampEmployeeBalance(allowance - (Number(c.current_debt) || 0), allowance);
+      } else if (existing?.deposit_balance !== undefined) {
+        balance = clampEmployeeBalance(existing.deposit_balance, allowance);
+      }
+    }
+
+    return {
+      ...(existing || {}),
+      ...c,
+      type: 'KARYAWAN',
+      store_id: sid,
+      store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
+      access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope ?? 'ALL_STORES'),
+      address: meta.clean_address,
+      credit_limit: allowance,
+      current_debt: isNewMonth ? 0 : Math.max(0, allowance - balance),
+      monthly_allowance: allowance,
+      deposit_balance: balance,
+      last_allowance_reset: isNewMonth ? currentMonth : resetMonth,
+      unit_profile: c.unit_profile || meta.unit_profile || existing?.unit_profile,
+      afdeling: c.afdeling || meta.afdeling || existing?.afdeling,
+      job_code: c.job_code || meta.job_code || existing?.job_code,
+      emp_status: c.emp_status || meta.emp_status || existing?.emp_status
+    };
+  }
+
+  return {
+    ...(existing || {}),
+    ...c,
+    store_id: sid,
+    store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
+    access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
+    address: meta.clean_address
+  };
+}
 
 function buildCustomerCloudPayload(c: Customer, fallbackStoreId: string, includeExtended: boolean) {
   const storeId = normalizeStoreId(c.store_id || fallbackStoreId);
+  const isEmployee = c.type === 'KARYAWAN';
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const allowance = isEmployee
+    ? clampEmployeeAllowance(c.monthly_allowance ?? c.credit_limit ?? MAX_EMPLOYEE_ALLOWANCE)
+    : (Number(c.credit_limit) || 0);
+  const balance = isEmployee
+    ? clampEmployeeBalance(c.deposit_balance ?? allowance, allowance)
+    : Number(c.deposit_balance !== undefined ? c.deposit_balance : 0);
+  const usedQuotaOrDebt = isEmployee
+    ? Math.max(0, allowance - balance)
+    : (Number(c.current_debt) || 0);
+  const encodedAddress = encodeEmployeeAddressWithReset(
+    c.address || '-',
+    c.last_allowance_reset || currentMonth,
+    isEmployee
+  );
+
+  // 11 kolom inti yang 100% dijamin ada di tabel Supabase `customers`
   const core = {
     id: String(c.id).trim(),
     store_id: storeId,
     code: c.code || '',
     name: c.name,
     phone: c.phone || '-',
-    address: c.address || '-',
+    address: encodedAddress,
     type: c.type || 'RETAIL',
-    credit_limit: Number(c.credit_limit) || 0,
-    current_debt: Number(c.current_debt) || 0,
-    deposit_balance: Number(c.deposit_balance !== undefined ? c.deposit_balance : 0),
+    credit_limit: allowance,
+    current_debt: usedQuotaOrDebt,
     created_at: c.created_at || new Date().toISOString(),
     updated_at: c.updated_at || new Date().toISOString()
   };
   if (!includeExtended) return core;
   return {
     ...core,
+    deposit_balance: balance,
+    monthly_allowance: isEmployee ? allowance : null,
+    last_allowance_reset: isEmployee ? (c.last_allowance_reset || currentMonth) : null,
     store_name: getStoreDisplayName(storeId, c.store_name),
     access_scope: normalizeAccessScope(c.access_scope),
     notes: c.notes || ''
@@ -206,12 +290,9 @@ export class SyncService {
       .on('broadcast', { event: 'customer_updated' }, async ({ payload }: any) => {
         const cust = payload as Customer;
         if (cust && cust.id) {
-          const normalizedCust: Customer = {
-            ...cust,
-            store_id: normalizeStoreId(cust.store_id),
-            store_name: getStoreDisplayName(cust.store_id, cust.store_name),
-            access_scope: normalizeAccessScope(cust.access_scope),
-          };
+          const activeStore = this.getActiveStoreId();
+          const existing = await db.customers.get(String(cust.id).trim()).catch(() => undefined);
+          const normalizedCust = hydrateCloudCustomer(cust, activeStore, existing);
           await db.customers.put(normalizedCust).catch(() => {});
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: normalizedCust }));
@@ -1729,7 +1810,18 @@ export class SyncService {
     }
 
     const balanceBefore = Number(cust.deposit_balance) || 0;
-    const balanceAfter = balanceBefore + amount;
+    if (cust.type === 'KARYAWAN') {
+      const maxCap = clampEmployeeAllowance(cust.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE);
+      if (balanceBefore + amount > maxCap) {
+        return {
+          success: false,
+          error: `Saldo kuota karyawan maksimal ${maxCap.toLocaleString('id-ID')} per bulan dan otomatis direset setiap Tanggal 1.`
+        };
+      }
+    }
+    const balanceAfter = cust.type === 'KARYAWAN'
+      ? clampEmployeeBalance(balanceBefore + amount, cust.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
+      : balanceBefore + amount;
     const now = new Date().toISOString();
     const activeStoreId = payload.store_id || this.getActiveStoreId();
     const activeStoreName = payload.store_name || getStoreDisplayName(activeStoreId);
@@ -1880,13 +1972,7 @@ export class SyncService {
           .filter((c) => isCustomerBelongsToStoreOrCluster(c.store_id || activeStoreId, activeStoreId))
           .map((c) => {
             const existing = localMap.get(String(c.id).trim());
-            const sid = c.store_id ? c.store_id.trim() : activeStoreId;
-            return {
-              ...c,
-              store_id: sid,
-              store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
-              access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
-            };
+            return hydrateCloudCustomer(c, activeStoreId, existing);
           });
 
         allCloudCustomers = allCloudCustomers.concat(normalizedBatch);
@@ -2203,12 +2289,17 @@ export class SyncService {
 
     try {
       const storeId = this.getActiveStoreId();
-      const { data: cloudTrx, error: trxErr } = await supabase
+      let trxQuery = supabase
         .from('transactions')
         .select('*')
-        .eq('store_id', storeId)
         .order('created_at', { ascending: false })
         .limit(limit);
+      if (storeId.startsWith('store-koperasimsl')) {
+        trxQuery = trxQuery.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+      } else {
+        trxQuery = trxQuery.eq('store_id', storeId);
+      }
+      const { data: cloudTrx, error: trxErr } = await trxQuery;
 
       if (trxErr) throw trxErr;
       if (!cloudTrx || cloudTrx.length === 0) return { count: 0 };
@@ -2277,7 +2368,7 @@ export class SyncService {
 
         formatted.push({
           id: String(t.id),
-          store_id: storeId,
+          store_id: t.store_id || storeId,
           receipt_number: t.receipt_number || `TRX-${t.id}`,
           branch_id: t.branch_id || 'BR-01',
           cashier_id: t.cashier_id || 'KASIR-01',

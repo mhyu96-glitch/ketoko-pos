@@ -3,7 +3,8 @@
   "rewrites": [
     { "source": "/super-admin.html", "destination": "/super-admin.html" },
     { "source": "/super-admin", "destination": "/super-admin.html" },
+    { "source": "/karyawan.html", "destination": "/karyawan.html" },
+    { "source": "/karyawan", "destination": "/karyawan.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
-

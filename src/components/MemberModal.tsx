@@ -21,7 +21,8 @@ import {
   Copy,
   ExternalLink,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Printer
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer } from '../types';
@@ -34,13 +35,18 @@ import { MemberTopUpModal } from './MemberTopUpModal';
 import { type RegisteredStoreInfo } from '../services/storeRegistry';
 import {
   checkCustomerBranchAccess,
+  clampEmployeeAllowance,
+  clampEmployeeBalance,
+  formatCustomerAddressDisplay,
   getCurrentActiveStoreId,
   getStoreDisplayName,
   getStoresForCluster,
   filterCustomersForStore,
   isCustomerBelongsToStoreOrCluster,
+  MAX_EMPLOYEE_ALLOWANCE,
   normalizeAccessScope,
   normalizeStoreId,
+  parseEmployeeMeta,
   type CustomerAccessScope,
 } from '../utils/customerAccess';
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
@@ -74,6 +80,14 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const [storesList, setStoresList] = useState<RegisteredStoreInfo[]>(() => getStoresForCluster(activeStoreId));
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'ALL' | 'KARYAWAN' | 'MEMBER'>('ALL');
+  const [unitAfdFilter, setUnitAfdFilter] = useState<string>('ALL');
+  const [visibleLimit, setVisibleLimit] = useState<number>(150);
+
+  // Batch Physical Card Printing Modal (For Employees Without Smartphones)
+  const [showBatchPrintModal, setShowBatchPrintModal] = useState(false);
+  const [printUnitFilter, setPrintUnitFilter] = useState<string>('ALL');
+  const [printAfdFilter, setPrintAfdFilter] = useState<string>('ALL');
+  const [printBatchIndex, setPrintBatchIndex] = useState<number>(0);
 
   // Employee Portal Share & Reset States
   const [showSharePortalModal, setShowSharePortalModal] = useState(false);
@@ -209,10 +223,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     setEditCode(m.code || m.id);
     setEditName(m.name);
     setEditPhone(m.phone && m.phone !== '-' ? m.phone : '');
-    setEditAddress(m.address && m.address !== '-' ? m.address : '');
+    setEditAddress(formatCustomerAddressDisplay(m.address) !== '-' ? formatCustomerAddressDisplay(m.address) : '');
     setEditCreditLimit(m.credit_limit || 0);
-    setEditAllowance(m.monthly_allowance !== undefined ? m.monthly_allowance : (m.type === 'KARYAWAN' ? 2000000 : 0));
-    setEditDepositBalance(m.deposit_balance !== undefined ? m.deposit_balance : (m.type === 'KARYAWAN' ? 2000000 : 0));
+    setEditAllowance(Math.min(2000000, m.monthly_allowance !== undefined ? m.monthly_allowance : (m.type === 'KARYAWAN' ? 2000000 : 0)));
+    setEditDepositBalance(Math.min(2000000, m.deposit_balance !== undefined ? m.deposit_balance : (m.type === 'KARYAWAN' ? 2000000 : 0)));
     setEditNotes(m.notes || '');
     setEditStoreId(normalizeStoreId(m.store_id || activeStoreId));
     setEditAccessScope(normalizeAccessScope(m.access_scope));
@@ -267,7 +281,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
   // Reset 1 Karyawan Tertentu
   const handleResetSingleEmployee = async (m: Customer) => {
-    const targetAmt = m.monthly_allowance || 2000000;
+    const targetAmt = Math.min(2000000, m.monthly_allowance || 2000000);
     if (!confirm(`Reset saldo kuota bulanan karyawan "${m.name}" kembali ke ${formatRupiah(targetAmt)}?`)) {
       return;
     }
@@ -303,10 +317,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         code: editCode.trim() || editingMember.code || `PLG-${Date.now().toString().slice(-4)}`,
         name: editName.trim(),
         phone: editPhone.trim() || '-',
-        address: editAddress.trim() || '-',
-        credit_limit: Number(editCreditLimit) || 0,
-        monthly_allowance: editType === 'KARYAWAN' ? Number(editAllowance) || 2000000 : undefined,
-        deposit_balance: Number(editDepositBalance) || 0,
+        address: formatCustomerAddressDisplay(editAddress.trim() || '-'),
+        credit_limit: editType === 'KARYAWAN' ? clampEmployeeAllowance(editAllowance) : (Number(editCreditLimit) || 0),
+        monthly_allowance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editAllowance) || 2000000)) : undefined,
+        deposit_balance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editDepositBalance) || 0)) : (Number(editDepositBalance) || 0),
         notes: editNotes.trim(),
         updated_at: new Date().toISOString()
       };
@@ -352,8 +366,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         address: newAddress.trim() || '-',
         credit_limit: Number(newCreditLimit) || 0,
         current_debt: 0,
-        monthly_allowance: newType === 'KARYAWAN' ? Number(newAllowance) || 2000000 : undefined,
-        deposit_balance: newType === 'KARYAWAN' ? Number(newInitialDeposit) || 2000000 : 0,
+        monthly_allowance: newType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(newAllowance) || 2000000)) : undefined,
+        deposit_balance: newType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(newInitialDeposit) || 2000000)) : 0,
         last_allowance_reset: newType === 'KARYAWAN' ? new Date().toISOString().slice(0, 7) : undefined,
         notes: newNotes.trim(),
         created_at: new Date().toISOString(),
@@ -387,18 +401,45 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
   };
 
+  const unitAfdOptions = Array.from(
+    new Set(
+      members
+        .filter((m) => m.type === 'KARYAWAN')
+        .map((m) => {
+          const meta = parseEmployeeMeta(m);
+          return `${meta.unit_profile} • Afd ${meta.afdeling}`;
+        })
+    )
+  ).sort();
+
+  const printUnitOptions = Array.from(
+    new Set(members.filter((m) => m.type === 'KARYAWAN').map((m) => parseEmployeeMeta(m).unit_profile))
+  ).sort();
+
+  const printAfdOptions = Array.from(
+    new Set(
+      members
+        .filter((m) => m.type === 'KARYAWAN')
+        .filter((m) => printUnitFilter === 'ALL' || parseEmployeeMeta(m).unit_profile === printUnitFilter)
+        .map((m) => parseEmployeeMeta(m).afdeling)
+    )
+  ).sort();
+
   const filteredMembers = members.filter((m) => {
     // Isolasi ketat: Pelanggan/karyawan harus berada dalam cluster toko aktif!
     if (!isCustomerBelongsToStoreOrCluster(m.store_id, activeStoreId)) {
       return false;
     }
 
+    const q = search.toLowerCase();
+    const cleanAddr = formatCustomerAddressDisplay(m.address).toLowerCase();
     const matchesSearch =
-      (m.name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (m.code || '').toLowerCase().includes(search.toLowerCase()) ||
-      (m.id || '').toLowerCase().includes(search.toLowerCase()) ||
+      !q ||
+      (m.name || '').toLowerCase().includes(q) ||
+      (m.code || '').toLowerCase().includes(q) ||
+      (m.id || '').toLowerCase().includes(q) ||
       (m.phone || '').includes(search) ||
-      (m.address || '').toLowerCase().includes(search.toLowerCase());
+      cleanAddr.includes(q);
 
     if (!matchesSearch) return false;
 
@@ -406,6 +447,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       if (m.type !== 'KARYAWAN') return false;
     } else if (memberTypeFilter === 'MEMBER') {
       if (m.type === 'KARYAWAN') return false;
+    }
+
+    if (unitAfdFilter !== 'ALL') {
+      const meta = parseEmployeeMeta(m);
+      if (`${meta.unit_profile} • Afd ${meta.afdeling}` !== unitAfdFilter) return false;
     }
 
     if (branchFilter === 'ALLOWED') {
@@ -416,6 +462,199 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
     return true;
   });
+
+  const displayedMembers = filteredMembers.slice(0, visibleLimit);
+
+  const batchPrintCandidates = members
+    .filter((m) => isCustomerBelongsToStoreOrCluster(m.store_id, activeStoreId) && m.type === 'KARYAWAN')
+    .filter((m) => {
+      const meta = parseEmployeeMeta(m);
+      if (printUnitFilter !== 'ALL' && meta.unit_profile !== printUnitFilter) return false;
+      if (printAfdFilter !== 'ALL' && meta.afdeling !== printAfdFilter) return false;
+      return true;
+    });
+
+  const BATCH_PRINT_SIZE = 60;
+  const totalPrintBatches = Math.max(1, Math.ceil(batchPrintCandidates.length / BATCH_PRINT_SIZE));
+  const safeBatchIndex = Math.min(printBatchIndex, totalPrintBatches - 1);
+  const selectedPrintSlice = batchPrintCandidates.slice(
+    safeBatchIndex * BATCH_PRINT_SIZE,
+    (safeBatchIndex + 1) * BATCH_PRINT_SIZE
+  );
+
+  const handlePrintPhysicalCardsA4 = (targetCards: Customer[]) => {
+    if (!targetCards || targetCards.length === 0) {
+      showToast('Tidak ada data karyawan pada filter yang dipilih.');
+      return;
+    }
+    const printWin = window.open('', '_blank', 'width=980,height=760');
+    if (!printWin) {
+      alert('Pop-up diblokir oleh browser. Izinkan pop-up untuk mencetak lembar kartu fisik A4.');
+      return;
+    }
+
+    const storeTitle = activeStoreId.startsWith('store-koperasimsl')
+      ? 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI'
+      : getStoreDisplayName(activeStoreId).toUpperCase();
+
+    const cardsData = targetCards.map((c) => {
+      const meta = parseEmployeeMeta(c);
+      return {
+        name: c.name,
+        code: c.code || c.id,
+        unit: meta.unit_profile,
+        afd: meta.afdeling,
+        job: meta.job_code !== '-' ? meta.job_code : ''
+      };
+    });
+
+    printWin.document.write(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cetak Kartu Fisik Karyawan (${cardsData.length} Kartu)</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    @page { size: A4 portrait; margin: 7mm 8mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #0f172a; }
+    .toolbar { padding: 10px 16px; background: #064e3b; color: #fff; display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+    .toolbar button { background: #fbbf24; color: #0f172a; border: none; padding: 7px 16px; border-radius: 8px; font-weight: 800; cursor: pointer; }
+    @media print { .toolbar { display: none !important; } }
+    .sheet {
+      display: grid;
+      grid-template-columns: repeat(2, 86mm);
+      justify-content: center;
+      gap: 4mm 6mm;
+      padding-top: 2mm;
+    }
+    .card {
+      width: 86mm;
+      height: 54mm;
+      border: 1.2px dashed #64748b;
+      border-radius: 3.5mm;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #ffffff;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .card-head {
+      background: linear-gradient(135deg, #022c22 0%, #065f46 100%);
+      color: #ffffff;
+      padding: 2.2mm 3.2mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-head .brand { font-size: 6.8pt; font-weight: 900; letter-spacing: 0.2px; line-height: 1.15; }
+    .card-head .sub { font-size: 5.5pt; color: #a7f3d0; font-weight: 600; }
+    .card-head .pill { background: #fbbf24; color: #1e293b; font-size: 5.5pt; font-weight: 900; padding: 0.7mm 1.6mm; border-radius: 1.5mm; white-space: nowrap; }
+    .card-body {
+      padding: 2mm 3.2mm 1mm 3.2mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 2mm;
+      flex: 1;
+    }
+    .emp-info { flex: 1; min-width: 0; }
+    .emp-name { font-size: 9pt; font-weight: 900; color: #0f172a; line-height: 1.15; margin-bottom: 0.8mm; word-break: break-word; }
+    .emp-nik { font-family: 'Courier New', monospace; font-size: 8pt; font-weight: 900; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; display: inline-block; padding: 0.4mm 1.4mm; border-radius: 1mm; }
+    .emp-meta { font-size: 6.5pt; color: #334155; font-weight: 700; margin-top: 1mm; }
+    .emp-quota { font-size: 6pt; color: #047857; font-weight: 800; margin-top: 0.7mm; }
+    .qr-wrap { width: 17mm; height: 17mm; border: 1px solid #e2e8f0; border-radius: 1.5mm; padding: 0.8mm; display: flex; align-items: center; justify-content: center; shrink: 0; }
+    .qr-wrap canvas { width: 100% !important; height: 100% !important; }
+    .card-foot {
+      padding: 1mm 3mm 2mm 3mm;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #f8fafc;
+    }
+    .barcode-svg { width: 76mm; height: 9.5mm; }
+    .foot-note { font-size: 5.3pt; color: #475569; font-weight: 700; margin-top: 0.4mm; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div><b>🖨️ Siap Cetak ${cardsData.length} Kartu Belanja Fisik (Ukuran Standar KTP/ATM 86×54mm)</b> — Gunting mengikuti garis putus-putus lalu laminating.</div>
+    <button onclick="window.print()">Cetak Sekarang (Ctrl+P)</button>
+  </div>
+  <div class="sheet" id="cardsRoot"></div>
+  <script>
+    const items = ${JSON.stringify(cardsData)};
+    const storeTitle = ${JSON.stringify(storeTitle)};
+    const root = document.getElementById('cardsRoot');
+
+    items.forEach((emp, idx) => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.innerHTML = \`
+        <div class="card-head">
+          <div>
+            <div class="brand">\${storeTitle}</div>
+            <div class="sub">KARTU BELANJA KARYAWAN • UTAMA & CABANG MILL</div>
+          </div>
+          <span class="pill">KARTU FISIK</span>
+        </div>
+        <div class="card-body">
+          <div class="emp-info">
+            <div class="emp-name">\${emp.name}</div>
+            <div class="emp-nik">\${emp.code}</div>
+            <div class="emp-meta">\${emp.unit} • Afd \${emp.afd}\${emp.job ? ' • ' + emp.job : ''}</div>
+            <div class="emp-quota">Plafon Maks Rp 2.000.000/Bln (Auto-Reset Tgl 1)</div>
+          </div>
+          <div class="qr-wrap"><canvas id="qr_\${idx}"></canvas></div>
+        </div>
+        <div class="card-foot">
+          <svg id="bc_\${idx}" class="barcode-svg"></svg>
+          <div class="foot-note">Tunjukkan kartu ini ke Kasir untuk scan pembayaran potong saldo</div>
+        </div>
+      \`;
+      root.appendChild(div);
+
+      try {
+        JsBarcode('#bc_' + idx, emp.code, {
+          format: 'CODE128',
+          width: 1.45,
+          height: 32,
+          displayValue: false,
+          margin: 0
+        });
+      } catch (e) {}
+
+      try {
+        if (window.QRCode) {
+          QRCode.toCanvas(document.getElementById('qr_' + idx), emp.code, { width: 64, margin: 0 });
+        }
+      } catch (e) {}
+    });
+
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 650);
+    };
+  </script>
+</body>
+</html>`);
+    printWin.document.close();
+  };
+
+  const portalPublicUrl = (() => {
+    if (typeof window === 'undefined') return 'https://koperasiMSL.ketokopos.online/karyawan';
+    const h = window.location.hostname || 'localhost';
+    if (h.includes('ketokopos.online')) {
+      return `${window.location.origin}/karyawan`;
+    }
+    if (window.location.port === '5858') {
+      return `http://${h}:5858/karyawan`;
+    }
+    return `https://koperasiMSL.ketokopos.online/karyawan`;
+  })();
 
   const handleSelectClick = (m: Customer) => {
     if (!onSelectMember) return;
@@ -518,24 +757,58 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             {/* Filter Jenis: Karyawan vs Member Biasa */}
             <select
               value={memberTypeFilter}
-              onChange={(e) => setMemberTypeFilter(e.target.value as any)}
+              onChange={(e) => {
+                setMemberTypeFilter(e.target.value as any);
+                setVisibleLimit(150);
+              }}
               title="Filter Anggota: Karyawan Koperasi atau Member Umum"
               className="px-2.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-900 shadow-2xs focus:border-emerald-600"
             >
               <option value="ALL">Semua Anggota ({members.length})</option>
-              <option value="KARYAWAN">👔 Karyawan (Plafon Rp 2 Jt) ({members.filter(m => m.type === 'KARYAWAN').length})</option>
+              <option value="KARYAWAN">👔 Karyawan (Maks Rp 2 Jt) ({members.filter(m => m.type === 'KARYAWAN').length})</option>
               <option value="MEMBER">🛒 Member Biasa ({members.filter(m => m.type !== 'KARYAWAN').length})</option>
             </select>
+
+            {unitAfdOptions.length > 1 && (
+              <select
+                value={unitAfdFilter}
+                onChange={(e) => {
+                  setUnitAfdFilter(e.target.value);
+                  setVisibleLimit(150);
+                }}
+                title="Filter Unit Kebun & Afdeling"
+                className="px-2.5 py-1.5 rounded-xl border border-[#dfcebe] bg-white text-xs font-bold text-[#543c2e] shadow-2xs focus:border-[#7c4e2f] max-w-[190px] truncate"
+              >
+                <option value="ALL">Semua Unit / Afdeling</option>
+                {unitAfdOptions.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            )}
 
             {/* Tombol Bagikan Link Portal Kartu HP Karyawan */}
             <button
               type="button"
               onClick={() => setShowSharePortalModal(true)}
               className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-all whitespace-nowrap active:scale-95"
-              title="Buka Link Portal Kartu HP untuk 1.500 Karyawan"
+              title="Buka Link Portal Kartu HP untuk Karyawan"
             >
               <Smartphone className="w-3.5 h-3.5 text-emerald-200" />
               <span>📱 Link Kartu HP</span>
+            </button>
+
+            {/* Tombol Cetak Kartu Fisik Massal untuk Karyawan Tanpa HP */}
+            <button
+              type="button"
+              onClick={() => {
+                setPrintBatchIndex(0);
+                setShowBatchPrintModal(true);
+              }}
+              className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-all whitespace-nowrap active:scale-95"
+              title="Cetak Kartu Belanja Fisik (Kertas A4 / Laminating) untuk Karyawan yang Tidak Punya HP"
+            >
+              <Printer className="w-3.5 h-3.5 text-indigo-200" />
+              <span>🖨️ Cetak Kartu Fisik (Tanpa HP)</span>
             </button>
 
             {/* Tombol Reset Kuota Bulanan Semua Karyawan */}
@@ -667,26 +940,28 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 {newType === 'KARYAWAN' ? (
                   <>
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Rp):</label>
+                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Maks Rp 2 Juta):</label>
                       <input
                         type="number"
                         min={0}
+                        max={MAX_EMPLOYEE_ALLOWANCE}
                         step={100000}
                         value={newAllowance}
-                        onChange={(e) => setNewAllowance(Number(e.target.value))}
+                        onChange={(e) => setNewAllowance(clampEmployeeAllowance(Number(e.target.value)))}
                         placeholder="2000000"
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
-                      <span className="text-[10px] text-emerald-700">Direset otomatis ke angka ini tiap awal bulan</span>
+                      <span className="text-[10px] text-emerald-700">Maks Rp 2.000.000 • Reset otomatis tiap Tanggal 1</span>
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Saldo Awal Saat Didaftarkan (Rp):</label>
+                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Saldo Awal Saat Didaftarkan (Maks Rp 2 Juta):</label>
                       <input
                         type="number"
                         min={0}
+                        max={MAX_EMPLOYEE_ALLOWANCE}
                         step={100000}
                         value={newInitialDeposit}
-                        onChange={(e) => setNewInitialDeposit(Number(e.target.value))}
+                        onChange={(e) => setNewInitialDeposit(clampEmployeeBalance(Number(e.target.value)))}
                         placeholder="2000000"
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
@@ -826,24 +1101,26 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 {editType === 'KARYAWAN' ? (
                   <>
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Rp):</label>
+                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Maks Rp 2 Jt):</label>
                       <input
                         type="number"
                         min={0}
+                        max={MAX_EMPLOYEE_ALLOWANCE}
                         step={100000}
                         value={editAllowance}
-                        onChange={(e) => setEditAllowance(Number(e.target.value))}
+                        onChange={(e) => setEditAllowance(clampEmployeeAllowance(Number(e.target.value)))}
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Sisa Saldo Berjalan Saat Ini (Rp):</label>
+                      <label className="text-[11px] font-bold text-emerald-800 block mb-1">Sisa Saldo Saat Ini (Maks Rp 2 Jt):</label>
                       <input
                         type="number"
                         min={0}
+                        max={MAX_EMPLOYEE_ALLOWANCE}
                         step={50000}
                         value={editDepositBalance}
-                        onChange={(e) => setEditDepositBalance(Number(e.target.value))}
+                        onChange={(e) => setEditDepositBalance(clampEmployeeBalance(Number(e.target.value)))}
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                     </div>
@@ -938,7 +1215,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                         </td>
                       </tr>
                     ) : (
-                      filteredMembers.map((m) => {
+                      displayedMembers.map((m) => {
                         const isSelected = currentMemberId === m.id || currentMemberId === m.code;
                         const isConfirmingDelete = deleteConfirmId === m.id;
                         const access = checkCustomerBranchAccess(m, activeStoreId);
@@ -985,7 +1262,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                               </div>
                               <div className="flex items-center space-x-1 text-[11px] text-[#856b59] mt-0.5 max-w-[240px] truncate">
                                 <MapPin className="w-3.5 h-3.5 text-[#8c7766] shrink-0" />
-                                <span className="truncate">{m.address || '-'}</span>
+                                <span className="truncate">{formatCustomerAddressDisplay(m.address)}</span>
                               </div>
                             </td>
 
@@ -1127,17 +1404,31 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   </tbody>
                 </table>
               </div>
+              {filteredMembers.length > visibleLimit && (
+                <div className="p-3 bg-[#faf5f0] border-t border-[#e4d5c7] flex items-center justify-between text-xs">
+                  <span className="text-[#634837] font-medium">
+                    Menampilkan <b>{displayedMembers.length}</b> dari <b>{filteredMembers.length}</b> anggota
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setVisibleLimit((prev) => prev + 250)}
+                    className="px-3.5 py-1.5 bg-[#96633b] hover:bg-[#83532e] text-white font-bold rounded-xl shadow-2xs"
+                  >
+                    Tampilkan +250 Lagi
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             /* VIEW MODE 2: KARTU PELANGGAN */
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
-              {filteredMembers.length === 0 ? (
+              {displayedMembers.length === 0 ? (
                 <div className="col-span-full py-12 text-center text-[#856b59] bg-white rounded-2xl border border-[#e4d5c7]">
                   <Users className="w-8 h-8 mx-auto text-[#dfcebe] mb-2" />
                   <p className="font-bold text-sm text-[#543c2e]">Belum ada data pelanggan</p>
                 </div>
               ) : (
-                filteredMembers.map((m) => {
+                displayedMembers.map((m) => {
                   const isSelected = currentMemberId === m.id || currentMemberId === m.code;
                   const isConfirmingDelete = deleteConfirmId === m.id;
                   const access = checkCustomerBranchAccess(m, activeStoreId);
@@ -1176,7 +1467,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                             </div>
                             <div className="flex items-center space-x-1 text-[11px] text-[#856b59]">
                               <MapPin className="w-3.5 h-3.5 text-[#8c7766]" />
-                              <span>{m.address || '-'}</span>
+                              <span>{formatCustomerAddressDisplay(m.address)}</span>
                             </div>
                             {m.type === 'KARYAWAN' ? (
                               <div className="text-[11px] text-emerald-900 font-bold bg-emerald-50 p-2 rounded-xl border border-emerald-200 mt-1">
@@ -1371,14 +1662,13 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   <input
                     type="text"
                     readOnly
-                    value={typeof window !== 'undefined' ? `http://${window.location.hostname || 'localhost'}:5858/karyawan` : 'http://localhost:5858/karyawan'}
+                    value={portalPublicUrl}
                     className="w-full px-3 py-2 bg-stone-100 border border-stone-300 rounded-xl font-mono font-bold text-xs text-stone-800 select-all"
                   />
                   <button
                     type="button"
                     onClick={() => {
-                      const url = typeof window !== 'undefined' ? `http://${window.location.hostname || 'localhost'}:5858/karyawan` : 'http://localhost:5858/karyawan';
-                      navigator.clipboard.writeText(url);
+                      navigator.clipboard.writeText(portalPublicUrl);
                       setCopiedLink(true);
                       setTimeout(() => setCopiedLink(false), 2000);
                     }}
@@ -1390,8 +1680,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const url = typeof window !== 'undefined' ? `http://${window.location.hostname || 'localhost'}:5858/karyawan` : 'http://localhost:5858/karyawan';
-                      window.open(url, '_blank');
+                      window.open(portalPublicUrl, '_blank');
                     }}
                     className="p-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl transition-colors shrink-0"
                     title="Buka di tab baru"
@@ -1410,8 +1699,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
-                      const text = `*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\nhttp://${host}:5858/karyawan\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`;
+                      const text = `*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`;
                       navigator.clipboard.writeText(text);
                       setCopiedText(true);
                       setTimeout(() => setCopiedText(false), 2000);
@@ -1425,7 +1713,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 <textarea
                   readOnly
                   rows={7}
-                  value={`*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\nhttp://${typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost'}:5858/karyawan\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`}
+                  value={`*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`}
                   className="w-full p-2.5 bg-stone-50 border border-stone-300 rounded-xl font-mono text-[11px] text-stone-700 select-all"
                 />
               </div>
@@ -1443,6 +1731,147 @@ export const MemberModal: React.FC<MemberModalProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Cetak Kartu Fisik Massal (Kertas A4 / Standar ID Card) */}
+      {showBatchPrintModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-stone-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white border-2 border-indigo-700 rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-indigo-900 to-indigo-700 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-indigo-950/70 text-indigo-200">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white">Cetak Kartu Fisik A4 Massal</h4>
+                  <p className="text-xs text-indigo-100">Untuk Karyawan yang Tidak Memiliki Smartphone</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBatchPrintModal(false)}
+                className="p-1 rounded-xl text-indigo-200 hover:text-white hover:bg-indigo-900/50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-stone-700 max-h-[80vh] overflow-y-auto">
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-start space-x-2.5">
+                <ShieldCheck className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-indigo-950 block">Standar Ukuran ID Card / KTP (85.6 × 54 mm)</span>
+                  <span className="text-[11px] text-indigo-800">
+                    Disusun rapi 2 kolom per lembar A4 siap print, potong, dan laminating. Dilengkapi Barcode CODE128 &amp; QR Code yang langsung dapat di-scan oleh scanner kasir.
+                  </span>
+                </div>
+              </div>
+
+              {/* Filter Unit & Afdeling */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-black uppercase text-stone-600 block mb-1">
+                    Filter Unit Kebun / Pabrik:
+                  </label>
+                  <select
+                    value={printUnitFilter}
+                    onChange={(e) => {
+                      setPrintUnitFilter(e.target.value);
+                      setPrintBatchIndex(0);
+                    }}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-xs text-stone-800"
+                  >
+                    <option value="ALL">Semua Unit ({batchPrintCandidates.length})</option>
+                    {printUnitOptions.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-black uppercase text-stone-600 block mb-1">
+                    Filter Afdeling / Divisi:
+                  </label>
+                  <select
+                    value={printAfdFilter}
+                    onChange={(e) => {
+                      setPrintAfdFilter(e.target.value);
+                      setPrintBatchIndex(0);
+                    }}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-xs text-stone-800"
+                  >
+                    <option value="ALL">Semua Afdeling</option>
+                    {printAfdOptions.map((afd) => (
+                      <option key={afd} value={afd}>{afd}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Info Terpilih & Batching */}
+              <div className="p-3 bg-stone-100 border border-stone-200 rounded-xl space-y-2">
+                <div className="flex justify-between items-center font-bold">
+                  <span>Total Karyawan Sesuai Filter:</span>
+                  <span className="font-mono text-indigo-700 text-sm">{batchPrintCandidates.length} Orang</span>
+                </div>
+                {totalPrintBatches > 1 && (
+                  <div className="flex items-center justify-between text-[11px] pt-2 border-t border-stone-200">
+                    <span className="text-stone-600">Pilih Batch Halaman (60 Kartu / Batch):</span>
+                    <div className="flex items-center space-x-1">
+                      {Array.from({ length: totalPrintBatches }).map((_, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setPrintBatchIndex(idx)}
+                          className={`px-2 py-1 rounded-lg font-bold text-[11px] ${
+                            safeBatchIndex === idx
+                              ? 'bg-indigo-700 text-white'
+                              : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-50'
+                          }`}
+                        >
+                          {idx + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="text-[11px] text-stone-500 italic">
+                  Batch {safeBatchIndex + 1}: {selectedPrintSlice.length} Karyawan terpilih untuk dicetak.
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-stone-100 border-t border-stone-200 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchPrintModal(false)}
+                className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                Tutup
+              </button>
+              <div className="flex items-center space-x-2">
+                {batchPrintCandidates.length > BATCH_PRINT_SIZE && (
+                  <button
+                    type="button"
+                    onClick={() => handlePrintPhysicalCardsA4(batchPrintCandidates)}
+                    className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 border border-indigo-300 rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Cetak Semua ({batchPrintCandidates.length} Kartu)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handlePrintPhysicalCardsA4(selectedPrintSlice)}
+                  className="px-5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center space-x-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Batch {safeBatchIndex + 1} ({selectedPrintSlice.length} Kartu)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -303,56 +303,63 @@ function initCentralDatabase(dataDir) {
     }
   } catch {}
 
-  // Auto-Reset Saldo Karyawan Bulanan saat server start jika sudah masuk bulan baru
-  try {
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const unresetEmps = sqliteDb.prepare(`
-      SELECT * FROM customers 
-      WHERE type = 'KARYAWAN' AND (last_allowance_reset IS NULL OR last_allowance_reset != ?)
-    `).all(currentMonth);
+  // Fungsi Auto-Reset Saldo Karyawan Bulanan (Maks Rp 2.000.000 setiap Tanggal 1 awal bulan)
+  function runAutoMonthlyAllowanceReset() {
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const unresetEmps = sqliteDb.prepare(`
+        SELECT * FROM customers 
+        WHERE type = 'KARYAWAN' AND (last_allowance_reset IS NULL OR last_allowance_reset != ?)
+      `).all(currentMonth);
 
-    if (unresetEmps.length > 0) {
-      console.log(`[LAN Server] Ditemukan ${unresetEmps.length} karyawan belum reset kuota bulan ${currentMonth}. Menjalankan auto-reset...`);
-      const now = new Date().toISOString();
-      sqliteDb.exec('BEGIN TRANSACTION;');
-      const updateStmt = sqliteDb.prepare(`
-        UPDATE customers SET deposit_balance = COALESCE(monthly_allowance, 2000000), last_allowance_reset = ?, updated_at = ? WHERE id = ?
-      `);
-      const mutStmt = sqliteDb.prepare(`
-        INSERT INTO member_deposits (
-          id, customer_id, customer_name, customer_code, type, amount,
-          balance_before, balance_after, payment_method, store_id, store_name,
-          cashier_id, cashier_name, receipt_number, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      if (unresetEmps.length > 0) {
+        console.log(`[LAN Server] Tanggal 1 Bulan Baru (${currentMonth}): Mereset kuota ${unresetEmps.length} karyawan ke maks Rp 2.000.000...`);
+        const now = new Date().toISOString();
+        sqliteDb.exec('BEGIN TRANSACTION;');
+        const updateStmt = sqliteDb.prepare(`
+          UPDATE customers SET deposit_balance = ?, monthly_allowance = ?, current_debt = 0, last_allowance_reset = ?, updated_at = ? WHERE id = ?
+        `);
+        const mutStmt = sqliteDb.prepare(`
+          INSERT INTO member_deposits (
+            id, customer_id, customer_name, customer_code, type, amount,
+            balance_before, balance_after, payment_method, store_id, store_name,
+            cashier_id, cashier_name, receipt_number, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
-      for (const emp of unresetEmps) {
-        const allowance = Number(emp.monthly_allowance) || 2000000;
-        updateStmt.run(currentMonth, now, emp.id);
-        mutStmt.run(
-          `dep-auto-${emp.id}-${Date.now()}`,
-          emp.id,
-          emp.name,
-          emp.code,
-          'MONTHLY_RESET',
-          allowance,
-          Number(emp.deposit_balance) || 0,
-          allowance,
-          'SYSTEM',
-          emp.store_id || 'store-01',
-          emp.store_name || 'Cabang Utama',
-          'SYSTEM',
-          'Auto Reset Bulanan',
-          `RESET-${currentMonth}`,
-          `Auto Reset Kuota Saldo Karyawan Bulanan (${currentMonth})`,
-          now
-        );
+        for (const emp of unresetEmps) {
+          const allowance = Math.min(2000000, Math.max(0, Number(emp.monthly_allowance) || 2000000));
+          updateStmt.run(allowance, allowance, currentMonth, now, emp.id);
+          mutStmt.run(
+            `dep-auto-${emp.id}-${Date.now()}`,
+            emp.id,
+            emp.name,
+            emp.code,
+            'MONTHLY_RESET',
+            allowance,
+            Number(emp.deposit_balance) || 0,
+            allowance,
+            'SYSTEM',
+            emp.store_id || 'store-01',
+            emp.store_name || 'Cabang Utama',
+            'SYSTEM',
+            'Auto Reset Tgl 1',
+            `RESET-${currentMonth}`,
+            `Auto Reset Kuota Saldo Karyawan Tanggal 1 (${currentMonth})`,
+            now
+          );
+        }
+        sqliteDb.exec('COMMIT;');
+        console.log(`[LAN Server] Berhasil auto-reset kuota saldo ${unresetEmps.length} karyawan ke Rp 2.000.000.`);
       }
-      sqliteDb.exec('COMMIT;');
-      console.log(`[LAN Server] Berhasil auto-reset kuota saldo ${unresetEmps.length} karyawan ke Rp 2.000.000.`);
+    } catch (err) {
+      try { sqliteDb.exec('ROLLBACK;'); } catch {}
     }
-  } catch (err) {
-    try { sqliteDb.exec('ROLLBACK;'); } catch {}
+  }
+
+  runAutoMonthlyAllowanceReset();
+  // Cek berkala setiap 15 menit agar tepat pukul 00:00 setiap Tanggal 1 otomatis kereset tanpa perlu restart server
+  setInterval(runAutoMonthlyAllowanceReset, 15 * 60 * 1000);
     console.warn('[LAN Server] Auto-reset notice:', err.message);
   }
 
@@ -1304,6 +1311,7 @@ function handleHttpRequest(req, res) {
 
   // 8.b Mengambil Semua Pelanggan (Terisolasi per Toko / Cluster Bisnis)
   if (pathname === '/api/lan/customers' && req.method === 'GET') {
+    runAutoMonthlyAllowanceReset();
     const targetStoreId = (urlObj.searchParams.get('store_id') || '').trim();
     let custs = [];
     if (targetStoreId) {
@@ -1339,9 +1347,11 @@ function handleHttpRequest(req, res) {
       const type = cust.type || 'MEMBER';
       const credit_limit = Number(cust.credit_limit) || 0;
       const current_debt = Number(cust.current_debt) || 0;
-      const monthly_allowance = cust.monthly_allowance !== undefined ? Number(cust.monthly_allowance) : (type === 'KARYAWAN' ? 2000000 : null);
+      const rawAllowance = cust.monthly_allowance !== undefined ? Number(cust.monthly_allowance) : (type === 'KARYAWAN' ? 2000000 : null);
+      const monthly_allowance = type === 'KARYAWAN' ? Math.min(2000000, Math.max(0, rawAllowance || 2000000)) : rawAllowance;
       const last_allowance_reset = cust.last_allowance_reset || (type === 'KARYAWAN' ? new Date().toISOString().slice(0, 7) : '');
-      const deposit_balance = Number(cust.deposit_balance !== undefined ? cust.deposit_balance : (type === 'KARYAWAN' ? (monthly_allowance || 2000000) : 0));
+      const rawDeposit = Number(cust.deposit_balance !== undefined ? cust.deposit_balance : (type === 'KARYAWAN' ? (monthly_allowance || 2000000) : 0));
+      const deposit_balance = type === 'KARYAWAN' ? Math.min(monthly_allowance || 2000000, Math.max(0, rawDeposit)) : rawDeposit;
       const created_at = cust.created_at || new Date().toISOString();
       const updated_at = new Date().toISOString();
 
@@ -1395,7 +1405,13 @@ function handleHttpRequest(req, res) {
       }
 
       const balanceBefore = Number(cust.deposit_balance) || 0;
-      const balanceAfter = balanceBefore + amount;
+      if (cust.type === 'KARYAWAN') {
+        const cap = Math.min(2000000, Number(cust.monthly_allowance) || 2000000);
+        if (balanceBefore + amount > cap) {
+          return sendJson(400, { error: 'Saldo kuota karyawan maksimal Rp 2.000.000 per bulan (otomatis direset setiap Tanggal 1).' });
+        }
+      }
+      const balanceAfter = cust.type === 'KARYAWAN' ? Math.min(2000000, balanceBefore + amount) : (balanceBefore + amount);
       const now = new Date().toISOString();
       const storeId = String(body.store_id || 'store-01');
       const storeName = String(body.store_name || (storeId === 'store-02' ? 'Cabang Balikpapan' : 'Cabang Utama'));
@@ -1525,7 +1541,8 @@ function handleHttpRequest(req, res) {
 
         for (const emp of employees) {
           const oldBalance = Number(emp.deposit_balance) || 0;
-          const targetAllowance = customAmount !== null ? customAmount : (Number(emp.monthly_allowance) || 2000000);
+          const rawTarget = customAmount !== null ? customAmount : (Number(emp.monthly_allowance) || 2000000);
+          const targetAllowance = Math.min(2000000, Math.max(0, rawTarget));
           const newBalance = targetAllowance;
 
           updateCustStmt.run(newBalance, currentMonth, now, emp.id);
@@ -1596,8 +1613,9 @@ function handleHttpRequest(req, res) {
 
         const now = new Date().toISOString();
         const oldBalance = Number(emp.deposit_balance) || 0;
-        const newBalance = body.deposit_balance !== undefined ? Math.max(0, Number(body.deposit_balance)) : oldBalance;
-        const newAllowance = body.monthly_allowance !== undefined ? Math.max(0, Number(body.monthly_allowance)) : (Number(emp.monthly_allowance) || 2000000);
+        const MAX_ALLOWANCE = 2000000;
+        const newBalance = body.deposit_balance !== undefined ? Math.min(MAX_ALLOWANCE, Math.max(0, Number(body.deposit_balance))) : Math.min(MAX_ALLOWANCE, oldBalance);
+        const newAllowance = body.monthly_allowance !== undefined ? Math.min(MAX_ALLOWANCE, Math.max(0, Number(body.monthly_allowance))) : Math.min(MAX_ALLOWANCE, (Number(emp.monthly_allowance) || 2000000));
 
         sqliteDb.prepare(`
           UPDATE customers SET
@@ -1682,19 +1700,56 @@ function handleHttpRequest(req, res) {
     }
 
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const allowance = Number(emp.monthly_allowance) || 2000000;
-    const balance = Number(emp.deposit_balance) || 0;
+
+    // Auto Reset Kuota Bulanan ke Rp 2.000.000 setiap tanggal 1 awal bulan
+    if (!emp.last_allowance_reset || emp.last_allowance_reset !== currentMonth) {
+      try {
+        const resetNow = new Date().toISOString();
+        const oldBal = Number(emp.deposit_balance) || 0;
+        sqliteDb.prepare(`
+          UPDATE customers 
+          SET deposit_balance = 2000000, monthly_allowance = 2000000, last_allowance_reset = ?, updated_at = ?
+          WHERE id = ?
+        `).run(currentMonth, resetNow, emp.id);
+
+        sqliteDb.prepare(`
+          INSERT INTO member_deposits (
+            id, customer_id, customer_name, customer_code, type, amount,
+            balance_before, balance_after, payment_method, store_id, store_name,
+            cashier_id, cashier_name, receipt_number, notes, created_at
+          ) VALUES (?, ?, ?, ?, 'MONTHLY_RESET', 2000000, ?, 2000000, 'SYSTEM', ?, ?, 'SYSTEM', 'Auto Reset Bulanan', ?, ?, ?)
+        `).run(
+          `dep-reset-${emp.id}-${Date.now()}`,
+          emp.id, emp.name, emp.code,
+          oldBal,
+          emp.store_id || 'store-koperasimsl',
+          emp.store_name || 'Koperasi MSL',
+          `RESET-${currentMonth}`,
+          `Auto Reset Kuota Saldo Karyawan Bulanan (${currentMonth})`,
+          resetNow
+        );
+
+        emp.deposit_balance = 2000000;
+        emp.monthly_allowance = 2000000;
+        emp.last_allowance_reset = currentMonth;
+      } catch (e) {
+        console.warn('[LAN Server] Auto-reset allowance warning:', e.message);
+      }
+    }
+
+    const allowance = Math.min(2000000, Number(emp.monthly_allowance) || 2000000);
+    const balance = Math.min(2000000, Number(emp.deposit_balance) || 0);
 
     // Ambil riwayat belanja menggunakan SALDO bulan ini
     const transactions = sqliteDb.prepare(`
       SELECT id, receipt_number, cashier_name, store_id, grand_total, payment_method, items_json, created_at 
       FROM transactions 
-      WHERE (member_id = ? OR LOWER(customer_name) = LOWER(?))
+      WHERE (member_id = ? OR member_id = ? OR LOWER(customer_name) = LOWER(?))
         AND payment_method = 'SALDO'
         AND created_at LIKE ?
       ORDER BY created_at DESC 
       LIMIT 20
-    `).all(emp.id, emp.name, `${currentMonth}%`);
+    `).all(emp.id, emp.code || emp.id, emp.name, `${currentMonth}%`);
 
     const parsedTrx = transactions.map(t => ({
       ...t,
@@ -1702,6 +1757,44 @@ function handleHttpRequest(req, res) {
     }));
 
     const spentThisMonth = parsedTrx.reduce((sum, t) => sum + (Number(t.grand_total) || 0), 0);
+
+    // Format detail barang & nominal transaksi belanja terakhir (lintas bulan bila awal bulan baru belum belanja)
+    let topTrx = parsedTrx.length > 0 ? parsedTrx[0] : null;
+    if (!topTrx) {
+      const latestAnyRow = sqliteDb.prepare(`
+        SELECT id, receipt_number, cashier_name, store_id, grand_total, payment_method, items_json, created_at 
+        FROM transactions 
+        WHERE (member_id = ? OR member_id = ? OR LOWER(customer_name) = LOWER(?))
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `).get(emp.id, emp.code || emp.id, emp.name);
+      if (latestAnyRow) {
+        topTrx = {
+          ...latestAnyRow,
+          items: latestAnyRow.items_json ? JSON.parse(latestAnyRow.items_json) : []
+        };
+      }
+    }
+
+    let lastTransaction = null;
+    if (topTrx) {
+      lastTransaction = {
+        id: topTrx.id,
+        receipt_number: topTrx.receipt_number,
+        cashier_name: topTrx.cashier_name || 'Kasir Koperasi',
+        store_id: topTrx.store_id,
+        payment_method: topTrx.payment_method || 'SALDO',
+        grand_total: Number(topTrx.grand_total) || 0,
+        created_at: topTrx.created_at,
+        items: (topTrx.items || []).map(it => ({
+          name: it.product_name || it.name || 'Barang',
+          qty: Number(it.qty) || 1,
+          unit: it.unit || 'Pcs',
+          price: Number(it.price_applied || it.unit_price || it.price) || 0,
+          subtotal: Number(it.subtotal_item || it.subtotal) || ((Number(it.qty) || 1) * (Number(it.price_applied || it.unit_price || it.price) || 0))
+        }))
+      };
+    }
 
     // Ambil mutasi saldo terakhir
     const mutations = sqliteDb.prepare(`
@@ -1729,6 +1822,7 @@ function handleHttpRequest(req, res) {
           current_month: currentMonth,
           last_allowance_reset: emp.last_allowance_reset
         },
+        last_transaction: lastTransaction,
         transactions: parsedTrx,
         mutations
       }

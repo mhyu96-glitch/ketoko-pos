@@ -7,7 +7,7 @@ import { api } from './api/client';
 import { syncService } from './services/syncService';
 import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation, CartItem } from './types';
 import { formatRupiah } from './services/escposService';
-import { getStoreDisplayName } from './utils/customerAccess';
+import { getStoreDisplayName, clampEmployeeAllowance, clampEmployeeBalance } from './utils/customerAccess';
 
 import { Navbar } from './components/Navbar';
 import { TopMenuBar, type NavView } from './components/TopMenuBar';
@@ -85,6 +85,56 @@ function resolveInitialTerminalStore() {
     }
   } catch {}
   return hostStore;
+}
+
+/**
+ * Seed otomatis data resmi Koperasi Karyawan PT. MSL (akun kasir, produk & stok, 1.601 karyawan)
+ * ke IndexedDB lokal bila masih kosong. Data lalu disegarkan dari Supabase Cloud.
+ */
+async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
+  if (!storeId || !storeId.startsWith('store-koperasimsl')) return;
+  try {
+    const isCabang = storeId === 'store-koperasimsl-cabang';
+    await db.users.bulkPut([
+      { id: 'usr-000', username: 'superadmin', name: 'Master Superadmin (Developer)', role: 'SUPERADMIN', branch_id: isCabang ? 'BR-03' : 'BR-02' },
+      { id: 'usr-msl-admin', username: 'satria', name: 'SATRIA HARDIANSYAH', role: 'ADMIN', branch_id: isCabang ? 'BR-03' : 'BR-02' },
+      isCabang
+        ? { id: 'usr-msl-norbayah', username: 'norbayah', name: 'NORBAYAH', role: 'CASHIER', branch_id: 'BR-03' }
+        : { id: 'usr-msl-sinta', username: 'sinta', name: 'SINTA NELA', role: 'CASHIER', branch_id: 'BR-02' }
+    ] as any);
+  } catch {}
+
+  try {
+    const localProds = (await db.products.toArray()).filter((p: any) => p.store_id === storeId);
+    if (localProds.length === 0) {
+      const res = await fetch('/data/koperasi_msl_products.json');
+      if (res.ok) {
+        const all = (await res.json()) as any[];
+        const mine = all.filter((p) => p.store_id === storeId);
+        for (let i = 0; i < mine.length; i += 500) await db.products.bulkPut(mine.slice(i, i + 500));
+      }
+    }
+  } catch (e) {
+    console.warn('[Koperasi MSL] Seed produk lokal gagal:', e);
+  }
+
+  try {
+    const localEmps = (await db.customers.toArray()).filter((c: any) => c.type === 'KARYAWAN' && String(c.store_id || '').startsWith('store-koperasimsl'));
+    if (localEmps.length === 0) {
+      const res = await fetch('/data/koperasi_msl_employees.json');
+      if (res.ok) {
+        const all = (await res.json()) as any[];
+        for (let i = 0; i < all.length; i += 500) await db.customers.bulkPut(all.slice(i, i + 500));
+      }
+    }
+  } catch (e) {
+    console.warn('[Koperasi MSL] Seed karyawan lokal gagal:', e);
+  }
+
+  if (navigator.onLine) {
+    syncService.pullCustomersFromSupabase().catch(() => {});
+  }
+  employeeAllowanceService.checkAndAutoResetMonthlyAllowance(storeId).catch(() => {});
 }
 
 export const App: React.FC = () => {
@@ -474,6 +524,7 @@ export const App: React.FC = () => {
 
       // Mode Toko Bersih Baru: JANGAN auto-seed produk katalog CV Tumbuh Makmur!
       if (isCleanStore && activeStore !== 'store-01') {
+        await seedKoperasiMslIfNeeded(activeStore);
         const storeProds = await db.products.toArray();
         setProducts(sortProductsForDisplay(storeProds, activeStore));
         setOverdueCount(0);
@@ -722,6 +773,11 @@ export const App: React.FC = () => {
 
     window.addEventListener('ketoko_open_shift_report', handleOpenShift);
     window.addEventListener('ketoko_open_cash_drawer', handleOpenDrawer);
+
+    // Auto-reset saldo karyawan tiap Tanggal 1 (cek tiap 10 menit selama aplikasi terbuka)
+    const allowanceResetTimer = setInterval(() => {
+      employeeAllowanceService.checkAndAutoResetMonthlyAllowance().catch(() => {});
+    }, 10 * 60 * 1000);
 
     // Check for App Updates in background 2s after startup
     const updateTimer = setTimeout(async () => {
@@ -1091,6 +1147,7 @@ export const App: React.FC = () => {
 
     return () => {
       clearTimeout(updateTimer);
+      clearInterval(allowanceResetTimer);
       if (unsubSse) unsubSse();
       if (bc) {
         try { bc.close(); } catch {}
@@ -1298,20 +1355,25 @@ export const App: React.FC = () => {
       try {
         const custs = await db.customers.toArray();
         const queryClean = clean.replace(/^ketoko:member:/i, '');
-        const matchedCust = custs.find((c) => {
+        const queryDigits = queryClean.replace(/[^0-9]/g, '');
+        // Prioritas 1: kecocokan persis kode/NIK (mis. 52/5221/0911/324) atau ID agar tidak tertukar nama mirip
+        let matchedCust = custs.find((c) => {
           const cCode = (c.code || '').toLowerCase();
           const cId = (c.id || '').toLowerCase();
-          const cName = (c.name || '').toLowerCase();
-          const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
-          const queryDigits = queryClean.replace(/[^0-9]/g, '');
-          return (
-            cCode === queryClean ||
-            cId === queryClean ||
-            cName === queryClean ||
-            cName.includes(queryClean) ||
-            (queryDigits.length >= 8 && cPhone === queryDigits)
-          );
+          return cCode === queryClean || cId === queryClean;
         });
+        // Prioritas 2: nama persis / HP / nama sebagian
+        if (!matchedCust) {
+          matchedCust = custs.find((c) => {
+            const cName = (c.name || '').toLowerCase();
+            const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+            return (
+              cName === queryClean ||
+              (queryClean.length >= 4 && cName.includes(queryClean) && !/^\d+$/.test(queryClean)) ||
+              (queryDigits.length >= 8 && cPhone === queryDigits)
+            );
+          });
+        }
 
         if (matchedCust) {
           const access = checkCustomerBranchAccess(matchedCust, activeStoreId);
@@ -1549,14 +1611,22 @@ export const App: React.FC = () => {
       try {
         const cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
         if (cust) {
-          const oldBalance = Number(cust.deposit_balance) || 0;
+          const maxQuota = cust.type === 'KARYAWAN'
+            ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit)
+            : Infinity;
+          const oldBalance = cust.type === 'KARYAWAN'
+            ? clampEmployeeBalance(cust.deposit_balance, maxQuota)
+            : (Number(cust.deposit_balance) || 0);
           const newBalance = Math.max(0, oldBalance - grandTotal);
           const updatedCust: Customer = {
             ...cust,
             deposit_balance: newBalance,
+            current_debt: cust.type === 'KARYAWAN' ? Math.max(0, maxQuota - newBalance) : cust.current_debt,
             updated_at: now.toISOString()
           };
           await db.customers.put(updatedCust);
+          // Sinkron potongan saldo ke Cloud/LAN agar langsung terlihat di HP karyawan & kasir lain
+          syncService.syncCustomerChange(updatedCust).catch(() => {});
 
           const mutId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           const mutationRecord: MemberDepositMutation = {
@@ -1961,6 +2031,7 @@ export const App: React.FC = () => {
     syncService.initCloudLiveChannel();
 
     if (store.isClean || store.id !== 'store-01') {
+      await seedKoperasiMslIfNeeded(store.id);
       const allProds = await db.products.toArray();
       setProducts(allProds.filter((p: any) => p.store_id === store.id));
       const allTrxs = await db.transactions.toArray();
@@ -2326,6 +2397,7 @@ export const App: React.FC = () => {
           isOpen={isPaymentOpen}
           onClose={() => setIsPaymentOpen(false)}
           grandTotal={grandTotal}
+          memberId={memberId}
           customerName={customerName || ''}
           onProcessPayment={handleProcessPayment}
           isTouchscreenMode={isTouchscreenMode}

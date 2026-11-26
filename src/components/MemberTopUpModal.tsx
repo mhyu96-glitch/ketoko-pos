@@ -15,7 +15,7 @@ import {
 import type { Customer, MemberDepositMutation } from '../types';
 import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
-import { getStoreDisplayName } from '../utils/customerAccess';
+import { getStoreDisplayName, MAX_EMPLOYEE_ALLOWANCE } from '../utils/customerAccess';
 import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
 
 interface MemberTopUpModalProps {
@@ -62,9 +62,12 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
 
   if (!isOpen || !member) return null;
 
+  const isEmployee = member.type === 'KARYAWAN';
+  const maxEmployeeCap = isEmployee ? Math.min(MAX_EMPLOYEE_ALLOWANCE, Number(member.monthly_allowance) || MAX_EMPLOYEE_ALLOWANCE) : Infinity;
   const currentBalance = Number(member.deposit_balance) || 0;
   const topUpAmount = Math.max(0, parseInt(amountInput.replace(/[^0-9]/g, ''), 10) || 0);
   const projectedBalance = currentBalance + topUpAmount;
+  const exceedsEmployeeCap = isEmployee && projectedBalance > maxEmployeeCap;
 
   const quickPresets = [20000, 50000, 100000, 200000, 500000, 1000000];
 
@@ -77,6 +80,10 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
     e.preventDefault();
     if (topUpAmount <= 0) {
       setErrorMsg('Masukkan nominal top up yang valid (minimal Rp 1.000)');
+      return;
+    }
+    if (exceedsEmployeeCap) {
+      setErrorMsg(`Saldo kuota karyawan maksimal ${formatRupiah(maxEmployeeCap)} per bulan dan otomatis di-reset setiap Tanggal 1.`);
       return;
     }
 
@@ -377,18 +384,20 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
               </div>
 
               {/* Preview Kalkulasi Saldo */}
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+              <div className={`rounded-xl p-3 flex items-center justify-between border ${exceedsEmployeeCap ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-200'}`}>
                 <div className="space-y-0.5">
-                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Estimasi Saldo Baru</div>
+                  <div className={`text-[10px] font-bold uppercase tracking-wider ${exceedsEmployeeCap ? 'text-rose-800' : 'text-emerald-800'}`}>Estimasi Saldo Baru</div>
                   <div className="text-slate-500 text-[11px]">
                     {formatRupiah(currentBalance)} + <span className="font-bold text-emerald-700">+{formatRupiah(topUpAmount)}</span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono font-black text-lg text-emerald-800">
+                  <div className={`font-mono font-black text-lg ${exceedsEmployeeCap ? 'text-rose-700' : 'text-emerald-800'}`}>
                     {formatRupiah(projectedBalance)}
                   </div>
-                  <div className="text-[9px] text-emerald-600 font-bold">Siap Belanja di Toko A & B</div>
+                  <div className={`text-[9px] font-bold ${exceedsEmployeeCap ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {isEmployee ? `Maks Kuota Karyawan: ${formatRupiah(maxEmployeeCap)} (Reset Tgl 1)` : 'Siap Belanja Multi-Cabang'}
+                  </div>
                 </div>
               </div>
 

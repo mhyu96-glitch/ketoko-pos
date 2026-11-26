@@ -3,7 +3,15 @@ import type { Customer, MemberDepositMutation, Transaction } from '../types';
 import { lanService } from './lanService';
 import { syncService } from './syncService';
 import { formatRupiah } from './escposService';
-import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
+import { filterCustomersForStore, getCurrentActiveStoreId, clampEmployeeAllowance, clampEmployeeBalance, parseEmployeeMeta } from '../utils/customerAccess';
+
+export interface EmployeeMonthTrx {
+  receipt_number: string;
+  created_at: string;
+  grand_total: number;
+  store_id: string;
+  items: string;
+}
 
 export interface EmployeeAllowanceRecord {
   id: string;
@@ -13,6 +21,13 @@ export interface EmployeeAllowanceRecord {
   phone: string;
   store_id: string;
   store_name: string;
+  afdeling?: string;
+  unit?: string;
+  job_title?: string;
+  last_purchase_date?: string;
+  last_purchase_total?: number;
+  last_purchase_items?: string;
+  month_transactions?: EmployeeMonthTrx[];
   monthly_allowance: number;
   allowance: number;
   deposit_balance: number;
@@ -27,6 +42,16 @@ export interface EmployeeAllowanceRecord {
   updated_at: string;
 }
 
+export interface AfdelingAllowanceSummary {
+  afdeling: string;
+  unit: string;
+  totalEmployees: number;
+  totalAllowance: number;
+  totalSpent: number;
+  totalRemaining: number;
+  utilizationRate: number;
+}
+
 export interface EmployeeAllowanceReportSummary {
   monthKey: string;
   monthFormatted: string;
@@ -37,6 +62,7 @@ export interface EmployeeAllowanceReportSummary {
   totalRemaining: number;
   overallUtilization: number;
   employees: EmployeeAllowanceRecord[];
+  afdelingSummary: AfdelingAllowanceSummary[];
   summary: {
     total_employees: number;
     total_allowance: number;
@@ -241,8 +267,9 @@ export class EmployeeAllowanceService {
 
       const now = new Date().toISOString();
       const oldBalance = Number(emp.deposit_balance) || 0;
-      const newBalance = updates.deposit_balance !== undefined ? Math.max(0, Number(updates.deposit_balance)) : oldBalance;
-      const newAllowance = updates.monthly_allowance !== undefined ? Math.max(0, Number(updates.monthly_allowance)) : (Number(emp.monthly_allowance) || 2000000);
+      const MAX_ALLOWANCE = 2000000;
+      const newBalance = updates.deposit_balance !== undefined ? Math.min(MAX_ALLOWANCE, Math.max(0, Number(updates.deposit_balance))) : Math.min(MAX_ALLOWANCE, oldBalance);
+      const newAllowance = updates.monthly_allowance !== undefined ? Math.min(MAX_ALLOWANCE, Math.max(0, Number(updates.monthly_allowance))) : Math.min(MAX_ALLOWANCE, (Number(emp.monthly_allowance) || 2000000));
 
       const updatedEmp: Customer = {
         ...emp,
@@ -308,33 +335,42 @@ export class EmployeeAllowanceService {
     const employees = isolatedCusts.filter((c) => c.type === 'KARYAWAN');
 
     // Filter transaksi belanja yang dibayar menggunakan SALDO pada bulan terpilih
-    const monthTrx = transactions.filter((t) => {
-      if (t.payment_method !== 'SALDO') return false;
-      const tMonth = (t.created_at || '').slice(0, 7);
-      return tMonth === monthKey;
-    });
+    const saldoTrx = transactions.filter((t) => t.payment_method === 'SALDO');
+    const monthTrx = saldoTrx.filter((t) => (t.created_at || '').slice(0, 7) === monthKey);
+    const isCurrentMonth = monthKey === this.getCurrentMonthKey();
+
+    const matchesEmp = (t: Transaction, emp: Customer) => {
+      const tMemberId = (t.member_id || '').toLowerCase();
+      const tCustName = (t.customer_name || '').toLowerCase();
+      return (
+        tMemberId === (emp.id || '').toLowerCase() ||
+        tMemberId === (emp.code || '').toLowerCase() ||
+        (tCustName !== '' && tCustName === (emp.name || '').toLowerCase())
+      );
+    };
+
+    const summarizeItems = (t?: Transaction) =>
+      (t?.items || [])
+        .map((it: any) => `${Number(it.qty) || 1}x ${it.product_name || it.name || 'Barang'}`)
+        .join(', ');
 
     const records: EmployeeAllowanceRecord[] = employees.map((emp) => {
-      const empIdLower = (emp.id || '').toLowerCase();
-      const empCodeLower = (emp.code || '').toLowerCase();
-      const empNameLower = (emp.name || '').toLowerCase();
-
-      // Transaksi yang cocok dengan karyawan ini
-      const empSales = monthTrx.filter((t) => {
-        const tMemberId = (t.member_id || '').toLowerCase();
-        const tCustName = (t.customer_name || '').toLowerCase();
-        return (
-          tMemberId === empIdLower ||
-          tMemberId === empCodeLower ||
-          (tCustName && tCustName === empNameLower)
-        );
-      });
+      const empSales = monthTrx.filter((t) => matchesEmp(t, emp));
+      const empAllSales = saldoTrx
+        .filter((t) => matchesEmp(t, emp))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      const lastTrx = empAllSales[0];
 
       const spent = empSales.reduce((sum, t) => sum + (Number(t.grand_total) || 0), 0);
-      const allowance = Number(emp.monthly_allowance) || 2000000;
-      const currentBalance = Number(emp.deposit_balance) || 0;
+      const allowance = clampEmployeeAllowance(emp.monthly_allowance);
+      // Bulan berjalan: pakai saldo aktual. Bulan lalu: kuota - pemakaian (histori potong gaji tetap utuh walau sudah reset Tgl 1)
+      const currentBalance = isCurrentMonth
+        ? clampEmployeeBalance(emp.deposit_balance, allowance)
+        : Math.max(0, allowance - spent);
       const utilization = allowance > 0 ? Math.min(100, (spent / allowance) * 100) : 0;
       const status: 'ACTIVE' | 'EXHAUSTED' = currentBalance > 0 ? 'ACTIVE' : 'EXHAUSTED';
+
+      const meta = parseEmployeeMeta(emp);
 
       return {
         id: emp.id,
@@ -344,6 +380,9 @@ export class EmployeeAllowanceService {
         phone: emp.phone || '-',
         store_id: emp.store_id || 'store-01',
         store_name: emp.store_name || 'Cabang Utama',
+        afdeling: meta.afdeling,
+        unit: meta.unit_profile,
+        job_title: meta.job_code,
         monthly_allowance: allowance,
         allowance,
         deposit_balance: currentBalance,
@@ -355,7 +394,17 @@ export class EmployeeAllowanceService {
         status,
         last_allowance_reset: emp.last_allowance_reset || '-',
         last_reset: emp.last_allowance_reset || 'Awal Bulan',
-        updated_at: emp.updated_at || '-'
+        updated_at: emp.updated_at || '-',
+        last_purchase_date: lastTrx?.created_at,
+        last_purchase_total: lastTrx ? Number(lastTrx.grand_total) || 0 : 0,
+        last_purchase_items: summarizeItems(lastTrx),
+        month_transactions: empSales.map((t) => ({
+          receipt_number: t.receipt_number,
+          created_at: t.created_at,
+          grand_total: Number(t.grand_total) || 0,
+          store_id: t.store_id || '',
+          items: summarizeItems(t)
+        }))
       };
     });
 
@@ -380,6 +429,7 @@ export class EmployeeAllowanceService {
       totalRemaining,
       overallUtilization,
       employees: records,
+      afdelingSummary: this.generateAfdelingSummaries(records),
       summary: {
         total_employees: records.length,
         total_allowance: totalAllowance,
@@ -432,7 +482,7 @@ export class EmployeeAllowanceService {
 <body>
   <div class="header">
     <h1>${storeName}</h1>
-    <h2>LAPORAN REKAPITULASI SALDO & KUOTA BELANJA KARYAWAN</h2>
+    <h2>LAPORAN REKAPITULASI SALDO &amp; POTONGAN BELANJA KARYAWAN</h2>
     <div style="font-size: 11px; font-weight: bold; margin-top: 4px; color: #84532d;">Periode: ${report.monthFormatted}</div>
   </div>
 
@@ -465,12 +515,12 @@ export class EmployeeAllowanceService {
         <th class="center" style="width: 30px;">No</th>
         <th>NIK / Kode</th>
         <th>Nama Karyawan</th>
-        <th>Cabang / Toko</th>
-        <th class="num">Plafon Bulanan</th>
-        <th class="num">Terpakai Bulan Ini</th>
-        <th class="num">Sisa Saldo</th>
-        <th class="center">Utilisasi (%)</th>
-        <th class="center">Terakhir Reset</th>
+        <th>Unit / Afdeling</th>
+        <th class="num">Plafon</th>
+        <th class="num">Potong Gaji</th>
+        <th class="num">Sisa</th>
+        <th>Barang Terakhir Dibeli</th>
+        <th class="num">Nominal Terakhir</th>
       </tr>
     </thead>
     <tbody>
@@ -479,15 +529,12 @@ export class EmployeeAllowanceService {
           <td class="center">${idx + 1}</td>
           <td style="font-family: monospace; font-weight: bold;">${e.code}</td>
           <td><b>${e.name}</b></td>
-          <td>${e.store_name}</td>
+          <td>${e.unit || '-'} • Afd ${e.afdeling || '-'}</td>
           <td class="num">${formatRupiah(e.monthly_allowance)}</td>
           <td class="num" style="color: #b91c1c; font-weight: bold;">${formatRupiah(e.spent_this_month)}</td>
           <td class="num" style="color: #047857; font-weight: bold;">${formatRupiah(e.deposit_balance)}</td>
-          <td class="center">
-            <span class="progress-bar"><span class="progress-fill" style="width: ${Math.min(100, e.utilization_percent)}%;"></span></span>
-            ${e.utilization_percent}%
-          </td>
-          <td class="center" style="font-size: 9.5px; color: #6b7280;">${e.last_allowance_reset}</td>
+          <td style="font-size: 9.5px;">${e.last_purchase_items || '-'}${e.last_purchase_date ? `<br/><span style="color:#6b7280">${new Date(e.last_purchase_date).toLocaleDateString('id-ID')}</span>` : ''}</td>
+          <td class="num">${e.last_purchase_total ? formatRupiah(e.last_purchase_total) : '-'}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -497,8 +544,7 @@ export class EmployeeAllowanceService {
         <td class="num" style="padding: 8px;">${formatRupiah(report.totalAllowance)}</td>
         <td class="num" style="padding: 8px; color: #b91c1c;">${formatRupiah(report.totalSpent)}</td>
         <td class="num" style="padding: 8px; color: #047857;">${formatRupiah(report.totalRemaining)}</td>
-        <td class="center" style="padding: 8px;">${report.overallUtilization}%</td>
-        <td></td>
+        <td colspan="2"></td>
       </tr>
     </tfoot>
   </table>
@@ -538,30 +584,39 @@ export class EmployeeAllowanceService {
    * Ekspor Laporan Saldo Karyawan ke File CSV
    */
   public exportEmployeeAllowanceCSV(report: EmployeeAllowanceReportSummary): void {
+    const q = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const headers = [
       'No',
       'NIK/Kode',
       'Nama Karyawan',
-      'Cabang/Toko',
+      'Unit',
+      'Afdeling',
+      'Jabatan',
       'Plafon Bulanan (Rp)',
-      'Terpakai Bulan Ini (Rp)',
+      'Terpakai / Potong Gaji (Rp)',
       'Sisa Saldo (Rp)',
       'Utilisasi (%)',
-      'Transaksi (Nota)',
-      'Terakhir Reset'
+      'Jumlah Nota',
+      'Tgl Belanja Terakhir',
+      'Barang Terakhir Dibeli',
+      'Nominal Belanja Terakhir (Rp)'
     ];
 
     const rows = report.employees.map((e, idx) => [
       idx + 1,
-      `"${e.code}"`,
-      `"${e.name}"`,
-      `"${e.store_name}"`,
+      q(e.code),
+      q(e.name),
+      q(e.unit),
+      q(e.afdeling),
+      q(e.job_title),
       e.monthly_allowance,
       e.spent_this_month,
       e.deposit_balance,
       `${e.utilization_percent}%`,
       e.trx_count_this_month,
-      `"${e.last_allowance_reset}"`
+      q(e.last_purchase_date ? new Date(e.last_purchase_date).toLocaleString('id-ID') : '-'),
+      q(e.last_purchase_items || '-'),
+      e.last_purchase_total || 0
     ]);
 
     const csvContent = '\uFEFF' + [
@@ -577,6 +632,164 @@ export class EmployeeAllowanceService {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  }
+
+  /**
+   * Rekapitulasi Pemakaian Kuota Saldo Karyawan per Afdeling / Unit
+   */
+  public generateAfdelingSummaries(employees: EmployeeAllowanceRecord[]): AfdelingAllowanceSummary[] {
+    const map = new Map<string, AfdelingAllowanceSummary>();
+
+    for (const emp of employees) {
+      const afdKey = emp.afdeling || 'UMUM';
+      const unitKey = emp.unit || 'MSL INTI-1';
+      const key = `${unitKey} - Afdeling ${afdKey}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          afdeling: afdKey,
+          unit: unitKey,
+          totalEmployees: 0,
+          totalAllowance: 0,
+          totalSpent: 0,
+          totalRemaining: 0,
+          utilizationRate: 0
+        });
+      }
+
+      const item = map.get(key)!;
+      item.totalEmployees += 1;
+      item.totalAllowance += emp.monthly_allowance;
+      item.totalSpent += emp.spent_this_month;
+      item.totalRemaining += emp.deposit_balance;
+    }
+
+    const result = Array.from(map.values());
+    for (const item of result) {
+      item.utilizationRate = item.totalAllowance > 0
+        ? Math.round((item.totalSpent / item.totalAllowance) * 1000) / 10
+        : 0;
+    }
+
+    result.sort((a, b) => a.unit.localeCompare(b.unit) || a.afdeling.localeCompare(b.afdeling));
+    return result;
+  }
+
+  /**
+   * Cetak Rekapitulasi per Afdeling (Untuk Potongan Payroll / Gaji HRD)
+   */
+  public printAfdelingSummaryReport(
+    summaries: AfdelingAllowanceSummary[],
+    monthFormatted: string,
+    storeName: string = 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI'
+  ): void {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const totalEmps = summaries.reduce((s, a) => s + a.totalEmployees, 0);
+    const totalAllow = summaries.reduce((s, a) => s + a.totalAllowance, 0);
+    const totalSpent = summaries.reduce((s, a) => s + a.totalSpent, 0);
+    const totalRem = summaries.reduce((s, a) => s + a.totalRemaining, 0);
+    const overallUtil = totalAllow > 0 ? (totalSpent / totalAllow * 100).toFixed(1) : '0';
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Rekapitulasi Belanja Karyawan Per Afdeling - ${monthFormatted}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
+    .header { text-align: center; border-bottom: 2px solid #065f46; padding-bottom: 12px; margin-bottom: 16px; }
+    .header h1 { margin: 0; font-size: 16px; color: #064e3b; text-transform: uppercase; font-weight: 800; }
+    .header h2 { margin: 4px 0 0 0; font-size: 13px; color: #334155; font-weight: bold; }
+    .header .period { font-size: 12px; color: #047857; font-weight: 800; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th { background: #064e3b; color: #ffffff; padding: 8px 6px; font-size: 10px; text-align: left; text-transform: uppercase; }
+    th.num, td.num { text-align: right; }
+    th.center, td.center { text-align: center; }
+    td { padding: 6px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
+    tr:nth-child(even) { background-color: #f8fafc; }
+    .footer { margin-top: 36px; display: flex; justify-content: space-between; font-size: 11px; color: #475569; }
+    .signature-box { text-align: center; width: 180px; }
+    .signature-line { border-bottom: 1px solid #000; margin-top: 60px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${storeName}</h1>
+    <h2>REKAPITULASI PEMAKAIAN SALDO BELANJA KARYAWAN PER AFDELING</h2>
+    <div class="period">Periode Potongan: ${monthFormatted}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="center" style="width: 35px;">No</th>
+        <th>Unit Kerja</th>
+        <th>Afdeling / Divisi</th>
+        <th class="center" style="width: 70px;">Jumlah Org</th>
+        <th class="num">Total Plafon</th>
+        <th class="num" style="color: #fecdd3;">Total Terpakai (Potong Gaji)</th>
+        <th class="num">Sisa Saldo</th>
+        <th class="center" style="width: 60px;">Penyerapan</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${summaries.map((s, idx) => `
+        <tr>
+          <td class="center">${idx + 1}</td>
+          <td style="font-weight: bold;">${s.unit}</td>
+          <td><b>Afdeling ${s.afdeling}</b></td>
+          <td class="center font-mono">${s.totalEmployees}</td>
+          <td class="num">${formatRupiah(s.totalAllowance)}</td>
+          <td class="num" style="font-weight: bold; color: #b91c1c;">${formatRupiah(s.totalSpent)}</td>
+          <td class="num" style="color: #047857;">${formatRupiah(s.totalRemaining)}</td>
+          <td class="center font-mono">${s.utilizationRate}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background: #e2e8f0; font-weight: 800;">
+        <td colspan="3" class="num" style="padding: 10px;">TOTAL KESELURUHAN</td>
+        <td class="center" style="padding: 10px;">${totalEmps}</td>
+        <td class="num" style="padding: 10px;">${formatRupiah(totalAllow)}</td>
+        <td class="num" style="padding: 10px; color: #b91c1c;">${formatRupiah(totalSpent)}</td>
+        <td class="num" style="padding: 10px; color: #047857;">${formatRupiah(totalRem)}</td>
+        <td class="center" style="padding: 10px;">${overallUtil}%</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="footer">
+    <div>Dicetak pada: ${new Date().toLocaleString('id-ID')}</div>
+    <div style="display: flex; gap: 40px;">
+      <div class="signature-box">
+        <div>Pengurus Koperasi,</div>
+        <div class="signature-line"></div>
+        <div>( Ketua / Kasir )</div>
+      </div>
+      <div class="signature-box">
+        <div>Diterima Bagian Payroll / HRD,</div>
+        <div class="signature-line"></div>
+        <div>( HR & GA Dept )</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 400);
+    };
+  </script>
+</body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 }
 
