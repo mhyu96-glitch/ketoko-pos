@@ -84,30 +84,31 @@ export const RestockModal: React.FC<RestockModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header - Coklat Susu Latte Header */}
-        <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between">
+        {/* Header */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 rounded-2xl bg-[#83532e] text-amber-200 border border-[#a6744c]">
               <PlusCircle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Penerimaan Barang Masuk (Restock)</h3>
+              <h3 className="font-bold text-white text-base sm:text-lg">Penerimaan Barang Masuk (Restock)</h3>
               <p className="text-xs text-[#fcefe3]">Tambah stok fisik barang langsung ke database lokal</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#83532e] transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5]">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5] flex-1 max-w-2xl mx-auto w-full">
           
           {/* Fast Autocomplete Search Product */}
           <div className="space-y-1.5 relative">

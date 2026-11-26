@@ -365,30 +365,31 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] select-text">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden select-text">
         
-        {/* Header - Coklat Susu Latte Header */}
-        <div className="p-4 sm:p-5 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between">
+        {/* Header */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 border border-[#9b663b]/50 shadow-xs">
               <Package className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Tambah Item Baru (Master Data)</h3>
+              <h3 className="font-bold text-white text-base sm:text-lg">Tambah Item Baru (Master Data)</h3>
               <p className="text-xs text-[#fcefe3]">Daftarkan SKU produk baru dengan foto WebP, kategori kustom, harga eceran & grosir</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#543017] transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-white border border-[#9b663b]/50 text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5]">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5] flex-1 max-w-4xl mx-auto w-full">
           
           {/* Photo Upload & WebP Conversion Section */}
           <div className="p-4 bg-white rounded-2xl border border-[#e5d0be] shadow-xs space-y-3">

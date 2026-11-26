@@ -16,6 +16,7 @@ import { db } from '../db';
 import type { Transaction, TransactionItem, Product } from '../types';
 import { syncService } from '../services/syncService';
 import { formatRupiah } from '../services/escposService';
+import { CustomSelect } from './CustomSelect';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
@@ -269,13 +270,13 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-[#e5d5c5]"
+        className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Modal */}
-        <div className="p-4 sm:p-5 bg-linear-to-r from-[#96633b] to-[#7a4e2b] text-white flex justify-between items-center shrink-0">
+        {/* Header Full-Screen */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 bg-linear-to-r from-[#96633b] to-[#7a4e2b] text-white flex justify-between items-center shrink-0 border-b border-[#5e3519]">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur-xs">
               <Receipt className="w-5 h-5 text-amber-200" />
@@ -331,18 +332,18 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <label className="block text-xs font-bold text-[#5c3c26] mb-1">
                 Metode Pembayaran
               </label>
-              <select
+              <CustomSelect
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as any)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-[#ddc3aa] bg-[#fcf9f5] focus:outline-hidden focus:ring-2 focus:ring-[#96633b] text-[#3d271d] font-semibold"
-              >
-                <option value="CASH">Tunai (CASH)</option>
-                <option value="SALDO">Saldo Member (Deposit)</option>
-                <option value="QRIS">QRIS</option>
-                <option value="TRANSFER">Transfer Bank</option>
-                <option value="DEBIT">Kartu Debit</option>
-                <option value="TEMPO">Bon / Tempo (Piutang)</option>
-              </select>
+                onChange={(val) => setPaymentMethod(val as any)}
+                options={[
+                  { value: 'CASH', label: 'Tunai (CASH)' },
+                  { value: 'SALDO', label: 'Saldo Member (Deposit)' },
+                  { value: 'QRIS', label: 'QRIS' },
+                  { value: 'TRANSFER', label: 'Transfer Bank' },
+                  { value: 'DEBIT', label: 'Kartu Debit' },
+                  { value: 'TEMPO', label: 'Bon / Tempo (Piutang)' },
+                ]}
+              />
             </div>
 
             {paymentMethod === 'TEMPO' ? (

@@ -9,6 +9,7 @@ import {
   normalizeStoreId,
   type CustomerAccessScope,
 } from '../utils/customerAccess';
+import { CustomSelect } from './CustomSelect';
 
 interface CustomerBranchFieldsProps {
   storeId: string;
@@ -52,22 +53,25 @@ export const CustomerBranchFields: React.FC<CustomerBranchFieldsProps> = ({
             </span>
           )}
         </label>
-        <select
+        <CustomSelect
           value={normalizedSelected}
-          onChange={(e) => onStoreIdChange(e.target.value)}
-          className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-bold text-[#332219] focus:border-[#7c4e2f]"
-        >
-          {stores.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.id})
-            </option>
-          ))}
-          {!hasCurrentInList && (
-            <option value={normalizedSelected}>
-              {getStoreDisplayName(normalizedSelected)} ({normalizedSelected})
-            </option>
-          )}
-        </select>
+          onChange={(val) => onStoreIdChange(val)}
+          size="sm"
+          options={[
+            ...stores.map((s) => ({
+              value: s.id,
+              label: `${s.name} (${s.id})`,
+            })),
+            ...(!hasCurrentInList
+              ? [
+                  {
+                    value: normalizedSelected,
+                    label: `${getStoreDisplayName(normalizedSelected)} (${normalizedSelected})`,
+                  },
+                ]
+              : []),
+          ]}
+        />
       </div>
 
       <div>
@@ -75,14 +79,15 @@ export const CustomerBranchFields: React.FC<CustomerBranchFieldsProps> = ({
           <Lock className="w-3 h-3 text-[#7c4e2f]" />
           <span>Izin Transaksi Cabang:</span>
         </label>
-        <select
+        <CustomSelect
           value={normalizeAccessScope(accessScope)}
-          onChange={(e) => onAccessScopeChange(e.target.value as CustomerAccessScope)}
-          className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-bold text-[#332219] focus:border-[#7c4e2f]"
-        >
-          <option value="HOME_ONLY">Khusus Cabang Terdaftar (Terkunci 1 Cabang)</option>
-          <option value="ALL_STORES">Semua Cabang (Akses Bebas / Manajemen)</option>
-        </select>
+          onChange={(val) => onAccessScopeChange(val as CustomerAccessScope)}
+          size="sm"
+          options={[
+            { value: 'HOME_ONLY', label: 'Khusus Cabang Terdaftar (Terkunci 1 Cabang)' },
+            { value: 'ALL_STORES', label: 'Semua Cabang (Akses Bebas / Manajemen)' },
+          ]}
+        />
       </div>
     </div>
   );

@@ -39,11 +39,11 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/60 backdrop-blur-xs animate-smooth-backdrop">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-smooth-modal">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] via-[#85532f] to-[#6f4021] text-white flex items-center justify-between shrink-0 shadow-xs">
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] via-[#85532f] to-[#6f4021] text-white flex items-center justify-between shrink-0 shadow-xs">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center p-1.5 shadow-inner">
               <img src="/icon.svg" alt="Ketoko POS" className="w-full h-full object-contain" />
@@ -60,14 +60,15 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-[#fcefe3] hover:text-white hover:bg-black/20 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-black/20 hover:bg-black/30 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5]">
+        <div className="p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5] flex-1 max-w-2xl mx-auto w-full">
           
           {isInstalled ? (
             <div className="p-4 rounded-2xl bg-[#edf5ee] border border-[#cce2cf] text-[#166534] text-center space-y-2">

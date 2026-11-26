@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import type { User } from '../types';
 import { generateSuperAdminKey } from '../services/licenseService';
+import { CustomSelect } from './CustomSelect';
 import { errorTracker, type ErrorLogItem, type SystemHealthReport } from '../services/errorTracker';
 import { 
   getSupabaseClusters, 
@@ -1518,14 +1519,15 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Paket Lisensi:</label>
-                  <select
+                  <CustomSelect
                     value={targetPlan}
-                    onChange={(e) => setTargetPlan(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold focus:ring-2 focus:ring-[#6C5CE7]"
-                  >
-                    <option value="PRO_LIFETIME">PRO LIFETIME — Permanen Selamanya</option>
-                    <option value="ENTERPRISE_1Y">ENTERPRISE 1 TAHUN — Langganan</option>
-                  </select>
+                    onChange={(val) => setTargetPlan(val as any)}
+                    variant="slate"
+                    options={[
+                      { value: 'PRO_LIFETIME', label: 'PRO LIFETIME — Permanen Selamanya' },
+                      { value: 'ENTERPRISE_1Y', label: 'ENTERPRISE 1 TAHUN — Langganan' },
+                    ]}
+                  />
                 </div>
 
                 <button
@@ -1799,48 +1801,50 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
                   </div>
 
                   {/* Filter by Toko */}
-                  <select
+                  <CustomSelect
                     value={monitoringFilterStore}
-                    onChange={(e) => setMonitoringFilterStore(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
-                  >
-                    <option value="ALL">🏢 Semua Toko Klien</option>
-                    {registeredStores.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setMonitoringFilterStore(val)}
+                    variant="slate"
+                    className="min-w-[190px]"
+                    options={[
+                      { value: 'ALL', label: '🏢 Semua Toko Klien' },
+                      ...registeredStores.map((s) => ({ value: s.name, label: s.name })),
+                    ]}
+                  />
 
                   {/* Filter by Module */}
-                  <select
+                  <CustomSelect
                     value={monitoringFilterModule}
-                    onChange={(e) => setMonitoringFilterModule(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
-                  >
-                    <option value="ALL">📦 Semua Modul</option>
-                    <option value="CHAT_KASIR">💬 Laporan Chat Kasir</option>
-                    <option value="KASIR">Kasir POS</option>
-                    <option value="CUSTOMER_DISPLAY">Customer Display (Layar Pembeli)</option>
-                    <option value="LAN_SERVER">LAN Server & Sinkronisasi</option>
-                    <option value="CLOUD_SYNC">Cloud Supabase</option>
-                    <option value="DATABASE">IndexedDB Database</option>
-                    <option value="PRINTER">Printer Kasir</option>
-                    <option value="BARCODE_SCANNER">Barcode Scanner</option>
-                    <option value="SYSTEM">Sistem Core</option>
-                  </select>
+                    onChange={(val) => setMonitoringFilterModule(val)}
+                    variant="slate"
+                    className="min-w-[200px]"
+                    options={[
+                      { value: 'ALL', label: '📦 Semua Modul' },
+                      { value: 'CHAT_KASIR', label: '💬 Laporan Chat Kasir' },
+                      { value: 'KASIR', label: 'Kasir POS' },
+                      { value: 'CUSTOMER_DISPLAY', label: 'Customer Display (Layar Pembeli)' },
+                      { value: 'LAN_SERVER', label: 'LAN Server & Sinkronisasi' },
+                      { value: 'CLOUD_SYNC', label: 'Cloud Supabase' },
+                      { value: 'DATABASE', label: 'IndexedDB Database' },
+                      { value: 'PRINTER', label: 'Printer Kasir' },
+                      { value: 'BARCODE_SCANNER', label: 'Barcode Scanner' },
+                      { value: 'SYSTEM', label: 'Sistem Core' },
+                    ]}
+                  />
 
                   {/* Filter by Severity */}
-                  <select
+                  <CustomSelect
                     value={monitoringFilterSeverity}
-                    onChange={(e) => setMonitoringFilterSeverity(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30"
-                  >
-                    <option value="ALL">⚠️ Semua Severity</option>
-                    <option value="CRITICAL">🔴 Kritis (Critical)</option>
-                    <option value="WARNING">🟠 Peringatan (Warning)</option>
-                    <option value="INFO">🔵 Informasi (Info)</option>
-                  </select>
+                    onChange={(val) => setMonitoringFilterSeverity(val)}
+                    variant="slate"
+                    className="min-w-[180px]"
+                    options={[
+                      { value: 'ALL', label: '⚠️ Semua Severity' },
+                      { value: 'CRITICAL', label: '🔴 Kritis (Critical)' },
+                      { value: 'WARNING', label: '🟠 Peringatan (Warning)' },
+                      { value: 'INFO', label: '🔵 Informasi (Info)' },
+                    ]}
+                  />
                 </div>
 
                 <div className="text-[11px] font-bold text-slate-400">
@@ -2092,8 +2096,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           {/* MODAL 1: DAFTARKAN TOKO BARU (Clay White Style)               */}
           {/* ============================================================== */}
           {isNewStoreModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white border border-slate-100 rounded-[32px] w-full max-w-md p-6 shadow-2xl space-y-4 animate-smooth-modal">
+            <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden items-center justify-center p-4">
+              <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-sm space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center space-x-2.5">
                     <div className="w-9 h-9 rounded-2xl bg-[#6C5CE7] text-white flex items-center justify-center shadow-md">
@@ -2155,17 +2159,15 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
 
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">Database Cloud (Cluster Supabase):</label>
-                    <select
+                    <CustomSelect
                       value={newStoreForm.clusterChoice}
-                      onChange={(e) => setNewStoreForm({ ...newStoreForm, clusterChoice: e.target.value })}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
-                    >
-                      {clusters.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} (Supabase Cloud Free Tier)
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setNewStoreForm({ ...newStoreForm, clusterChoice: val })}
+                      variant="slate"
+                      options={clusters.map((c) => ({
+                        value: c.id,
+                        label: `${c.name} (Supabase Cloud Free Tier)`,
+                      }))}
+                    />
                   </div>
 
                   <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px]">
@@ -2197,8 +2199,8 @@ export const SuperadminPortalView: React.FC<SuperadminPortalViewProps> = ({
           {/* MODAL 2: DAFTARKAN CLUSTER SUPABASE BARU                       */}
           {/* ============================================================== */}
           {isNewClusterModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white border border-slate-100 rounded-[32px] w-full max-w-md p-6 shadow-2xl space-y-4 animate-smooth-modal">
+            <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden items-center justify-center p-4">
+              <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-sm space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h3 className="font-black text-sm text-slate-900">Daftarkan Cluster Supabase Baru</h3>
                   <button

@@ -168,11 +168,11 @@ export const CashierHelpChatModal: React.FC<CashierHelpChatModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-scaleUp">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-white w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-[#faebd7]/70 via-[#fcf8f4] to-white border-b border-[#ebdccf] flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#faebd7]/70 via-[#fcf8f4] to-white border-b border-[#ebdccf] flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-2xl bg-[#7c4e2f] text-white flex items-center justify-center shadow-md">
               <MessageSquare className="w-5 h-5" />

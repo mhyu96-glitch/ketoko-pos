@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag,
   Wifi, 
@@ -18,7 +18,9 @@ import {
   Laptop,
   Download,
   Activity,
-  MessageSquare
+  MessageSquare,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import type { User } from '../types';
 import { licenseService, type LicenseStatus } from '../services/licenseService';
@@ -79,6 +81,8 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin';
   const isAdmin = isSuperAdmin || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
+  const quickMenuRef = useRef<HTMLDivElement>(null);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [errorCount, setErrorCount] = useState<number>(() => errorTracker.getUnresolvedCount());
 
@@ -92,9 +96,28 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   const [lanConfig, setLanConfig] = useState<LanConfig>(lanService.getConfig());
   const [isLanConnected, setIsLanConnected] = useState(true);
 
+  // Close unified menu on outside click or Escape
+  useEffect(() => {
+    if (!isQuickMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (quickMenuRef.current && !quickMenuRef.current.contains(e.target as Node)) {
+        setIsQuickMenuOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsQuickMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isQuickMenuOpen]);
+
   // Secret Dev Trigger: 5 rapid clicks on logo to open Master Dev PIN prompt
-  const logoClicksRef = React.useRef(0);
-  const logoTimerRef = React.useRef<any>(null);
+  const logoClicksRef = useRef(0);
+  const logoTimerRef = useRef<any>(null);
 
   const handleLogoClick = () => {
     logoClicksRef.current += 1;
@@ -138,7 +161,6 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
     };
   }, []);
 
-  // Sync fullscreen status with actual browser window state
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -151,22 +173,22 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
     try {
       if (!document.fullscreenElement) {
         await document.documentElement.requestFullscreen();
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        }
+      } else if (document.exitFullscreen) {
+        await document.exitFullscreen();
       }
     } catch (err) {
       console.warn('Fullscreen API error or not supported:', err);
     }
   };
 
+  const badgeAlertCount = pendingSyncCount + (isSuperAdmin ? errorCount : 0);
+
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#e4d5c7] shadow-xs select-none">
       <div className="w-full px-3 sm:px-5 lg:px-6">
-        <div className="flex items-center justify-between h-16 gap-2">
+        <div className="flex items-center justify-between h-16 gap-3">
           
-          {/* 1. Branding & Branch ID (Clickable to Edit Store / POS Name for Admin Only, 5x click opens Master Dev PIN) */}
+          {/* 1. Branding & Branch ID */}
           <button
             type="button"
             onClick={handleLogoClick}
@@ -175,11 +197,11 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
                 ? "Klik untuk ubah Nama POS & Profil Toko (Klik 5x untuk Akses Superadmin Developer)" 
                 : storeName
             }
-            className={`flex items-center space-x-2 sm:space-x-3 shrink min-w-0 text-left group p-1 -ml-1 rounded-2xl transition-all ${
+            className={`flex items-center space-x-2.5 sm:space-x-3 shrink min-w-0 text-left group p-1 -ml-1 rounded-2xl transition-all ${
               isAdmin ? 'hover:bg-[#faebd7]/50 cursor-pointer' : 'cursor-pointer'
             }`}
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-[#96633b] to-[#a6744c] text-white flex items-center justify-center shadow-sm shadow-[#96633b]/20 border border-[#83532e]/30 group-hover:scale-105 transition-transform overflow-hidden shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-[#96633b] to-[#a6744c] text-white flex items-center justify-center shadow-sm shadow-[#96633b]/20 border border-[#83532e]/30 group-hover:scale-105 transition-transform overflow-hidden shrink-0">
               {storeLogo ? (
                 <img src={storeLogo} alt="Logo" className="w-full h-full object-cover" />
               ) : (
@@ -187,225 +209,298 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
               )}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs sm:text-base font-black tracking-tight text-[#332219] leading-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-xs md:max-w-md">
+              <span className="text-xs sm:text-base font-black tracking-tight text-[#332219] leading-tight truncate max-w-[180px] sm:max-w-md md:max-w-lg lg:max-w-2xl">
                 {storeName}
               </span>
-              <span className="text-[9px] sm:text-[10px] text-[#8a6b53] font-semibold truncate max-w-[130px] xs:max-w-[180px] sm:max-w-xs">
+              <span className="text-[10px] text-[#8a6b53] font-semibold truncate max-w-[180px] sm:max-w-md">
                 {branchName}
               </span>
             </div>
           </button>
 
-          {/* 2. Action Tools: Layar Penuh, Touchscreen Mode, Online/Offline, Sync Queue, Cart, Role & Profile */}
-          <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
+          {/* 2. Unified Clean Control Pill + Cart + Profile */}
+          <div className="flex items-center space-x-2 sm:space-x-2.5 shrink-0">
 
-            {/* Tombol Layar Penuh (Desktop Only) */}
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              title={isFullscreen ? "Keluar dari Layar Penuh (ESC)" : "Aktifkan Mode Layar Penuh Monitor POS"}
-              className={`hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
-                isFullscreen
-                  ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] ring-2 ring-[#7c4e2f]/20'
-                  : 'bg-[#fdfaf7] hover:bg-[#faebd7] text-[#543c2e] border-[#dfcebe]'
-              }`}
-            >
-              {isFullscreen ? (
-                <>
-                  <Minimize className="w-3.5 h-3.5 text-white" />
-                  <span className="hidden sm:inline">Layar Normal</span>
-                </>
-              ) : (
-                <>
-                  <Maximize className="w-3.5 h-3.5 text-[#7c4e2f]" />
-                  <span className="hidden sm:inline">Layar Penuh</span>
-                </>
-              )}
-            </button>
-
-            {/* Mode Touchscreen Monitor Toggle Button (Desktop Only) */}
-            {onToggleTouchscreen && (
+            {/* UNIFIED SYSTEM & QUICK TOOLS MENU (Menggabungkan Layar Penuh, Touchscreen, Online, PWA, Lapor Kendala & Sinkron Cloud jadi 1) */}
+            <div className="relative" ref={quickMenuRef}>
               <button
                 type="button"
-                onClick={onToggleTouchscreen}
-                title="Klik untuk Mengaktifkan / Menonaktifkan Mode Layar Sentuh Monitor Kasir"
-                className={`hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
-                  isTouchscreenMode
-                    ? 'bg-[#7c4e2f] hover:bg-[#633e26] text-white border-[#633e26] ring-2 ring-[#7c4e2f]/20'
-                    : 'bg-[#fdfaf7] hover:bg-[#faebd7] text-[#543c2e] border-[#dfcebe]'
+                onClick={() => setIsQuickMenuOpen((prev) => !prev)}
+                title="Panel Kontrol Kasir, Status Koneksi & Sinkronisasi Cloud"
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all shadow-2xs active:scale-95 ${
+                  isQuickMenuOpen
+                    ? 'bg-[#faebd7] text-[#332219] border-[#96633b]'
+                    : 'bg-[#fdfaf7] hover:bg-[#faebd7]/70 text-[#332219] border-[#dfcebe]'
                 }`}
               >
-                <Touchpad className={`w-4 h-4 ${isTouchscreenMode ? 'text-amber-200 animate-pulse' : 'text-[#8a6b53]'}`} />
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-extrabold">Touchscreen:</span>
-                  <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                    isTouchscreenMode ? 'bg-white text-[#7c4e2f] shadow-2xs' : 'bg-[#ebdccf] text-[#543c2e]'
-                  }`}>
-                    {isTouchscreenMode ? 'ON' : 'OFF'}
+                {/* Live Online/Sync Indicator */}
+                <span className="inline-flex items-center gap-1.5">
+                  {isSyncing ? (
+                    <RefreshCw className="w-3.5 h-3.5 text-[#7c4e2f] animate-spin" />
+                  ) : isOnline ? (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/25" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse ring-2 ring-rose-500/25" />
+                  )}
+                  <span className={`font-extrabold ${isOnline ? 'text-emerald-800' : 'text-rose-700'}`}>
+                    {isSyncing ? 'Sinkron...' : isOnline ? 'Online' : 'Offline'}
                   </span>
+                </span>
+
+                <span className="h-3.5 w-px bg-[#dfcebe] hidden sm:block" />
+
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-[#543c2e]">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[#7c4e2f]" />
+                  <span>Menu Sistem</span>
+                </span>
+
+                {badgeAlertCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-black">
+                    {badgeAlertCount}
+                  </span>
+                )}
+
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-[#8a6b53] transition-transform duration-200 ${
+                    isQuickMenuOpen ? 'rotate-180 text-[#7c4e2f]' : ''
+                  }`}
+                />
+              </button>
+
+              {/* Floating Popover Control Center */}
+              {isQuickMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-76 sm:w-80 bg-white border border-[#e4d5c7] rounded-2xl shadow-[0_18px_45px_-8px_rgba(25,18,12,0.2)] p-3 z-50 space-y-2.5 animate-fadeIn">
+                  
+                  {/* Cloud & Connection Card */}
+                  <div className="p-3 rounded-xl bg-[#fcf9f5] border border-[#eed7c4] space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-1.5 rounded-lg ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold text-[#332219]">
+                            {isOnline ? 'Terhubung ke Cloud' : simulatedOffline ? 'Mode Offline Simulasi' : 'Koneksi Terputus'}
+                          </div>
+                          <div className="text-[10px] text-[#8a6b53] font-medium">
+                            {pendingSyncCount > 0 ? `${pendingSyncCount} antrean belum tersinkron` : 'Semua data tersinkronisasi'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onToggleOffline}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                          isOnline
+                            ? 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                            : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                        }`}
+                      >
+                        {isOnline ? 'Set Offline' : 'Set Online'}
+                      </button>
+                    </div>
+
+                    {onManualSync && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onManualSync();
+                          setIsQuickMenuOpen(false);
+                        }}
+                        disabled={!isOnline || isSyncing}
+                        className="w-full py-2 px-3 rounded-xl bg-[#7c4e2f] hover:bg-[#633e26] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span>{isSyncing ? 'Menyinkronkan Data...' : 'Sinkronisasi Cloud Sekarang'}</span>
+                        {pendingSyncCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white text-[#7c4e2f] font-black">
+                            {pendingSyncCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Display & Input Toggles */}
+                  <div className="space-y-1">
+                    <div className="px-2 pt-0.5 text-[10px] font-black uppercase tracking-wider text-[#8a6b53]">
+                      Tampilan & Perangkat
+                    </div>
+
+                    {/* Fullscreen Toggle Row */}
+                    <button
+                      type="button"
+                      onClick={toggleFullscreen}
+                      className="w-full px-2.5 py-2 rounded-xl hover:bg-[#fcf5ed] flex items-center justify-between text-xs font-semibold text-[#332219] transition-colors"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        {isFullscreen ? (
+                          <Minimize className="w-4 h-4 text-[#7c4e2f]" />
+                        ) : (
+                          <Maximize className="w-4 h-4 text-[#7c4e2f]" />
+                        )}
+                        <span>Layar Penuh Monitor</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          isFullscreen
+                            ? 'bg-[#7c4e2f] text-white'
+                            : 'bg-stone-100 text-stone-600 border border-stone-200'
+                        }`}
+                      >
+                        {isFullscreen ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+
+                    {/* Touchscreen Toggle Row */}
+                    {onToggleTouchscreen && (
+                      <button
+                        type="button"
+                        onClick={onToggleTouchscreen}
+                        className="w-full px-2.5 py-2 rounded-xl hover:bg-[#fcf5ed] flex items-center justify-between text-xs font-semibold text-[#332219] transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Touchpad className="w-4 h-4 text-[#7c4e2f]" />
+                          <span>Mode Touchscreen</span>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            isTouchscreenMode
+                              ? 'bg-[#7c4e2f] text-white'
+                              : 'bg-stone-100 text-stone-600 border border-stone-200'
+                          }`}
+                        >
+                          {isTouchscreenMode ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Install PWA */}
+                    {!isPWAInstalled && onOpenPWAInstall && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          onOpenPWAInstall();
+                        }}
+                        className="w-full px-2.5 py-2 rounded-xl hover:bg-[#fcf5ed] flex items-center justify-between text-xs font-semibold text-[#332219] transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Download className="w-4 h-4 text-emerald-600" />
+                          <span>Pasang Aplikasi (PWA)</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          Install
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Lapor Kendala / Help Chat */}
+                    {onOpenHelpChat && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          onOpenHelpChat();
+                        }}
+                        className="w-full px-2.5 py-2 rounded-xl hover:bg-[#fcf5ed] flex items-center justify-between text-xs font-semibold text-[#332219] transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <MessageSquare className="w-4 h-4 text-amber-600" />
+                          <span>Lapor Kendala & Bantuan</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          Chat
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Superadmin Section */}
+                  {isSuperAdmin && (
+                    <div className="pt-2 border-t border-[#f0e4d7] space-y-1">
+                      <div className="px-2 text-[10px] font-black uppercase tracking-wider text-purple-700">
+                        Developer & Superadmin
+                      </div>
+
+                      {onOpenErrorMonitoring && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickMenuOpen(false);
+                            onOpenErrorMonitoring();
+                          }}
+                          className="w-full px-2.5 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-xs font-semibold text-slate-700 transition-colors"
+                        >
+                          <span className="flex items-center gap-2.5">
+                            <Activity className={`w-4 h-4 ${errorCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`} />
+                            <span>Monitoring Sistem</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            errorCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                          }`}>
+                            {errorCount > 0 ? `${errorCount} Eror` : 'Sehat'}
+                          </span>
+                        </button>
+                      )}
+
+                      {onOpenLanSettings && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickMenuOpen(false);
+                            onOpenLanSettings();
+                          }}
+                          className="w-full px-2.5 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-xs font-semibold text-slate-700 transition-colors"
+                        >
+                          <span className="flex items-center gap-2.5">
+                            {lanConfig.mode === 'SERVER' ? (
+                              <Server className="w-4 h-4 text-emerald-600" />
+                            ) : lanConfig.mode === 'CLIENT' ? (
+                              <Laptop className="w-4 h-4 text-sky-600" />
+                            ) : (
+                              <Network className="w-4 h-4 text-[#7c4e2f]" />
+                            )}
+                            <span>Jaringan Multi-Kasir (LAN)</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                            {lanConfig.mode === 'SERVER' ? 'Server' : lanConfig.mode === 'CLIENT' ? (isLanConnected ? 'Klien' : 'Putus') : 'Standby'}
+                          </span>
+                        </button>
+                      )}
+
+                      {licenseStatus && onOpenLicense && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickMenuOpen(false);
+                            onOpenLicense();
+                          }}
+                          className="w-full px-2.5 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-xs font-semibold text-slate-700 transition-colors"
+                        >
+                          <span className="flex items-center gap-2.5">
+                            {licenseStatus.isActivated ? (
+                              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            ) : licenseStatus.isExpired ? (
+                              <Lock className="w-4 h-4 text-rose-600" />
+                            ) : (
+                              <KeyRound className="w-4 h-4 text-amber-600" />
+                            )}
+                            <span>Lisensi Aplikasi</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800">
+                            {licenseStatus.isActivated ? 'PRO' : licenseStatus.isExpired ? 'Habis' : `${licenseStatus.remainingTransactions} Nota`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                 </div>
-              </button>
-            )}
-
-            {/* Online / Offline Simulator Toggle */}
-            <button
-              onClick={onToggleOffline}
-              title={isOnline ? 'Online (Klik untuk simulasi offline)' : simulatedOffline ? 'Offline (Mode Simulasi)' : 'Offline (Tidak ada koneksi)'}
-              className={`flex items-center space-x-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs ${
-                isOnline
-                  ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf] hover:bg-[#e1efe3]'
-                  : 'bg-[#fdf3f2] text-[#991b1b] border-[#fecaca] hover:bg-[#fee2e2]'
-              }`}
-            >
-              {isOnline ? (
-                <>
-                  <Wifi className="w-3.5 h-3.5 text-[#166534]" />
-                  <span className="hidden sm:inline">Online</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-3.5 h-3.5 text-[#991b1b] animate-pulse" />
-                  <span className="hidden sm:inline">Offline</span>
-                </>
               )}
-            </button>
+            </div>
 
-            {/* Tombol Install PWA (Jika belum terpasang di HP / Desktop) */}
-            {!isPWAInstalled && onOpenPWAInstall && (
-              <button
-                type="button"
-                onClick={onOpenPWAInstall}
-                title="Pasang Aplikasi Ketoko POS di Layar Utama (PWA Offline-First)"
-                className="flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 active:scale-95 animate-fadeIn"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden md:inline">Pasang PWA</span>
-              </button>
-            )}
-
-            {/* Tombol Chat Bantuan & Lapor Kendala Kasir */}
-            {onOpenHelpChat && (
-              <button
-                type="button"
-                onClick={onOpenHelpChat}
-                title="Ada kendala atau bug di kasir? Chat bantuan & lapor langsung ke developer"
-                className="flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 active:scale-95"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-amber-700" />
-                <span className="hidden md:inline">Lapor Kendala</span>
-              </button>
-            )}
-
-            {/* Tombol Monitoring & Tracking Eror (HANYA UNTUK SUPERADMIN / VENDOR DEVELOPER) */}
-            {isSuperAdmin && onOpenErrorMonitoring && (
-              <button
-                type="button"
-                onClick={onOpenErrorMonitoring}
-                title={errorCount > 0 ? `${errorCount} Eror Terdeteksi - Klik untuk melihat monitoring sistem` : 'Status Sistem: Sehat & Normal (Klik untuk Diagnostik & Tracking)'}
-                className={`flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
-                  errorCount > 0
-                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                <Activity className={`w-3.5 h-3.5 ${errorCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`} />
-                <span className="hidden md:inline">{errorCount > 0 ? `${errorCount} Eror` : 'Monitoring'}</span>
-                {errorCount > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                )}
-              </button>
-            )}
-
-            {/* Tombol Status LAN Multi-Kasir Terpusat & Cloud (HANYA UNTUK SUPERADMIN / DEVELOPER VENDOR) */}
-            {isSuperAdmin && onOpenLanSettings && (
-              <button
-                type="button"
-                onClick={onOpenLanSettings}
-                title="Superadmin: Pengaturan Jaringan Multi-Kasir (LAN), Cloudflare Tunnel & Supabase Cloud"
-                className={`flex items-center space-x-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
-                  lanConfig.mode === 'SERVER'
-                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                    : lanConfig.mode === 'CLIENT'
-                      ? isLanConnected
-                        ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-300'
-                        : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
-                      : 'bg-[#fdfaf7] hover:bg-[#faebd7] text-[#543c2e] border-[#dfcebe]'
-                }`}
-              >
-                {lanConfig.mode === 'SERVER' ? (
-                  <>
-                    <Server className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="hidden sm:inline">LAN Server</span>
-                  </>
-                ) : lanConfig.mode === 'CLIENT' ? (
-                  <>
-                    <Laptop className="w-3.5 h-3.5 text-sky-600" />
-                    <span className="hidden sm:inline">{isLanConnected ? 'Klien LAN' : 'LAN Putus'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Network className="w-3.5 h-3.5 text-[#7c4e2f]" />
-                    <span className="hidden sm:inline">LAN Kasir</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Tombol Sinkron Cloud Manual (Bisa ditekan kapan saja oleh Admin/Kasir di Laptop maupun HP) */}
-            {onManualSync && (
-              <button
-                type="button"
-                onClick={onManualSync}
-                disabled={!isOnline || isSyncing}
-                title={isOnline ? 'Klik untuk sinkronisasi penuh dengan Cloud (Transaksi, Stok, Hutang Piutang)' : 'Offline (Tidak ada koneksi internet)'}
-                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#faebd7] hover:bg-[#ebdccf] text-[#7c4e2f] border border-[#ddc3aa] font-bold text-xs shadow-2xs active:scale-95 disabled:opacity-50 transition-all shrink-0"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span className="inline sm:hidden">{isSyncing ? 'Sync...' : 'Sync'}</span>
-                <span className="hidden sm:inline">{isSyncing ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
-                {pendingSyncCount > 0 && (
-                  <span className="ml-0.5 sm:ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-extrabold animate-pulse">
-                    {pendingSyncCount}
-                  </span>
-                )}
-              </button>
-            )}
-
-
-            {/* License Status Badge (HANYA UNTUK SUPERADMIN / DEVELOPER VENDOR) */}
-            {isSuperAdmin && licenseStatus && (
-              <button
-                type="button"
-                onClick={onOpenLicense}
-                title="Status Lisensi & Aktivasi Aplikasi (Superadmin Developer)"
-                className={`flex items-center space-x-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 ${
-                  licenseStatus.isActivated
-                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-                    : licenseStatus.isExpired
-                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
-                      : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
-                }`}
-              >
-                {licenseStatus.isActivated ? (
-                  <>
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="hidden sm:inline">PRO Lifetime</span>
-                  </>
-                ) : licenseStatus.isExpired ? (
-                  <>
-                    <Lock className="w-3.5 h-3.5 text-rose-600" />
-                    <span className="hidden sm:inline">Trial Habis</span>
-                  </>
-                ) : (
-                  <>
-                    <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                    <span className="hidden sm:inline">Trial: {licenseStatus.remainingTransactions} Nota</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Cart Button with Coffee Tone & Amber Badge */}
+            {/* Cart Button */}
             <button
               onClick={onToggleCart}
               title="Buka Keranjang Kasir"

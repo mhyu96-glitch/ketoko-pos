@@ -25,7 +25,9 @@ import {
   ShieldOff,
   CheckCircle2,
   Printer,
-  KeyRound
+  KeyRound,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer } from '../types';
@@ -58,6 +60,7 @@ import {
   type CustomerAccessScope,
 } from '../utils/customerAccess';
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
+import { CustomSelect } from './CustomSelect';
 
 interface MemberModalProps {
   isOpen: boolean;
@@ -762,25 +765,33 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   const activeSelected = members.find((m) => m.id === currentMemberId || m.code === currentMemberId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header - Warm Latte Gradient */}
-        <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
+        {/* Header - Full-Screen Workspace */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3.5">
-            <div className="p-2.5 rounded-2xl bg-[#83532e] text-amber-200 border border-[#a6744c]">
+            <button
+              onClick={onClose}
+              title="Kembali"
+              className="p-2.5 rounded-2xl bg-[#83532e] hover:bg-[#6f4021] text-amber-100 border border-[#a6744c] transition-colors flex items-center justify-center"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="p-2.5 rounded-2xl bg-[#83532e] text-amber-200 border border-[#a6744c] hidden sm:flex">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-lg leading-tight tracking-tight text-white">Master Data Pelanggan & Member</h3>
-              <p className="text-xs text-[#fcefe3] font-medium">Kelola kode unik, kontak WhatsApp, alamat domisili, dan limit piutang toko</p>
+              <h3 className="font-black text-base sm:text-xl leading-tight tracking-tight text-white">Master Data Pelanggan & Member</h3>
+              <p className="text-xs text-[#fcefe3] font-medium hidden sm:block">Kelola kode unik, kontak WhatsApp, alamat domisili, dan limit piutang toko</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#83532e] transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
@@ -831,51 +842,61 @@ export const MemberModal: React.FC<MemberModalProps> = ({
               </button>
             </div>
 
-            <select
+            <CustomSelect
               value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
+              onChange={(val) => setBranchFilter(val)}
+              size="sm"
               title="Filter anggota berdasarkan cabang terdaftar"
-              className="px-2.5 py-1.5 rounded-xl border border-[#dfcebe] bg-white text-xs font-bold text-[#543c2e] shadow-2xs focus:border-[#7c4e2f] max-w-[190px] truncate"
-            >
-              <option value="ALL">Semua Cabang ({members.length})</option>
-              <option value="ALLOWED">Aktif di {getStoreDisplayName(activeStoreId)}</option>
-              {storesList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  Cabang: {s.name}
-                </option>
-              ))}
-            </select>
+              className="min-w-[175px] max-w-[220px]"
+              options={[
+                { value: 'ALL', label: `Semua Cabang (${members.length})` },
+                { value: 'ALLOWED', label: `Aktif di ${getStoreDisplayName(activeStoreId)}` },
+                ...storesList.map((s) => ({
+                  value: s.id,
+                  label: `Cabang: ${s.name}`,
+                })),
+              ]}
+            />
 
             {/* Filter Jenis: Karyawan vs Member Biasa */}
-            <select
+            <CustomSelect
               value={memberTypeFilter}
-              onChange={(e) => {
-                setMemberTypeFilter(e.target.value as any);
+              onChange={(val) => {
+                setMemberTypeFilter(val as any);
                 setVisibleLimit(150);
               }}
+              size="sm"
+              variant="emerald"
               title="Filter Anggota: Karyawan Koperasi atau Member Umum"
-              className="px-2.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-900 shadow-2xs focus:border-emerald-600"
-            >
-              <option value="ALL">Semua Anggota ({members.length})</option>
-              <option value="KARYAWAN">👔 Karyawan (Maks Rp 2 Jt) ({members.filter(m => m.type === 'KARYAWAN').length})</option>
-              <option value="MEMBER">🛒 Member Biasa ({members.filter(m => m.type !== 'KARYAWAN').length})</option>
-            </select>
+              className="min-w-[215px]"
+              options={[
+                { value: 'ALL', label: `Semua Anggota (${members.length})` },
+                {
+                  value: 'KARYAWAN',
+                  label: `👔 Karyawan (${members.filter((m) => m.type === 'KARYAWAN').length})`,
+                },
+                {
+                  value: 'MEMBER',
+                  label: `🛒 Member Biasa (${members.filter((m) => m.type !== 'KARYAWAN').length})`,
+                },
+              ]}
+            />
 
             {unitAfdOptions.length > 1 && (
-              <select
+              <CustomSelect
                 value={unitAfdFilter}
-                onChange={(e) => {
-                  setUnitAfdFilter(e.target.value);
+                onChange={(val) => {
+                  setUnitAfdFilter(val);
                   setVisibleLimit(150);
                 }}
+                size="sm"
                 title="Filter Unit Kebun & Afdeling"
-                className="px-2.5 py-1.5 rounded-xl border border-[#dfcebe] bg-white text-xs font-bold text-[#543c2e] shadow-2xs focus:border-[#7c4e2f] max-w-[190px] truncate"
-              >
-                <option value="ALL">Semua Unit / Afdeling</option>
-                {unitAfdOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
+                className="min-w-[195px] max-w-[240px]"
+                options={[
+                  { value: 'ALL', label: 'Semua Unit / Afdeling' },
+                  ...unitAfdOptions.map((opt) => ({ value: opt, label: opt })),
+                ]}
+              />
             )}
 
             {/* Tombol Bagikan Link Portal Kartu HP Karyawan */}
@@ -1838,249 +1859,392 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         />
       )}
 
-      {/* Modal Bagikan Link Portal Kartu HP Karyawan */}
+      {/* FULL-SCREEN WORKSPACE: Bagikan Link Portal Kartu HP Karyawan */}
       {showSharePortalModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-stone-950/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white border-2 border-emerald-600 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-60 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+          <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="p-4 bg-gradient-to-r from-emerald-800 to-teal-700 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-xl bg-emerald-900/60 text-emerald-200">
+            <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-emerald-800 to-teal-700 text-white flex items-center justify-between shrink-0 border-b border-emerald-900">
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSharePortalModal(false)}
+                  className="p-2 rounded-xl bg-emerald-950/50 hover:bg-emerald-950/80 text-emerald-100 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="p-2 rounded-xl bg-emerald-950/50 text-emerald-200 hidden sm:flex">
                   <Smartphone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-black text-base text-white">Portal Kartu Digital Karyawan (Via HP)</h4>
-                  <p className="text-xs text-emerald-100">Cek Saldo & Barcode Belanja Langsung dari HP</p>
+                  <h4 className="font-black text-base sm:text-lg text-white">Portal Kartu Digital Karyawan (Via HP)</h4>
+                  <p className="text-xs text-emerald-100">Cek Saldo & Barcode Belanja Langsung dari Browser HP</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowSharePortalModal(false)}
-                className="p-1 rounded-xl text-emerald-200 hover:text-white hover:bg-emerald-900/50"
+                className="px-3.5 py-2 rounded-xl bg-emerald-950/50 hover:bg-emerald-950/80 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
+                <span>Tutup</span>
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs text-stone-700 max-h-[80vh] overflow-y-auto">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start space-x-2.5">
-                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 text-xs text-stone-700">
+              <div className="max-w-3xl mx-auto bg-white border border-[#e5d0be] rounded-3xl shadow-xs p-5 sm:p-7 space-y-5">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start space-x-3">
+                  <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold text-sm text-emerald-950 block">Self-Service 100% Digital untuk Seluruh Karyawan</span>
+                    <span className="text-xs text-emerald-800 leading-relaxed mt-0.5 block">
+                      Karyawan yang memiliki HP tidak perlu antre kartu fisik. Cukup buka link di browser HP, verifikasi NIK + PIN, lalu tunjukkan barcode di kasir!
+                    </span>
+                  </div>
+                </div>
+
+                {/* Link Box */}
                 <div>
-                  <span className="font-bold text-emerald-950 block">Self-Service 100% Digital untuk 1.500 Karyawan</span>
-                  <span className="text-[11px] text-emerald-800">
-                    Karyawan tidak perlu mencetak kartu fisik atau antri. Cukup buka link di browser HP, ketik NIK atau No. HP, lalu tunjukkan barcode di kasir!
-                  </span>
-                </div>
-              </div>
-
-              {/* Link Box */}
-              <div>
-                <label className="text-[11px] font-black uppercase text-stone-500 block mb-1">
-                  Link Akses Portal Karyawan:
-                </label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={portalPublicUrl}
-                    className="w-full px-3 py-2 bg-stone-100 border border-stone-300 rounded-xl font-mono font-bold text-xs text-stone-800 select-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(portalPublicUrl);
-                      setCopiedLink(true);
-                      setTimeout(() => setCopiedLink(false), 2000);
-                    }}
-                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold flex items-center space-x-1 shrink-0 transition-colors shadow-2xs"
-                  >
-                    {copiedLink ? <CheckCircle2 className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedLink ? 'Tersalin' : 'Salin'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.open(portalPublicUrl, '_blank');
-                    }}
-                    className="p-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl transition-colors shrink-0"
-                    title="Buka di tab baru"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* WhatsApp Broadcast Template Box */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-black uppercase text-stone-500 block">
-                    Format Pesan WhatsApp Siap Sebar (Grup Karyawan):
+                  <label className="text-xs font-extrabold text-stone-700 block mb-1.5">
+                    Link Akses Portal Karyawan:
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const text = `*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`;
-                      navigator.clipboard.writeText(text);
-                      setCopiedText(true);
-                      setTimeout(() => setCopiedText(false), 2000);
-                    }}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center space-x-1"
-                  >
-                    {copiedText ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedText ? 'Tersalin ke Clipboard!' : 'Salin Teks WA'}</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={portalPublicUrl}
+                      className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl font-mono font-bold text-xs text-stone-800 select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(portalPublicUrl);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold flex items-center space-x-1.5 shrink-0 transition-colors shadow-2xs"
+                    >
+                      {copiedLink ? <CheckCircle2 className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedLink ? 'Tersalin' : 'Salin Link'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.open(portalPublicUrl, '_blank');
+                      }}
+                      className="p-2.5 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-700 rounded-xl transition-colors shrink-0"
+                      title="Buka di tab baru"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  readOnly
-                  rows={7}
-                  value={`*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`}
-                  className="w-full p-2.5 bg-stone-50 border border-stone-300 rounded-xl font-mono text-[11px] text-stone-700 select-all"
-                />
+
+                {/* WhatsApp Broadcast Template Box */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-extrabold text-stone-700 block">
+                      Format Pesan WhatsApp Siap Sebar (Grup Karyawan):
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`;
+                        navigator.clipboard.writeText(text);
+                        setCopiedText(true);
+                        setTimeout(() => setCopiedText(false), 2000);
+                      }}
+                      className="px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 hover:bg-emerald-100 flex items-center space-x-1.5"
+                    >
+                      {copiedText ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedText ? 'Tersalin ke Clipboard!' : 'Salin Teks WA'}</span>
+                    </button>
+                  </div>
+                  <textarea
+                    readOnly
+                    rows={9}
+                    value={`*KARTU MEMBER DIGITAL KOPERASI KARYAWAN*\n\nHalo Rekan-rekan Karyawan,\n\nUntuk kemudahan berbelanja di Toko Utama maupun Toko Cabang Koperasi, kini kartu member dan kuota belanja bulanan Rp 2.000.000 sudah dapat diakses langsung via HP masing-masing!\n\n📲 *Link Portal Kartu Digital:*\n${portalPublicUrl}\n\n*Cara Menggunakannya:*\n1. Buka link di atas pada browser HP Anda.\n2. Masukkan NIK atau No. WhatsApp Anda.\n3. Kartu digital akan langsung tampil dengan Barcode Resmi & Sisa Kuota Belanja.\n4. Saat bayar di kasir, cukup tunjukkan barcode di layar HP Anda untuk di-scan oleh kasir.\n\n*Catatan:* Kuota belanja Rp 2.000.000 otomatis kereset tiap tanggal 1 awal bulan.\n\nTerima kasih & Selamat berbelanja!`}
+                    className="w-full p-3.5 bg-stone-50 border border-stone-300 rounded-2xl font-mono text-xs text-stone-700 select-all leading-relaxed"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="p-4 bg-stone-100 border-t border-stone-200 flex justify-end">
+            <div className="px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-t border-[#e5d0be] flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setShowSharePortalModal(false)}
-                className="px-5 py-2 bg-stone-700 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-colors"
+                className="px-6 py-2.5 bg-[#7c4e2f] hover:bg-[#633e26] text-white rounded-xl text-xs font-bold transition-colors"
               >
-                Tutup
+                Kembali ke Data Pelanggan
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Cetak Kartu Fisik Massal (Kertas A4 / Standar ID Card) */}
+      {/* FULL-SCREEN WORKSPACE: Cetak Kartu Fisik Massal (Kertas A4 / Standar ID Card) */}
       {showBatchPrintModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-stone-950/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white border-2 border-indigo-700 rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-60 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+          <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="p-4 bg-gradient-to-r from-indigo-900 to-indigo-700 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-xl bg-indigo-950/70 text-indigo-200">
+            <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 border-b border-[#5e3519]">
+              <div className="flex items-center space-x-3.5">
+                <button
+                  type="button"
+                  onClick={() => setShowBatchPrintModal(false)}
+                  title="Kembali ke Master Data Pelanggan"
+                  className="p-2.5 rounded-2xl bg-[#543017] hover:bg-[#422511] text-amber-100 border border-[#9b663b]/50 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 border border-[#9b663b]/50 hidden sm:flex">
                   <Printer className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-black text-base text-white">Cetak Kartu Fisik A4 Massal</h4>
-                  <p className="text-xs text-indigo-100">Untuk Karyawan yang Tidak Memiliki Smartphone</p>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-black text-base sm:text-xl text-white">Cetak Kartu Fisik A4 Massal</h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#543017] text-amber-100 border border-[#9b663b]/50 uppercase">
+                      85.6 × 54 mm (Standar KTP)
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#fcefe3] mt-0.5">
+                    Cetak kartu belanja ber-barcode &amp; QR untuk karyawan yang tidak memiliki smartphone
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowBatchPrintModal(false)}
-                className="p-1 rounded-xl text-indigo-200 hover:text-white hover:bg-indigo-900/50"
+                className="px-3.5 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-white border border-[#9b663b]/50 text-xs font-bold flex items-center gap-1.5 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
+                <span>Tutup</span>
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs text-stone-700 max-h-[80vh] overflow-y-auto">
-              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-start space-x-2.5">
-                <ShieldCheck className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-indigo-950 block">Standar Ukuran ID Card / KTP (85.6 × 54 mm)</span>
-                  <span className="text-[11px] text-indigo-800">
-                    Disusun rapi 2 kolom per lembar A4 siap print, potong, dan laminating. Dilengkapi Barcode CODE128 &amp; QR Code yang langsung dapat di-scan oleh scanner kasir.
-                  </span>
-                </div>
-              </div>
-
-              {/* Filter Unit & Afdeling */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-black uppercase text-stone-600 block mb-1">
-                    Filter Unit Kebun / Pabrik:
-                  </label>
-                  <select
-                    value={printUnitFilter}
-                    onChange={(e) => {
-                      setPrintUnitFilter(e.target.value);
-                      setPrintBatchIndex(0);
-                    }}
-                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-xs text-stone-800"
-                  >
-                    <option value="ALL">Semua Unit ({batchPrintCandidates.length})</option>
-                    {printUnitOptions.map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black uppercase text-stone-600 block mb-1">
-                    Filter Afdeling / Divisi:
-                  </label>
-                  <select
-                    value={printAfdFilter}
-                    onChange={(e) => {
-                      setPrintAfdFilter(e.target.value);
-                      setPrintBatchIndex(0);
-                    }}
-                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl font-bold text-xs text-stone-800"
-                  >
-                    <option value="ALL">Semua Afdeling</option>
-                    {printAfdOptions.map((afd) => (
-                      <option key={afd} value={afd}>{afd}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Info Terpilih & Batching */}
-              <div className="p-3 bg-stone-100 border border-stone-200 rounded-xl space-y-2">
-                <div className="flex justify-between items-center font-bold">
-                  <span>Total Karyawan Sesuai Filter:</span>
-                  <span className="font-mono text-indigo-700 text-sm">{batchPrintCandidates.length} Orang</span>
-                </div>
-                {totalPrintBatches > 1 && (
-                  <div className="flex items-center justify-between text-[11px] pt-2 border-t border-stone-200">
-                    <span className="text-stone-600">Pilih Batch Halaman (60 Kartu / Batch):</span>
-                    <div className="flex items-center space-x-1">
-                      {Array.from({ length: totalPrintBatches }).map((_, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setPrintBatchIndex(idx)}
-                          className={`px-2 py-1 rounded-lg font-bold text-[11px] ${
-                            safeBatchIndex === idx
-                              ? 'bg-indigo-700 text-white'
-                              : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-50'
-                          }`}
-                        >
-                          {idx + 1}
-                        </button>
-                      ))}
+            {/* Spacious 2-Column Workspace Body */}
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 text-xs text-[#332219]">
+              <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Column: Filter & Batch Grid (7 cols) */}
+                <div className="lg:col-span-7 space-y-5">
+                  
+                  {/* Info Banner */}
+                  <div className="p-4 bg-white border border-[#e4d5c7] rounded-2xl flex items-start space-x-3 shadow-2xs">
+                    <div className="p-2 rounded-xl bg-[#faebd7] text-[#7c4e2f] shrink-0">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-sm text-[#332219] block">
+                        Layout Presisi 2 Kolom per Lembar A4 (Siap Potong &amp; Laminating)
+                      </span>
+                      <span className="text-xs text-[#856b59] leading-relaxed mt-0.5 block">
+                        Setiap kartu dilengkapi Barcode 1D (CODE128) &amp; QR Code tajam yang langsung membaca nama asli karyawan saat di-scan di kasir.
+                      </span>
                     </div>
                   </div>
-                )}
-                <div className="text-[11px] text-stone-500 italic">
-                  Batch {safeBatchIndex + 1}: {selectedPrintSlice.length} Karyawan terpilih untuk dicetak.
+
+                  {/* Filter Unit & Afdeling */}
+                  <div className="p-5 bg-white border border-[#e4d5c7] rounded-2xl shadow-2xs space-y-4">
+                    <div className="font-extrabold text-sm text-[#332219]">1. Filter Unit &amp; Afdeling Karyawan</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-[#856b59] block mb-1.5">
+                          Unit Kebun / Pabrik
+                        </label>
+                        <CustomSelect
+                          value={printUnitFilter}
+                          onChange={(val) => {
+                            setPrintUnitFilter(val);
+                            setPrintBatchIndex(0);
+                          }}
+                          options={[
+                            { value: 'ALL', label: `Semua Unit (${batchPrintCandidates.length} Orang)` },
+                            ...printUnitOptions.map((u) => ({ value: u, label: u })),
+                          ]}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-[#856b59] block mb-1.5">
+                          Afdeling / Divisi
+                        </label>
+                        <CustomSelect
+                          value={printAfdFilter}
+                          onChange={(val) => {
+                            setPrintAfdFilter(val);
+                            setPrintBatchIndex(0);
+                          }}
+                          options={[
+                            { value: 'ALL', label: 'Semua Afdeling' },
+                            ...printAfdOptions.map((afd) => ({ value: afd, label: afd })),
+                          ]}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3 Summary KPI Boxes */}
+                    <div className="grid grid-cols-3 gap-3 pt-2">
+                      <div className="p-3 rounded-xl bg-[#fcf9f5] border border-[#eed7c4]">
+                        <span className="text-[10px] font-bold uppercase text-[#8a6b53] block">Total Terfilter</span>
+                        <span className="text-lg font-black tabular-nums text-[#332219] mt-0.5 block">
+                          {batchPrintCandidates.length.toLocaleString('id-ID')} <span className="text-xs font-semibold text-[#8a6b53]">Org</span>
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-[#fcf9f5] border border-[#eed7c4]">
+                        <span className="text-[10px] font-bold uppercase text-[#8a6b53] block">Jumlah Batch</span>
+                        <span className="text-lg font-black tabular-nums text-[#7c4e2f] mt-0.5 block">
+                          {totalPrintBatches} <span className="text-xs font-semibold text-[#8a6b53]">Batch</span>
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-[#fcf9f5] border border-[#eed7c4]">
+                        <span className="text-[10px] font-bold uppercase text-[#8a6b53] block">Estimasi Kertas</span>
+                        <span className="text-lg font-black tabular-nums text-emerald-800 mt-0.5 block">
+                          {Math.max(1, Math.ceil(selectedPrintSlice.length / 10))} <span className="text-xs font-semibold text-[#8a6b53]">Lbr A4</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Clean Wrapping Batch Selector Grid */}
+                  {totalPrintBatches > 1 && (
+                    <div className="p-5 bg-white border border-[#e4d5c7] rounded-2xl shadow-2xs space-y-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="font-extrabold text-sm text-[#332219]">
+                            2. Pilih Batch Halaman ({BATCH_PRINT_SIZE} Kartu / Batch)
+                          </div>
+                          <div className="text-[11px] text-[#856b59]">
+                            Dicetak per batch agar antrean printer tetap ringan &amp; rapi
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={safeBatchIndex <= 0}
+                            onClick={() => setPrintBatchIndex(Math.max(0, safeBatchIndex - 1))}
+                            className="p-1.5 rounded-lg border border-[#dfcebe] bg-[#fcf9f5] hover:bg-[#faebd7] text-[#543c2e] disabled:opacity-40 transition-colors"
+                            title="Batch Sebelumnya"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <span className="px-2.5 py-1 rounded-lg bg-[#faebd7] text-[#7c4e2f] font-black text-xs tabular-nums">
+                            Batch {safeBatchIndex + 1} / {totalPrintBatches}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={safeBatchIndex >= totalPrintBatches - 1}
+                            onClick={() => setPrintBatchIndex(Math.min(totalPrintBatches - 1, safeBatchIndex + 1))}
+                            className="p-1.5 rounded-lg border border-[#dfcebe] bg-[#fcf9f5] hover:bg-[#faebd7] text-[#543c2e] disabled:opacity-40 transition-colors"
+                            title="Batch Berikutnya"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-60 overflow-y-auto pr-1 custom-scroll">
+                        {Array.from({ length: totalPrintBatches }).map((_, idx) => {
+                          const startNo = idx * BATCH_PRINT_SIZE + 1;
+                          const endNo = Math.min((idx + 1) * BATCH_PRINT_SIZE, batchPrintCandidates.length);
+                          const isSelected = safeBatchIndex === idx;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setPrintBatchIndex(idx)}
+                              className={`px-2.5 py-2 rounded-xl border text-left transition-all ${
+                                isSelected
+                                  ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-xs'
+                                  : 'bg-[#fcf9f5] border-[#dfcebe] text-[#332219] hover:bg-[#faebd7]/60 hover:border-[#96633b]'
+                              }`}
+                            >
+                              <div className="font-extrabold text-xs">Batch {idx + 1}</div>
+                              <div className={`text-[10px] tabular-nums ${isSelected ? 'text-amber-100' : 'text-[#8a6b53]'}`}>
+                                No. {startNo}–{endNo}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {/* Right Column: Live Batch Preview List (5 cols) */}
+                <div className="lg:col-span-5">
+                  <div className="bg-white border border-[#e4d5c7] rounded-2xl shadow-2xs overflow-hidden flex flex-col h-full max-h-[540px]">
+                    <div className="px-4 py-3.5 bg-[#f5ece3] border-b border-[#e4d5c7] flex items-center justify-between shrink-0">
+                      <div>
+                        <div className="font-extrabold text-xs sm:text-sm text-[#332219]">
+                          Preview Daftar Kartu — Batch {safeBatchIndex + 1}
+                        </div>
+                        <div className="text-[11px] text-[#856b59]">
+                          {selectedPrintSlice.length} karyawan siap dicetak pada batch ini
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black">
+                        Siap Print
+                      </span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto divide-y divide-[#f5ece3] custom-scroll">
+                      {selectedPrintSlice.length === 0 ? (
+                        <div className="p-8 text-center text-[#8a6b53]">
+                          Tidak ada data karyawan sesuai filter ini.
+                        </div>
+                      ) : (
+                        selectedPrintSlice.map((emp, i) => {
+                          const globalNumber = safeBatchIndex * BATCH_PRINT_SIZE + i + 1;
+                          return (
+                            <div key={emp.id} className="px-4 py-2.5 flex items-center justify-between gap-2 hover:bg-[#fcf9f5]">
+                              <div className="min-w-0">
+                                <div className="font-bold text-xs text-[#332219] truncate">
+                                  <span className="text-[#8a6b53] tabular-nums mr-1.5">{globalNumber}.</span>
+                                  {emp.name}
+                                </div>
+                                <div className="text-[10px] text-[#856b59] font-mono truncate mt-0.5">
+                                  {emp.code || emp.id}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-semibold bg-[#fcf5ed] text-[#7c4e2f] border border-[#eed7c4] px-2 py-0.5 rounded-md shrink-0 max-w-[140px] truncate">
+                                {formatCustomerAddressDisplay(emp.address) || 'Karyawan'}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
 
-            <div className="p-4 bg-stone-100 border-t border-stone-200 flex items-center justify-between gap-2">
+            {/* Sticky Bottom Action Bar */}
+            <div className="px-4 sm:px-6 lg:px-8 py-4 bg-white border-t border-[#e4d5c7] flex flex-wrap items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowBatchPrintModal(false)}
-                className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition-colors"
+                className="px-5 py-2.5 bg-[#f5ece3] hover:bg-[#ebdccf] text-[#543c2e] rounded-xl text-xs font-bold transition-colors"
               >
-                Tutup
+                ← Kembali ke Data Pelanggan
               </button>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 {batchPrintCandidates.length > BATCH_PRINT_SIZE && (
                   <button
                     type="button"
                     onClick={() => handlePrintPhysicalCardsA4(batchPrintCandidates)}
-                    className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 border border-indigo-300 rounded-xl text-xs font-bold transition-colors"
+                    className="px-4 py-2.5 bg-[#faebd7] hover:bg-[#ebdccf] text-[#7c4e2f] border border-[#ddc3aa] rounded-xl text-xs font-extrabold transition-colors"
                   >
-                    Cetak Semua ({batchPrintCandidates.length} Kartu)
+                    Cetak Semua ({batchPrintCandidates.length.toLocaleString('id-ID')} Kartu)
                   </button>
                 )}
                 <button
                   type="button"
+                  disabled={selectedPrintSlice.length === 0}
                   onClick={() => handlePrintPhysicalCardsA4(selectedPrintSlice)}
-                  className="px-5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center space-x-1.5"
+                  className="px-6 py-2.5 bg-[#7c4e2f] hover:bg-[#633e26] disabled:opacity-50 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center space-x-2 active:scale-95"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Cetak Batch {safeBatchIndex + 1} ({selectedPrintSlice.length} Kartu)</span>

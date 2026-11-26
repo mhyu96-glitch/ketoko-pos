@@ -531,11 +531,11 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header - Coklat Susu Latte Header */}
-        <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
+        {/* Header - Full-Screen */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 rounded-2xl bg-[#83532e] text-amber-200 border border-[#a6744c]">
               <Settings className="w-5 h-5" />
@@ -768,10 +768,9 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                       <Store className="w-3.5 h-3.5 text-[#7c4e2f]" />
                       <span>Cabang Aktif Terminal Ini (Isolasi Member Koperasi):</span>
                     </label>
-                    <select
+                    <CustomSelect
                       value={terminalStoreId}
-                      onChange={(e) => {
-                        const nextId = e.target.value;
+                      onChange={(nextId) => {
                         setTerminalStoreId(nextId);
                         const found = registeredStores.find((s) => s.id === nextId);
                         if (found) {
@@ -781,19 +780,21 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                           }));
                         }
                       }}
-                      className="w-full px-3 py-2 border border-[#ddc3aa] rounded-xl bg-white text-xs font-bold text-[#3d2617] focus:border-[#96633b]"
-                    >
-                      {registeredStores.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.id}) {s.branch ? `— ${s.branch}` : ''}
-                        </option>
-                      ))}
-                      {!registeredStores.some((s) => s.id === terminalStoreId) && (
-                        <option value={terminalStoreId}>
-                          {getStoreDisplayName(terminalStoreId)} ({terminalStoreId})
-                        </option>
-                      )}
-                    </select>
+                      options={[
+                        ...registeredStores.map((s) => ({
+                          value: s.id,
+                          label: `${s.name} (${s.id})${s.branch ? ` — ${s.branch}` : ''}`,
+                        })),
+                        ...(!registeredStores.some((s) => s.id === terminalStoreId)
+                          ? [
+                              {
+                                value: terminalStoreId,
+                                label: `${getStoreDisplayName(terminalStoreId)} (${terminalStoreId})`,
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                     <p className="text-[11px] text-[#7c4e2f]">
                       Pelanggan dengan izin <b>Khusus Cabang Terdaftar</b> hanya bisa melakukan transaksi member di terminal yang terhubung ke cabangnya masing-masing.
                     </p>

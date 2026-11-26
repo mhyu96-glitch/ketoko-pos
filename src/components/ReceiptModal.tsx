@@ -138,11 +138,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/60 backdrop-blur-xs animate-smooth-backdrop">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-smooth-modal">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* 1. Modal Header - Transaksi Berhasil & Lunas */}
-        <div className="p-4 sm:p-5 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between shrink-0 shadow-xs">
+        {/* 1. Header - Transaksi Berhasil & Lunas */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between shrink-0 shadow-xs">
           <div className="flex items-center space-x-3.5">
             <div className="p-2.5 rounded-2xl bg-emerald-700/80 text-white shadow-inner border border-emerald-400/40">
               <CheckCircle2 className="w-6 h-6 text-emerald-100" />
@@ -184,7 +184,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         </div>
 
         {/* 2. Content Body - Fast Cashier Settlement Info */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5]">
+        <div className="p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5] flex-1 max-w-2xl mx-auto w-full">
           
           {/* Change Amount Box (Uang Kembalian / Status Pembayaran) */}
           <div className="p-4 rounded-3xl bg-gradient-to-br from-white to-[#fcf9f5] border-2 border-[#ddc3aa] shadow-sm text-center space-y-1 relative overflow-hidden">

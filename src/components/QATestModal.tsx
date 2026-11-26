@@ -219,11 +219,11 @@ export const QATestModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const passCount = testResults.filter((t) => t.status === 'PASS').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white border border-slate-200 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-white w-full h-full flex flex-col overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
           <div className="flex items-center space-x-2">
             <div className="p-2 rounded-lg bg-violet-50 text-violet-700 border border-violet-200">
               <Beaker className="w-5 h-5" />

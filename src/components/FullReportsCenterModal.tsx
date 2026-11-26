@@ -42,6 +42,7 @@ import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
 import { employeeAllowanceService, type EmployeeAllowanceReport, type EmployeeAllowanceRecord } from '../services/employeeAllowanceService';
 import { filterCustomersForStore } from '../utils/customerAccess';
+import { CustomSelect } from './CustomSelect';
 
 interface FullReportsCenterModalProps {
   isOpen: boolean;
@@ -1045,18 +1046,25 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-stone-950/50 backdrop-blur-xs animate-smooth-backdrop">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-smooth-modal">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* 1. Modal Header - Luxury Coffee & Warm Latte Header */}
-        <div className="p-4 sm:p-5 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between shrink-0 shadow-xs">
+        {/* 1. Full-Screen Workspace Header */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs">
           <div className="flex items-center space-x-3.5">
-            <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 shadow-inner border border-[#9b663b]/50">
+            <button
+              onClick={onClose}
+              title="Kembali ke Kasir / Dashboard"
+              className="p-2.5 rounded-2xl bg-[#543017] hover:bg-[#422511] text-amber-100 border border-[#9b663b]/50 transition-colors flex items-center justify-center"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 shadow-inner border border-[#9b663b]/50 hidden sm:flex">
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center space-x-2.5">
-                <h3 className="font-black text-lg leading-tight tracking-tight text-white">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-black text-base sm:text-xl leading-tight tracking-tight text-white">
                   Pusat Laporan & Analitik Retail
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#543017] text-amber-100 uppercase border border-[#9b663b]/50 tracking-wider shadow-2xs">
@@ -1067,13 +1075,13 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   Realtime Live
                 </span>
               </div>
-              <p className="text-xs text-[#fcefe3]/90 font-medium mt-0.5">
+              <p className="text-xs text-[#fcefe3]/90 font-medium mt-0.5 hidden sm:block">
                 Rekapitulasi laba rugi komprehensif, penjualan, margin HPP, persediaan, dan beban operasional
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center flex-wrap gap-2">
             {/* Manual Refresh & Sync Cloud Button */}
             <button
               onClick={() => loadReportData(true)}
@@ -1118,18 +1126,19 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#543017] transition-colors"
+              className="px-3.5 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-white text-xs font-bold flex items-center space-x-1.5 border border-[#9b663b]/50 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
+              <span>Tutup</span>
             </button>
           </div>
         </div>
 
-        {/* 2. Responsive Tab & Date Range Selector - Warm Foam Bar */}
-        <div className="px-4 py-2.5 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        {/* 2. Responsive Tab & Date Range Selector - Full Width Bar (No Horizontal Scrollbar) */}
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-wrap items-center justify-between gap-3 shrink-0">
           
           {/* Tab Navigation Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => setActiveTab('sales')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border flex items-center space-x-1.5 shadow-2xs active:scale-95 ${
@@ -1301,8 +1310,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
           </div>
         )}
 
-        {/* 3. Modal Body: Tab Content Container */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-[#fcf9f5]">
+        {/* 3. Full-Screen Body: Tab Content Container */}
+        <div className="px-4 sm:px-6 lg:px-8 py-6 overflow-y-auto space-y-6 flex-1 bg-[#fcf9f5]">
           
           {/* TAB 1: PENJUALAN & SHIFT */}
           {activeTab === 'sales' && (
@@ -1391,18 +1400,18 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
                   {/* CASH Card */}
-                  <div className="p-3.5 rounded-2xl bg-[#f7faf7] border border-[#cce2cf] flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[#166534] mb-1">
-                      <span className="text-xs font-black uppercase flex items-center">
-                        <Banknote className="w-3.5 h-3.5 mr-1" /> Tunai (CASH)
+                  <div className="p-4 rounded-2xl bg-[#f7faf7] border border-[#cce2cf] flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 text-[#166534] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center whitespace-nowrap">
+                        <Banknote className="w-3.5 h-3.5 mr-1 shrink-0" /> Tunai (CASH)
                       </span>
-                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#cce2cf]">
+                      <span className="text-[10px] tabular-nums font-bold bg-white px-2 py-0.5 rounded-md border border-[#cce2cf] whitespace-nowrap shrink-0">
                         {metrics.paymentCountMap.CASH} Nota
                       </span>
                     </div>
-                    <div className="text-xl font-black font-mono text-[#166534] mt-1">
+                    <div className="text-xl font-black tabular-nums text-[#166534] mt-1">
                       {formatRupiah(metrics.paymentMethodMap.CASH)}
                     </div>
                     <div className="text-[10px] text-[#856b59] mt-1 font-medium">
@@ -1411,16 +1420,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
 
                   {/* TRANSFER Card */}
-                  <div className="p-3.5 rounded-2xl bg-[#fcf8f4] border border-[#eed7c4] flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[#7c4e2f] mb-1">
-                      <span className="text-xs font-black uppercase flex items-center">
-                        <DollarSign className="w-3.5 h-3.5 mr-1" /> Transfer Bank (TF)
+                  <div className="p-4 rounded-2xl bg-[#fcf8f4] border border-[#eed7c4] flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 text-[#7c4e2f] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center whitespace-nowrap">
+                        <DollarSign className="w-3.5 h-3.5 mr-1 shrink-0" /> Transfer (TF)
                       </span>
-                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#eed7c4]">
+                      <span className="text-[10px] tabular-nums font-bold bg-white px-2 py-0.5 rounded-md border border-[#eed7c4] whitespace-nowrap shrink-0">
                         {metrics.paymentCountMap.TRANSFER} Nota
                       </span>
                     </div>
-                    <div className="text-xl font-black font-mono text-[#7c4e2f] mt-1">
+                    <div className="text-xl font-black tabular-nums text-[#7c4e2f] mt-1">
                       {formatRupiah(metrics.paymentMethodMap.TRANSFER)}
                     </div>
                     <div className="text-[10px] text-[#856b59] mt-1 font-medium">
@@ -1429,16 +1438,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
 
                   {/* QRIS Card */}
-                  <div className="p-3.5 rounded-2xl bg-[#f0f7fb] border border-[#bae6fd] flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[#0369a1] mb-1">
-                      <span className="text-xs font-black uppercase flex items-center">
-                        <QrCode className="w-3.5 h-3.5 mr-1" /> QRIS Digital
+                  <div className="p-4 rounded-2xl bg-[#f0f7fb] border border-[#bae6fd] flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 text-[#0369a1] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center whitespace-nowrap">
+                        <QrCode className="w-3.5 h-3.5 mr-1 shrink-0" /> QRIS Digital
                       </span>
-                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#bae6fd]">
+                      <span className="text-[10px] tabular-nums font-bold bg-white px-2 py-0.5 rounded-md border border-[#bae6fd] whitespace-nowrap shrink-0">
                         {metrics.paymentCountMap.QRIS} Nota
                       </span>
                     </div>
-                    <div className="text-xl font-black font-mono text-[#0369a1] mt-1">
+                    <div className="text-xl font-black tabular-nums text-[#0369a1] mt-1">
                       {formatRupiah(metrics.paymentMethodMap.QRIS)}
                     </div>
                     <div className="text-[10px] text-[#856b59] mt-1 font-medium">
@@ -1447,16 +1456,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
 
                   {/* DEBIT Card */}
-                  <div className="p-3.5 rounded-2xl bg-[#faf5ff] border border-[#e9d5ff] flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[#6b21a8] mb-1">
-                      <span className="text-xs font-black uppercase flex items-center">
-                        <CreditCard className="w-3.5 h-3.5 mr-1" /> Kartu Debit (EDC)
+                  <div className="p-4 rounded-2xl bg-[#faf5ff] border border-[#e9d5ff] flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 text-[#6b21a8] mb-1">
+                      <span className="text-xs font-black uppercase flex items-center whitespace-nowrap">
+                        <CreditCard className="w-3.5 h-3.5 mr-1 shrink-0" /> Kartu Debit (EDC)
                       </span>
-                      <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-[#e9d5ff]">
+                      <span className="text-[10px] tabular-nums font-bold bg-white px-2 py-0.5 rounded-md border border-[#e9d5ff] whitespace-nowrap shrink-0">
                         {metrics.paymentCountMap.DEBIT} Nota
                       </span>
                     </div>
-                    <div className="text-xl font-black font-mono text-[#6b21a8] mt-1">
+                    <div className="text-xl font-black tabular-nums text-[#6b21a8] mt-1">
                       {formatRupiah(metrics.paymentMethodMap.DEBIT)}
                     </div>
                     <div className="text-[10px] text-[#856b59] mt-1 font-medium">
@@ -2015,18 +2024,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   {/* Customer Filter */}
                   <div className="flex items-center space-x-2">
                     <label className="text-xs font-bold text-[#856b59] whitespace-nowrap">Pelanggan:</label>
-                    <select
+                    <CustomSelect
                       value={selectedCustomerFilter}
-                      onChange={(e) => setSelectedCustomerFilter(e.target.value)}
-                      className="px-3 py-1.5 rounded-xl border border-[#d6c4b2] text-xs font-semibold text-[#332219] bg-[#fbf7f4] focus:outline-none focus:ring-2 focus:ring-[#7c4e2f]"
-                    >
-                      <option value="ALL">Semua Pelanggan ({allCustomerNames.length})</option>
-                      {allCustomerNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setSelectedCustomerFilter(val)}
+                      size="sm"
+                      className="min-w-[220px]"
+                      options={[
+                        { value: 'ALL', label: `Semua Pelanggan (${allCustomerNames.length})` },
+                        ...allCustomerNames.map((name) => ({ value: name, label: name }))
+                      ]}
+                    />
                   </div>
 
                   {/* Search Filter */}
@@ -2375,30 +2382,35 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-xs font-bold text-amber-950 focus:border-amber-600"
                   />
 
-                  <select
+                  <CustomSelect
                     value={employeeStatusFilter}
-                    onChange={(e) => setEmployeeStatusFilter(e.target.value as any)}
-                    className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 focus:border-emerald-600"
-                  >
-                    <option value="ALL">Semua Status ({employeeReport?.employees.length || 0})</option>
-                    <option value="SHOPPED">🛒 Sudah Belanja / Potong Gaji ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0).length || 0})</option>
-                    <option value="NOT_SHOPPED">⚪ Belum Belanja ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0).length || 0})</option>
-                    <option value="ACTIVE">🟢 Masih Ada Kuota ({employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE').length || 0})</option>
-                    <option value="EXHAUSTED">🔴 Kuota Habis (Rp 0) ({employeeReport?.summary.exhausted_count || 0})</option>
-                  </select>
+                    onChange={(val) => setEmployeeStatusFilter(val as any)}
+                    className="min-w-[210px]"
+                    options={[
+                      { value: 'ALL', label: `Semua Status (${employeeReport?.employees.length || 0})` },
+                      { value: 'SHOPPED', label: `🛒 Sudah Belanja / Potong Gaji (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0).length || 0})` },
+                      { value: 'NOT_SHOPPED', label: `⚪ Belum Belanja (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0).length || 0})` },
+                      { value: 'ACTIVE', label: `🟢 Masih Ada Kuota (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE').length || 0})` },
+                      { value: 'EXHAUSTED', label: `🔴 Kuota Habis (Rp 0) (${employeeReport?.summary.exhausted_count || 0})` }
+                    ]}
+                  />
 
                   {/* Filter Afdeling */}
-                  <select
+                  <CustomSelect
                     value={employeeAfdelingFilter}
-                    onChange={(e) => setEmployeeAfdelingFilter(e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-950 focus:border-emerald-600"
-                  >
-                    <option value="ALL">Semua Afdeling ({employeeReport?.employees.length || 0})</option>
-                    {afdelingOptions.map(afd => {
-                      const count = (employeeReport?.employees || []).filter(e => (e.afdeling || 'UMUM').toUpperCase() === afd).length;
-                      return <option key={afd} value={afd}>Afdeling {afd} ({count} Org)</option>;
-                    })}
-                  </select>
+                    onChange={(val) => setEmployeeAfdelingFilter(val)}
+                    variant="emerald"
+                    className="min-w-[200px]"
+                    options={[
+                      { value: 'ALL', label: `Semua Afdeling (${employeeReport?.employees.length || 0})` },
+                      ...afdelingOptions.map((afd) => {
+                        const count = (employeeReport?.employees || []).filter(
+                          (e) => (e.afdeling || 'UMUM').toUpperCase() === afd
+                        ).length;
+                        return { value: afd, label: `Afdeling ${afd} (${count} Org)` };
+                      })
+                    ]}
+                  />
 
                   <button
                     type="button"

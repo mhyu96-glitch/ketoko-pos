@@ -34,7 +34,6 @@ import {
   checkCustomerBranchAccess,
   filterCustomersForStore,
   getCurrentActiveStoreId,
-  getStoreDisplayName,
   isCustomerBelongsToStoreOrCluster,
   isCustomerCardBlocked,
 } from '../utils/customerAccess';
@@ -315,7 +314,6 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   const [isMemberDropdownOpen, setIsMemberDropdownOpen] = useState(false);
   const memberInputRef = useRef<HTMLDivElement>(null);
   const currentBranchId = activeStoreId || getCurrentActiveStoreId();
-  const currentBranchName = getStoreDisplayName(currentBranchId);
 
   const activeCustomer = useMemo(() => {
     return customersList.find(c => 
@@ -1166,60 +1164,52 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
             </div>
 
-            {/* Selected Member Name & Saldo Indicator */}
+            {/* Selected Member Saldo Indicator (Clean Single-Row Card) */}
             {activeMemberDisplayName && (
-              <div className={`p-2 rounded-xl border text-[11px] font-bold space-y-1 animate-fadeIn shadow-2xs ${
+              <div className={`px-3 py-2.5 rounded-xl border text-xs transition-all animate-fadeIn shadow-2xs flex items-center justify-between gap-2.5 ${
                 isCustomerCardBlocked(activeCustomer)
                   ? 'bg-rose-50 text-rose-950 border-rose-300'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                  : 'bg-emerald-50/90 text-emerald-950 border-emerald-300'
               }`}>
-                <div className="flex items-center justify-between">
-                  <span className="truncate">
-                    Pelanggan: <b>{activeMemberDisplayName}</b>{' '}
-                    <span className="text-[10px] font-normal opacity-80">
-                      ({activeCustomer?.store_name || currentBranchName})
+                <div className="min-w-0 flex-1">
+                  <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${
+                    isCustomerCardBlocked(activeCustomer) ? 'text-rose-700' : 'text-emerald-700'
+                  }`}>
+                    <Coins className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">
+                      {activeCustomer?.code ? `NIK / Kode: ${activeCustomer.code}` : 'Saldo Simpanan Anggota'}
                     </span>
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {isCustomerCardBlocked(activeCustomer) ? (
-                      <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-extrabold flex items-center gap-1 shadow-2xs">
-                        🚫 KARTU DIBLOKIR
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setIsTopUpModalOpen(true)}
-                        className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
-                        title="Isi Ulang Saldo Anggota"
-                      >
-                        <Wallet className="w-2.5 h-2.5" />
-                        <span>+ Top Up</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMemberId('', '');
-                        setIsSearching(false);
-                        setMemberSearchQuery('');
-                      }}
-                      className="text-stone-500 hover:text-rose-600 font-bold ml-1 text-xs cursor-pointer p-0.5"
-                      title="Hapus pilihan member"
-                    >
-                      ✕
-                    </button>
+                  </div>
+                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                    <span className={`font-black text-sm sm:text-base tabular-nums tracking-tight ${
+                      isCustomerCardBlocked(activeCustomer) ? 'text-rose-900' : 'text-emerald-900'
+                    }`}>
+                      {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
+                    </span>
+                    <span className={`text-[10px] font-semibold whitespace-nowrap ${
+                      isCustomerCardBlocked(activeCustomer) ? 'text-rose-700/80' : 'text-emerald-700/80'
+                    }`}>
+                      Sisa Saldo
+                    </span>
                   </div>
                 </div>
 
-                <div className={`flex items-center justify-between pt-1 border-t font-mono text-[11px] ${
-                  isCustomerCardBlocked(activeCustomer) ? 'border-rose-200 text-rose-800' : 'border-emerald-200/80 text-emerald-700'
-                }`}>
-                  <span className="font-semibold flex items-center gap-1">
-                    <Coins className="w-3 h-3 text-emerald-600" /> Saldo Simpanan:
-                  </span>
-                  <span className={`font-extrabold text-xs ${isCustomerCardBlocked(activeCustomer) ? 'text-rose-900' : 'text-emerald-800'}`}>
-                    {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
-                  </span>
+                <div className="flex items-center shrink-0">
+                  {isCustomerCardBlocked(activeCustomer) ? (
+                    <span className="px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[10px] font-extrabold whitespace-nowrap shadow-2xs">
+                      🚫 Kartu Diblokir
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsTopUpModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                      title="Isi Ulang Saldo Anggota"
+                    >
+                      <Wallet className="w-3.5 h-3.5 shrink-0" />
+                      <span>+ Top Up</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1659,85 +1649,97 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
       </div>
 
-      {/* MODAL: DAFTAR NOTA TERTUNDA (HOLD LIST) */}
+      {/* FULL-SCREEN VIEW: DAFTAR NOTA TERTUNDA (HOLD LIST) */}
       {isHeldModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+          <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
             
-            {/* Modal Header */}
-            <div className="p-3.5 bg-gradient-to-r from-[#7c4e2f] to-[#96633b] text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-amber-300" />
-                <h3 className="font-extrabold text-sm sm:text-base">Daftar Nota Transaksi Tertunda ({heldCarts.length})</h3>
+            {/* Header */}
+            <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#7c4e2f] to-[#96633b] text-white flex items-center justify-between shrink-0 border-b border-[#5e3519]">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-[#543017] text-amber-200 border border-[#9b663b]/50">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base sm:text-lg">Daftar Nota Transaksi Tertunda ({heldCarts.length})</h3>
+                  <p className="text-xs text-[#fcefe3]">Pilih nota parkir untuk dilanjutkan ke keranjang kasir</p>
+                </div>
               </div>
               <button 
                 onClick={() => setIsHeldModalOpen(false)}
-                className="text-white/80 hover:text-white p-1 rounded-lg"
+                className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
               >
                 <X className="w-4 h-4" />
+                <span>Tutup</span>
               </button>
             </div>
 
             {/* List */}
-            <div className="p-3.5 overflow-y-auto flex-1 space-y-2.5">
-              {heldCarts.length === 0 ? (
-                <p className="text-center text-xs text-[#8a6b53] py-8">Tidak ada nota tertunda.</p>
-              ) : (
-                heldCarts.map((hold) => (
-                  <div
-                    key={hold.id}
-                    onClick={() => handleRestoreCart(hold)}
-                    className="p-3 rounded-2xl bg-[#fcf8f4] border border-[#ebdccf] hover:border-[#7c4e2f] hover:bg-[#faebd7] transition-all cursor-pointer flex items-center justify-between group"
-                  >
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono font-bold text-xs text-[#7c4e2f] bg-white px-2 py-0.5 rounded border border-[#dfcebe]">
-                          {hold.id}
-                        </span>
-                        <span className="text-[11px] text-[#8a6b53]">{hold.timestamp}</span>
-                        {(hold.customerName || hold.memberId) && (
-                          <span className="text-[10px] bg-[#edf5ee] text-[#166534] px-1.5 py-0.2 rounded font-bold">
-                            Member: {hold.customerName || hold.memberId}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[#5c3c26] mt-1 font-medium">
-                        {hold.items.length} jenis barang ({hold.items.reduce((acc, i) => acc + i.qty, 0)} total pcs)
-                      </div>
-                      <div className="font-mono font-black text-sm text-[#7c4e2f] mt-0.5">
-                        {formatRupiah(hold.subtotal)}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteHeldCart(hold.id, e)}
-                        className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-700 hover:bg-rose-50 transition-colors"
-                        title="Hapus nota tunda ini"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="px-2.5 py-1 rounded-lg bg-[#7c4e2f] text-white text-xs font-bold shadow-xs group-hover:bg-[#683f24] transition-colors"
-                      >
-                        Buka Nota
-                      </button>
-                    </div>
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+              <div className="max-w-3xl mx-auto space-y-3">
+                {heldCarts.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-[#e4d5c7] p-12 text-center space-y-2">
+                    <Clock className="w-10 h-10 text-[#a08573] mx-auto opacity-60" />
+                    <p className="text-sm font-bold text-[#332219]">Tidak ada nota tertunda</p>
+                    <p className="text-xs text-[#8a6b53]">Gunakan tombol Tunda di kasir untuk memarkir keranjang sementara.</p>
                   </div>
-                ))
-              )}
+                ) : (
+                  heldCarts.map((hold) => (
+                    <div
+                      key={hold.id}
+                      onClick={() => handleRestoreCart(hold)}
+                      className="p-4 rounded-2xl bg-white border border-[#ebdccf] hover:border-[#7c4e2f] hover:bg-[#faebd7]/40 transition-all cursor-pointer flex items-center justify-between group shadow-2xs"
+                    >
+                      <div>
+                        <div className="flex items-center flex-wrap gap-2">
+                          <span className="font-mono font-bold text-xs text-[#7c4e2f] bg-[#fcf8f4] px-2 py-0.5 rounded border border-[#dfcebe]">
+                            {hold.id}
+                          </span>
+                          <span className="text-[11px] text-[#8a6b53] font-medium">{hold.timestamp}</span>
+                          {(hold.customerName || hold.memberId) && (
+                            <span className="text-[10px] bg-[#edf5ee] text-[#166534] px-2 py-0.5 rounded-md font-bold border border-[#cce2cf]">
+                              Member: {hold.customerName || hold.memberId}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#5c3c26] mt-1.5 font-medium">
+                          {hold.items.length} jenis barang ({hold.items.reduce((acc, i) => acc + i.qty, 0)} total pcs)
+                        </div>
+                        <div className="font-black text-base tabular-nums text-[#7c4e2f] mt-0.5">
+                          {formatRupiah(hold.subtotal)}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteHeldCart(hold.id, e)}
+                          className="p-2 rounded-xl text-[#a08573] hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                          title="Hapus nota tunda ini"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="px-3.5 py-2 rounded-xl bg-[#7c4e2f] text-white text-xs font-bold shadow-xs group-hover:bg-[#683f24] transition-colors"
+                        >
+                          Buka Nota
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
             {/* Footer */}
-            <div className="p-3 bg-[#fcf8f4] border-t border-[#ebdccf] text-right">
+            <div className="px-4 sm:px-6 lg:px-8 py-3.5 bg-[#f5ece3] border-t border-[#e4d5c7] flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setIsHeldModalOpen(false)}
-                className="px-3 py-1.5 bg-[#f5ece3] hover:bg-[#ebdccf] text-[#543c2e] rounded-xl text-xs font-bold transition-colors"
+                className="px-5 py-2 bg-[#7c4e2f] hover:bg-[#633e26] text-white rounded-xl text-xs font-bold transition-colors"
               >
-                Tutup
+                Kembali ke Kasir
               </button>
             </div>
 
@@ -1745,93 +1747,96 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         </div>
       )}
 
-      {/* Dynamic Tax Rate Setting Modal */}
+      {/* FULL-SCREEN VIEW: Dynamic Tax Rate Setting */}
       {isTaxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-xs rounded-3xl shadow-2xl p-5 space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-[#ebdccf] pb-2">
-              <div className="flex items-center space-x-2">
-                <div className="p-1.5 rounded-xl bg-emerald-100 text-emerald-800">
-                  <Percent className="w-4 h-4" />
+        <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+          <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#7c4e2f] to-[#96633b] text-white flex items-center justify-between shrink-0 border-b border-[#5e3519]">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 rounded-xl bg-[#543017] text-amber-200 border border-[#9b663b]/50">
+                <Percent className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-black text-base text-white">Atur Persentase Pajak (PPN)</h4>
+                <p className="text-xs text-[#fcefe3]">Sesuaikan tarif pajak transaksi kasir</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTaxModalOpen(false)}
+              className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5"
+            >
+              <X className="w-4 h-4" />
+              <span>Tutup</span>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex items-start justify-center">
+            <div className="bg-white border border-[#e5d0be] w-full max-w-lg rounded-3xl shadow-sm p-6 space-y-5">
+              {/* Quick Preset Buttons */}
+              <div>
+                <label className="text-xs font-bold text-[#5c3c26] block mb-2">Pilihan Cepat Tarif Pajak:</label>
+                <div className="grid grid-cols-5 gap-2">
+                  {[0, 5, 10, 11, 12].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        onTaxRateChange?.(preset);
+                        setTempTaxRate(String(preset));
+                        setIsTaxModalOpen(false);
+                      }}
+                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all ${
+                        taxRate === preset 
+                          ? 'bg-[#166534] text-white border-[#166534] shadow-xs' 
+                          : 'bg-[#fcf9f5] text-[#5c3c26] border-[#ddc3aa] hover:bg-[#faebd7]'
+                      }`}
+                    >
+                      {preset}%
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#3d2617]">Atur Persentase Pajak</h4>
-                  <p className="text-[10px] text-[#8a6b53]">Masukkan tarif PPN berapa saja</p>
+              </div>
+
+              {/* Custom Input */}
+              <div>
+                <label className="text-xs font-bold text-[#5c3c26] block mb-2">Atau Masukkan Angka Bebas (%):</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={tempTaxRate}
+                    onChange={(e) => setTempTaxRate(e.target.value)}
+                    placeholder="Contoh: 11"
+                    className="w-full pl-3.5 pr-9 py-2.5 rounded-xl bg-[#fcf9f5] border border-[#ddc3aa] text-sm font-bold text-[#3d2617] focus:outline-none focus:border-[#96633b] focus:bg-white"
+                  />
+                  <span className="absolute right-3.5 top-2.5 text-stone-500 font-bold text-sm">%</span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsTaxModalOpen(false)}
-                className="text-stone-400 hover:text-stone-700 text-xs font-bold"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Quick Preset Buttons */}
-            <div>
-              <label className="text-[10px] font-bold text-[#8a6b53] uppercase block mb-1.5">Pilihan Cepat:</label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[0, 5, 10, 11, 12].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => {
-                      onTaxRateChange?.(preset);
-                      setTempTaxRate(String(preset));
-                      setIsTaxModalOpen(false);
-                    }}
-                    className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                      taxRate === preset 
-                        ? 'bg-[#166534] text-white border-[#166534] shadow-xs' 
-                        : 'bg-white text-[#5c3c26] border-[#ddc3aa] hover:bg-[#faebd7]'
-                    }`}
-                  >
-                    {preset}%
-                  </button>
-                ))}
+              <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#f0e4d7]">
+                <button
+                  type="button"
+                  onClick={() => setIsTaxModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parsed = parseFloat(tempTaxRate);
+                    if (!isNaN(parsed) && parsed >= 0) {
+                      onTaxRateChange?.(parsed);
+                    }
+                    setIsTaxModalOpen(false);
+                  }}
+                  className="px-6 py-2.5 rounded-xl bg-[#96633b] hover:bg-[#83532e] text-white text-xs font-extrabold shadow-xs transition-all active:scale-95"
+                >
+                  Terapkan Tarif Pajak
+                </button>
               </div>
-            </div>
-
-            {/* Custom Input */}
-            <div>
-              <label className="text-[10px] font-bold text-[#8a6b53] uppercase block mb-1.5">Atau Masukkan Angka Bebas (%):</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={tempTaxRate}
-                  onChange={(e) => setTempTaxRate(e.target.value)}
-                  placeholder="e.g. 11"
-                  className="w-full pl-3 pr-8 py-2 rounded-xl bg-white border border-[#ddc3aa] text-xs font-bold text-[#3d2617] focus:outline-none focus:border-[#96633b]"
-                />
-                <span className="absolute right-3 top-2 text-stone-500 font-bold text-xs">%</span>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsTaxModalOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-bold"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const parsed = parseFloat(tempTaxRate);
-                  if (!isNaN(parsed) && parsed >= 0) {
-                    onTaxRateChange?.(parsed);
-                  }
-                  setIsTaxModalOpen(false);
-                }}
-                className="flex-1 py-2 rounded-xl bg-[#96633b] hover:bg-[#83532e] text-white text-xs font-extrabold shadow-xs transition-all active:scale-95"
-              >
-                Terapkan
-              </button>
             </div>
           </div>
         </div>
@@ -1850,31 +1855,33 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         />
       )}
 
-      {/* Modal Backdate / Custom Tanggal & Waktu Transaksi */}
+      {/* FULL-SCREEN VIEW: Backdate / Custom Tanggal & Waktu Transaksi */}
       {isBackdateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-[#fcf8f4] border border-[#d8c3b0] rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-[#ebdccf]">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl border border-amber-200">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-sm text-[#3d2617]">Atur Tanggal Transaksi (Backdate)</h4>
-                  <p className="text-[11px] text-[#8a6b53]">Catat nota lampau atau sesuaikan tanggal transaksi</p>
-                </div>
+        <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+          <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#7c4e2f] to-[#96633b] text-white flex items-center justify-between shrink-0 border-b border-[#5e3519]">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 rounded-xl bg-[#543017] text-amber-200 border border-[#9b663b]/50">
+                <Calendar className="w-5 h-5" />
               </div>
-              <button
-                type="button"
-                onClick={() => setIsBackdateModalOpen(false)}
-                className="p-1 hover:bg-[#faebd7] text-stone-500 rounded-lg text-sm font-bold transition-colors"
-              >
-                ✕
-              </button>
+              <div>
+                <h4 className="font-black text-base text-white">Atur Tanggal Transaksi (Backdate)</h4>
+                <p className="text-xs text-[#fcefe3]">Catat nota lampau atau sesuaikan tanggal transaksi</p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsBackdateModalOpen(false)}
+              className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5"
+            >
+              <X className="w-4 h-4" />
+              <span>Tutup</span>
+            </button>
+          </div>
 
-            {/* Current Status Banner */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex items-start justify-center">
+            <div className="bg-white border border-[#e5d0be] rounded-3xl w-full max-w-xl shadow-sm p-6 space-y-5">
+            
+              {/* Current Status Banner */}
             <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
               customDate 
                 ? 'bg-amber-50 border-amber-300 text-amber-900' 
@@ -2002,6 +2009,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </button>
             </div>
 
+            </div>
           </div>
         </div>
       )}

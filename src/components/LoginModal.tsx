@@ -185,8 +185,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#fcf9f5] w-screen h-screen overflow-y-auto animate-fadeIn">
+      <div className="bg-white border border-[#e5d0be] w-full max-w-md rounded-3xl shadow-sm overflow-hidden p-6 sm:p-8">
         
         {/* Branding Header with Animated Cashier Avatar */}
         <div className="text-center mb-4">

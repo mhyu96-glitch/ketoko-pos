@@ -246,13 +246,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
-      <div className={`bg-[#fcf9f5] border border-[#e5d0be] w-full rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-all ${
-        isTouchscreenMode ? 'max-w-xl max-h-[94vh]' : 'max-w-md max-h-[90vh]'
-      }`}>
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header - Coklat Susu Latte Header */}
-        <div className="p-4 sm:p-5 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between">
+        {/* Header */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
           <div>
             <div className="flex items-center space-x-2">
               <h3 className="text-base sm:text-lg font-black text-white leading-tight">
@@ -306,14 +304,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#83532e] transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-5 overflow-y-auto space-y-4 bg-[#fcf9f5]">
+        <form onSubmit={handleSubmit} className={`p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 bg-[#fcf9f5] flex-1 mx-auto w-full ${
+          isTouchscreenMode ? 'max-w-3xl' : 'max-w-2xl'
+        }`}>
           
           {/* Grand Total Display */}
           <div className="bg-white border border-[#e5d0be] rounded-2xl p-3 sm:p-4 text-center shadow-xs">

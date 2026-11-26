@@ -22,8 +22,8 @@ export const AppUpdateNotifierModal: React.FC<AppUpdateNotifierModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/50 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-scaleUp">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex items-center justify-center p-4 w-screen h-screen overflow-y-auto animate-fadeIn">
+      <div className="bg-white border border-[#e5d0be] w-full max-w-xl rounded-3xl shadow-sm overflow-hidden flex flex-col">
         
         {/* Header Ribbon */}
         <div className="p-5 bg-gradient-to-r from-[#96633b] via-[#a6744c] to-[#83532e] text-white relative">

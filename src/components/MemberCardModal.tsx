@@ -626,11 +626,11 @@ Terima kasih.
     : 'from-slate-950 via-neutral-900 to-slate-900 border-slate-700 text-slate-300';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 animate-scaleUp max-h-[95vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-slate-50 w-full h-full flex flex-col overflow-hidden">
         
-        {/* Modal Top Header */}
-        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+        {/* Top Header */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shadow-xs">
               <QrCode className="w-5 h-5" />
@@ -653,8 +653,8 @@ Terima kasih.
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 custom-scroll">
+        {/* Body */}
+        <div className="p-5 sm:p-8 space-y-4 overflow-y-auto flex-1 custom-scroll max-w-3xl mx-auto w-full">
           
           {/* Toast Notification */}
           {toastMessage && (

@@ -17,6 +17,7 @@ import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { getStoreDisplayName, MAX_EMPLOYEE_ALLOWANCE } from '../utils/customerAccess';
 import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import { CustomSelect } from './CustomSelect';
 
 interface MemberTopUpModalProps {
   isOpen: boolean;
@@ -177,35 +178,37 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-[#e4d5c7] overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header Modal */}
-        <div className="px-5 py-4 bg-gradient-to-r from-[#2c1d11] to-[#4a3222] text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        {/* Header Full-Screen */}
+        <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex items-center justify-between shrink-0 border-b border-[#5e3519]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 border border-[#9b663b]/50">
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base leading-tight flex items-center gap-2">
+              <h3 className="font-black text-base sm:text-lg leading-tight flex items-center gap-2 text-white">
                 <span>Top Up Saldo Anggota</span>
-                <span className="text-[10px] bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded-full font-mono font-bold">
-                  Koperasi A & B
+                <span className="text-[10px] bg-emerald-950/70 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold">
+                  Multi-Cabang
                 </span>
               </h3>
-              <p className="text-[11px] text-[#dfcebe]">Isi ulang saldo simpanan belanja multi-cabang</p>
+              <p className="text-xs text-[#fcefe3]">Isi ulang saldo simpanan belanja anggota koperasi</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-[#dfcebe] hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+            className="px-3.5 py-2 text-[#fcefe3] hover:text-white rounded-xl bg-[#543017] hover:bg-[#422511] border border-[#9b663b]/50 text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto space-y-4 text-xs">
+        {/* Full-Screen Body with Centered Workspace Card */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 text-xs">
+          <div className="max-w-xl mx-auto bg-white rounded-3xl border border-[#e5d0be] shadow-xs p-5 sm:p-6 space-y-4">
           {successResult ? (
             /* Tampilan Sukses */
             <div className="text-center py-4 space-y-4">
@@ -369,17 +372,14 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
                     <Store className="w-3 h-3 text-[#7c4e2f]" />
                     <span>Cabang Tempat Top Up (Toko Penerima Uang):</span>
                   </label>
-                  <select
+                  <CustomSelect
                     value={selectedStoreId}
-                    onChange={(e) => setSelectedStoreId(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#dfcebe] rounded-xl font-bold text-slate-800 text-xs outline-none focus:border-[#7c4e2f]"
-                  >
-                    {storesList.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name} ({st.id})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedStoreId(val)}
+                    options={storesList.map((st) => ({
+                      value: st.id,
+                      label: `${st.name} (${st.id})`,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -430,6 +430,7 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
 
             </form>
           )}
+          </div>
         </div>
 
       </div>

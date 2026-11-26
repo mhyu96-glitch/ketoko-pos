@@ -17,6 +17,7 @@ import {
   Zap
 } from 'lucide-react';
 import { errorTracker, type ErrorLogItem, type SystemHealthReport } from '../services/errorTracker';
+import { CustomSelect } from './CustomSelect';
 
 interface ErrorMonitoringModalProps {
   isOpen: boolean;
@@ -111,11 +112,11 @@ export const ErrorMonitoringModal: React.FC<ErrorMonitoringModalProps> = ({ isOp
     : 'text-rose-700 bg-rose-50 border-rose-200';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-scaleUp">
+    <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-white w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Header */}
-        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
               <Activity className="w-5 h-5" />
@@ -231,32 +232,38 @@ export const ErrorMonitoringModal: React.FC<ErrorMonitoringModalProps> = ({ isOp
 
             <div className="flex items-center gap-2">
               {/* Severity Filter */}
-              <select
+              <CustomSelect
                 value={selectedSeverity}
-                onChange={(e) => setSelectedSeverity(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-700 focus:bg-white"
-              >
-                <option value="ALL">Semua Tingkat</option>
-                <option value="CRITICAL">Kritis (Critical)</option>
-                <option value="WARNING">Peringatan (Warning)</option>
-                <option value="INFO">Info</option>
-              </select>
+                onChange={(val) => setSelectedSeverity(val)}
+                variant="slate"
+                size="sm"
+                className="min-w-[165px]"
+                options={[
+                  { value: 'ALL', label: 'Semua Tingkat' },
+                  { value: 'CRITICAL', label: 'Kritis (Critical)' },
+                  { value: 'WARNING', label: 'Peringatan (Warning)' },
+                  { value: 'INFO', label: 'Info' },
+                ]}
+              />
 
               {/* Module Filter */}
-              <select
+              <CustomSelect
                 value={selectedModule}
-                onChange={(e) => setSelectedModule(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-700 focus:bg-white"
-              >
-                <option value="ALL">Semua Modul</option>
-                <option value="KASIR">Kasir POS</option>
-                <option value="CUSTOMER_DISPLAY">Layar Pelanggan</option>
-                <option value="LAN_SERVER">LAN Multi-Kasir</option>
-                <option value="CLOUD_SYNC">Sinkronisasi Cloud</option>
-                <option value="DATABASE">IndexedDB</option>
-                <option value="PRINTER">Printer Thermal</option>
-                <option value="SYSTEM">Sistem Core</option>
-              </select>
+                onChange={(val) => setSelectedModule(val)}
+                variant="slate"
+                size="sm"
+                className="min-w-[175px]"
+                options={[
+                  { value: 'ALL', label: 'Semua Modul' },
+                  { value: 'KASIR', label: 'Kasir POS' },
+                  { value: 'CUSTOMER_DISPLAY', label: 'Layar Pelanggan' },
+                  { value: 'LAN_SERVER', label: 'LAN Multi-Kasir' },
+                  { value: 'CLOUD_SYNC', label: 'Sinkronisasi Cloud' },
+                  { value: 'DATABASE', label: 'IndexedDB' },
+                  { value: 'PRINTER', label: 'Printer Thermal' },
+                  { value: 'SYSTEM', label: 'Sistem Core' },
+                ]}
+              />
             </div>
           </div>
 

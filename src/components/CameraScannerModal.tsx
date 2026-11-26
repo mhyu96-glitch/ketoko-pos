@@ -111,11 +111,11 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-white">
+    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+      <div className="bg-slate-950 w-full h-full flex flex-col relative text-white">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5">
             <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               <Camera className="w-5 h-5" />
@@ -135,7 +135,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         </div>
 
         {/* Video Camera Viewport */}
-        <div className="relative w-full h-72 sm:h-80 bg-black flex items-center justify-center overflow-hidden">
+        <div className="relative w-full flex-1 bg-black flex items-center justify-center overflow-hidden">
           {isStarting && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-950 z-20">
               <RefreshCw className="w-8 h-8 animate-spin text-emerald-500 mb-2" />

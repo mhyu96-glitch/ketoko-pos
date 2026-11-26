@@ -272,7 +272,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-stone-950/70 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       {/* Print-specific style injection to guarantee only invoice sheet prints */}
       <style>{`
         @media print {
@@ -298,10 +298,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         }
       `}</style>
 
-      <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[96vh]">
+      <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Control Bar (Hidden on Print) */}
-        <div className="no-print p-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-sm border-b border-[#5e3519]">
+        <div className="no-print px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-sm border-b border-[#5e3519]">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-2xl bg-white/10 text-amber-200 border border-white/20">
               <FileText className="w-5 h-5" />
