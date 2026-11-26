@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { KeyRound, ShieldAlert, X, MessageSquare } from 'lucide-react';
+import { KeyRound, ShieldAlert, X } from 'lucide-react';
 import { useCart } from './hooks/useCart';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { db } from './db';
@@ -2249,7 +2249,6 @@ export const App: React.FC = () => {
           isPWAInstalled={isInstalled}
           onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
           onOpenErrorMonitoring={() => setIsErrorMonitoringOpen(true)}
-          onOpenHelpChat={() => setIsHelpChatOpen(true)}
         />
       </div>
 
@@ -2387,7 +2386,6 @@ export const App: React.FC = () => {
           isTouchscreenMode={isTouchscreenMode}
           isPaymentProcessing={isPaymentProcessing}
           onOpenMemberModal={() => setIsMemberModalOpen(true)}
-          onOpenHelpChat={() => setIsHelpChatOpen(true)}
         />
       )}
 
@@ -2755,22 +2753,6 @@ export const App: React.FC = () => {
           isOpen={isErrorMonitoringOpen}
           onClose={() => setIsErrorMonitoringOpen(false)}
         />
-      )}
-
-      {/* Floating Cashier Assistance & Bug Report Pill (Visible for Cashier & Store Admin) */}
-      {currentUser && currentUser.role !== 'SUPERADMIN' && (
-        <div className="fixed bottom-4 right-4 z-40 print:hidden animate-fadeIn">
-          <button
-            type="button"
-            onClick={() => setIsHelpChatOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-[#7c4e2f] to-[#59351e] hover:from-[#633e26] hover:to-[#422919] text-white font-black text-xs shadow-lg shadow-[#7c4e2f]/30 transition-all hover:scale-105 active:scale-95 border-2 border-white/60"
-            title="Ada bug atau kendala di kasir? Chat bantuan & lapor langsung ke developer"
-          >
-            <MessageSquare className="w-4 h-4 text-amber-300" />
-            <span>Lapor Kendala</span>
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          </button>
-        </div>
       )}
 
       {/* Cashier Assistance & Bug Reporting Chat Modal */}

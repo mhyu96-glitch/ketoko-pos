@@ -18,7 +18,6 @@ import {
   Laptop,
   Download,
   Activity,
-  MessageSquare,
   SlidersHorizontal,
   ChevronDown
 } from 'lucide-react';
@@ -50,7 +49,6 @@ interface NavbarProps {
   isPWAInstalled?: boolean;
   onOpenPWAInstall?: () => void;
   onOpenErrorMonitoring?: () => void;
-  onOpenHelpChat?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = React.memo(({
@@ -75,8 +73,7 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   onSecretDevTrigger,
   isPWAInstalled = false,
   onOpenPWAInstall,
-  onOpenErrorMonitoring,
-  onOpenHelpChat
+  onOpenErrorMonitoring
 }) => {
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.username?.toLowerCase() === 'superadmin';
   const isAdmin = isSuperAdmin || currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
@@ -391,26 +388,6 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
                         </span>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                           Install
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Lapor Kendala / Help Chat */}
-                    {onOpenHelpChat && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsQuickMenuOpen(false);
-                          onOpenHelpChat();
-                        }}
-                        className="w-full px-2.5 py-2 rounded-xl hover:bg-[#fcf5ed] flex items-center justify-between text-xs font-semibold text-[#332219] transition-colors"
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <MessageSquare className="w-4 h-4 text-amber-600" />
-                          <span>Lapor Kendala & Bantuan</span>
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          Chat
                         </span>
                       </button>
                     )}

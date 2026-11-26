@@ -22,7 +22,6 @@ import {
   Delete,
   ShoppingBag,
   Users,
-  MessageSquare,
   Lock,
   Calendar
 } from 'lucide-react';
@@ -87,7 +86,6 @@ interface PosCashierViewProps {
   isTouchscreenMode?: boolean;
   isPaymentProcessing?: boolean;
   onOpenMemberModal?: () => void;
-  onOpenHelpChat?: () => void;
 }
 
 // Isolated Self-Updating Live Digital Clock (Prevents whole page re-render every second)
@@ -239,8 +237,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   isCatalogSeeding = false,
   isTouchscreenMode = false,
   isPaymentProcessing = false,
-  onOpenMemberModal,
-  onOpenHelpChat
+  onOpenMemberModal
 }) => {
   const lastQuickClickRef = useRef<number>(0);
   // Quick cash tender input state
@@ -939,17 +936,6 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
 
               <div className="flex items-center space-x-2 shrink-0">
-                {onOpenHelpChat && (
-                  <button
-                    type="button"
-                    onClick={onOpenHelpChat}
-                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-[10px] transition-colors border border-amber-300 shadow-2xs cursor-pointer active:scale-95"
-                    title="Ada bug atau kendala kasir? Klik untuk chat bantuan langsung ke developer"
-                  >
-                    <MessageSquare className="w-3 h-3 text-amber-700" />
-                    <span>Lapor Kendala</span>
-                  </button>
-                )}
                 <div className="text-[10px] text-[#8a6b53] hidden lg:block shrink-0">
                   Ketoko POS • Fast Cashier Mode
                 </div>
