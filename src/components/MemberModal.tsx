@@ -21,6 +21,8 @@ import {
   Copy,
   ExternalLink,
   ShieldCheck,
+  ShieldAlert,
+  ShieldOff,
   CheckCircle2,
   Printer,
   KeyRound
@@ -49,6 +51,10 @@ import {
   normalizeStoreId,
   parseEmployeeMeta,
   removeEmployeePinFromAddress,
+  setCustomerCardBlocked,
+  isCustomerCardBlocked,
+  hashEmployeePin,
+  setEmployeePinInAddress,
   type CustomerAccessScope,
 } from '../utils/customerAccess';
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
@@ -329,6 +335,58 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       showToast(`PIN untuk "${m.name}" berhasil di-reset! Karyawan dapat membuat PIN baru di HP.`);
     } catch (err: any) {
       showToast('Gagal me-reset PIN: ' + (err?.message || 'Error'));
+    }
+  };
+
+  // Toggle Blokir Kartu Hilang (Opsi 4)
+  const handleToggleBlockCard = async (m: Customer) => {
+    const isCurrentlyBlocked = isCustomerCardBlocked(m);
+    const confirmPrompt = isCurrentlyBlocked
+      ? `Buka blokir kartu belanja untuk "${m.name}" (NIK: ${m.code || m.id})?\n\nSetelah dibuka, kartu ini dapat digunakan kembali untuk pembayaran saldo di kasir.`
+      : `⚠️ BLOKIR KARTU HILANG:\n\nApakah Anda yakin ingin memblokir kartu "${m.name}" (NIK: ${m.code || m.id})?\n\nKartu yang diblokir TIDAK AKAN BISA digunakan untuk transaksi saldo di kasir sampai dibuka kembali oleh kasir/admin.`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      const updatedCustomer = setCustomerCardBlocked(m, !isCurrentlyBlocked);
+      await db.customers.put(updatedCustomer);
+      await syncService.syncCustomerChange(updatedCustomer);
+      setMembers((prev) => prev.map((item) => (item.id === updatedCustomer.id ? updatedCustomer : item)));
+      showToast(
+        !isCurrentlyBlocked
+          ? `🚫 Kartu "${m.name}" DIBLOKIR! Transaksi kasir untuk kartu ini telah dinonaktifkan.`
+          : `✅ Kartu "${m.name}" DIBUKA! Kartu dapat digunakan kembali di kasir.`
+      );
+    } catch (err: any) {
+      console.error('Gagal mengubah status blokir kartu:', err);
+      showToast('Gagal mengubah status blokir kartu.');
+    }
+  };
+
+  // Set / Ubah 6-Digit PIN oleh Kasir (Opsi 1)
+  const handleSetPinByCashier = async (m: Customer) => {
+    const inputPin = window.prompt(
+      `🔑 SET / UBAH PIN KARYAWAN:\n\nMasukkan 6 digit angka PIN baru untuk:\nNama: ${m.name}\nNIK: ${m.code || m.id}\n\n(PIN ini digunakan saat belanja saldo atau login portal digital):`
+    );
+
+    if (inputPin === null) return;
+    const cleanPin = inputPin.trim();
+    if (!/^\d{6}$/.test(cleanPin)) {
+      alert('❌ Gagal: PIN harus berupa 6 angka (contoh: 123456).');
+      return;
+    }
+
+    try {
+      const salt = (m.code || m.id).toLowerCase();
+      const pinHash = await hashEmployeePin(cleanPin, salt);
+      const updatedCustomer = setEmployeePinInAddress(m, pinHash);
+      await db.customers.put(updatedCustomer);
+      await syncService.syncCustomerChange(updatedCustomer);
+      setMembers((prev) => prev.map((item) => (item.id === updatedCustomer.id ? updatedCustomer : item)));
+      showToast(`✅ PIN untuk karyawan "${m.name}" berhasil diatur (${cleanPin})!`);
+    } catch (err: any) {
+      console.error('Gagal mengatur PIN karyawan:', err);
+      showToast('Gagal mengatur PIN karyawan.');
     }
   };
 
@@ -1288,6 +1346,12 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                         ⚪ Belum PIN
                                       </span>
                                     )}
+                                    {meta.is_blocked && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9.5px] font-black border border-rose-700 animate-pulse flex items-center gap-1 shadow-2xs" title="Kartu belanja ini dilaporkan hilang & sedang diblokir">
+                                        <ShieldAlert className="w-2.5 h-2.5" />
+                                        <span>🚫 KARTU DIBLOKIR / HILANG</span>
+                                      </span>
+                                    )}
                                   </>
                                 )}
                                 <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
@@ -1412,6 +1476,38 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                       >
                                         <KeyRound className="w-3.5 h-3.5 text-teal-700" />
                                       </button>
+
+                                      {/* Tombol Set / Ubah PIN oleh Kasir (Opsi 1: Untuk karyawan tanpa HP / kartu fisik) */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetPinByCashier(m)}
+                                        className="px-2 py-1.5 rounded-xl text-teal-900 bg-teal-50 hover:bg-teal-100 transition-colors border border-teal-300 shadow-2xs font-bold text-[10px]"
+                                        title={`Atur / Ubah PIN 6 digit untuk kartu ${m.name}`}
+                                      >
+                                        Set PIN
+                                      </button>
+
+                                      {/* Tombol Kunci / Blokir Kartu Hilang Instant (Opsi 4) */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleBlockCard(m)}
+                                        className={`p-1.5 rounded-xl transition-colors border shadow-2xs ${
+                                          meta.is_blocked
+                                            ? 'text-white bg-rose-600 hover:bg-rose-700 border-rose-700 animate-pulse'
+                                            : 'text-stone-600 bg-stone-100 hover:bg-rose-100 hover:text-rose-700 border-stone-300'
+                                        }`}
+                                        title={
+                                          meta.is_blocked
+                                            ? `Kartu ${m.name} sedang DIBLOKIR. Klik untuk membuka blokir.`
+                                            : `Laporkan Kartu Hilang: Blokir kartu belanja ${m.name}`
+                                        }
+                                      >
+                                        {meta.is_blocked ? (
+                                          <ShieldAlert className="w-3.5 h-3.5 text-white" />
+                                        ) : (
+                                          <ShieldOff className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
                                     </>
                                   )}
 
@@ -1528,6 +1624,12 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                     ⚪ Belum PIN
                                   </span>
                                 )}
+                                {parseEmployeeMeta(m).is_blocked && (
+                                  <span className="text-[10px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded-md border border-rose-700 animate-pulse flex items-center gap-0.5 shadow-2xs" title="Kartu belanja ini dilaporkan hilang & sedang diblokir">
+                                    <ShieldAlert className="w-2.5 h-2.5" />
+                                    <span>DIBLOKIR</span>
+                                  </span>
+                                )}
                               </>
                             )}
                             <CustomerBranchBadge customer={m} activeStoreId={activeStoreId} />
@@ -1599,6 +1701,34 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                   disabled={!parseEmployeeMeta(m).has_pin}
                                 >
                                   <KeyRound className="w-3.5 h-3.5 text-teal-700" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetPinByCashier(m)}
+                                  className="px-1.5 py-1 rounded-xl text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-300 shadow-2xs font-bold text-[9.5px]"
+                                  title={`Atur / Ubah PIN 6 digit untuk kartu ${m.name}`}
+                                >
+                                  Set PIN
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleBlockCard(m)}
+                                  className={`p-1.5 rounded-xl border shadow-2xs ${
+                                    parseEmployeeMeta(m).is_blocked
+                                      ? 'text-white bg-rose-600 hover:bg-rose-700 border-rose-700 animate-pulse'
+                                      : 'text-stone-600 bg-stone-100 hover:bg-rose-100 hover:text-rose-700 border-stone-300'
+                                  }`}
+                                  title={
+                                    parseEmployeeMeta(m).is_blocked
+                                      ? `Kartu ${m.name} sedang DIBLOKIR. Klik untuk membuka blokir.`
+                                      : `Laporkan Kartu Hilang: Blokir kartu belanja ${m.name}`
+                                  }
+                                >
+                                  {parseEmployeeMeta(m).is_blocked ? (
+                                    <ShieldAlert className="w-3.5 h-3.5 text-white" />
+                                  ) : (
+                                    <ShieldOff className="w-3.5 h-3.5" />
+                                  )}
                                 </button>
                               </>
                             )}

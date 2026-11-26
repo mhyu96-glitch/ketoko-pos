@@ -24,6 +24,40 @@ export interface ParsedEmployeeMeta {
   clean_address: string;
   reset_month: string;
   has_pin: boolean;
+  is_blocked: boolean;
+}
+
+/**
+ * Menghitung hash SHA-256 untuk PIN karyawan
+ */
+export async function hashEmployeePin(pin: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const rawText = 'KOPMSL:' + String(salt || '').toLowerCase().trim() + ':' + String(pin).trim();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(rawText));
+  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Mengecek apakah kartu fisik karyawan berstatus DIBLOKIR / HILANG
+ */
+export function isCustomerCardBlocked(customer?: Partial<Customer> | null): boolean {
+  if (!customer) return false;
+  if (customer.is_card_blocked === true) return true;
+  return String(customer.address || '').includes('[STATUS:BLOCKED]');
+}
+
+/**
+ * Mengubah status blokir kartu (Blokir saat hilang atau Buka Blokir)
+ */
+export function setCustomerCardBlocked(customer: Customer, blocked: boolean): Customer {
+  const cleanAddr = String(customer.address || '').replace(/\s*\[STATUS:BLOCKED\]\s*/gi, '').trim();
+  const newAddress = blocked ? `${cleanAddr} [STATUS:BLOCKED]`.trim() : cleanAddr;
+  return {
+    ...customer,
+    address: newAddress,
+    is_card_blocked: blocked,
+    updated_at: new Date().toISOString()
+  };
 }
 
 /**
@@ -45,13 +79,14 @@ export function clampEmployeeBalance(val?: number | null, maxAllowance = MAX_EMP
 }
 
 /**
- * Membersihkan tag metadata [RST:YYYY-MM] dan [PIN:...] dari teks alamat untuk tampilan UI
+ * Membersihkan tag metadata [RST:YYYY-MM], [PIN:...], dan [STATUS:BLOCKED] dari teks alamat untuk tampilan UI
  */
 export function formatCustomerAddressDisplay(address?: string | null): string {
   if (!address) return '-';
   const cleaned = String(address)
     .replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '')
     .replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '')
+    .replace(/\s*\[STATUS:BLOCKED\]\s*/gi, '')
     .trim();
   return cleaned || '-';
 }
@@ -73,18 +108,43 @@ export function hasEmployeePin(customer?: Partial<Customer> | null): boolean {
 }
 
 /**
- * Menyisipkan atau mengganti tag [PIN:hash] ke dalam teks alamat
+ * Menyisipkan atau mengganti tag [PIN:hash] ke dalam teks alamat atau objek Customer
  */
-export function setEmployeePinInAddress(address: string | undefined | null, pinHash: string): string {
-  const base = String(address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+export function setEmployeePinInAddress(customer: Customer, pinHash: string): Customer;
+export function setEmployeePinInAddress(address: string | undefined | null, pinHash: string): string;
+export function setEmployeePinInAddress(target: any, pinHash: string): any {
+  if (target && typeof target === 'object' && 'id' in target) {
+    const cust = target as Customer;
+    const base = String(cust.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+    const newAddress = `${base} [PIN:${pinHash.toLowerCase().trim()}]`.trim();
+    return {
+      ...cust,
+      address: newAddress,
+      pin_hash: pinHash.toLowerCase().trim(),
+      updated_at: new Date().toISOString()
+    };
+  }
+  const base = String(target || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
   return `${base} [PIN:${pinHash.toLowerCase().trim()}]`.trim();
 }
 
 /**
- * Menghapus tag [PIN:...] dari teks alamat (digunakan saat Kasir / Admin Reset PIN)
+ * Menghapus tag [PIN:...] dari teks alamat atau objek Customer (digunakan saat Kasir / Admin Reset PIN)
  */
-export function removeEmployeePinFromAddress(address: string | undefined | null): string {
-  return String(address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+export function removeEmployeePinFromAddress(customer: Customer): Customer;
+export function removeEmployeePinFromAddress(address: string | undefined | null): string;
+export function removeEmployeePinFromAddress(target: any): any {
+  if (target && typeof target === 'object' && 'id' in target) {
+    const cust = target as Customer;
+    const newAddress = String(cust.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+    return {
+      ...cust,
+      address: newAddress,
+      pin_hash: undefined,
+      updated_at: new Date().toISOString()
+    };
+  }
+  return String(target || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
 }
 
 /**
@@ -127,7 +187,8 @@ export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEm
     emp_status: emp_status || '-',
     clean_address,
     reset_month,
-    has_pin: Boolean(pin_hash)
+    has_pin: Boolean(pin_hash),
+    is_blocked: isCustomerCardBlocked(customer)
   };
 }
 
