@@ -270,74 +270,150 @@
         </button>
       </div>
 
-      <!-- Digital ID Card -->
-      <div id="cardContainer" class="card-gradient text-white rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden border border-emerald-400/30">
-        <div class="absolute -right-8 -bottom-8 w-36 h-36 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
-        <div class="absolute -left-8 -top-8 w-28 h-28 bg-emerald-400/10 rounded-full blur-lg pointer-events-none"></div>
+      <!-- Digital ID Card (Premium CR80 Style) -->
+      <div id="cardContainer" class="card-gradient text-white rounded-3xl p-5 shadow-2xl relative overflow-hidden border border-emerald-400/40">
+        <!-- Glow Ornaments -->
+        <div class="absolute -right-10 -bottom-10 w-44 h-44 bg-emerald-400/15 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="absolute -left-10 -top-10 w-36 h-36 bg-amber-400/10 rounded-full blur-2xl pointer-events-none"></div>
 
         <!-- Card Header -->
-        <div class="flex items-center justify-between pb-3 border-b border-white/15">
-          <div class="flex items-center space-x-2">
-            <span class="text-xl">💳</span>
-            <div>
-              <div class="text-[10.5px] font-black tracking-wider text-amber-300 uppercase">KOPERASI KARYAWAN PT. MSL</div>
-              <div class="text-[9px] text-white/80 font-medium">Bente Tualan • Berlaku di Toko Utama & Cabang Mill</div>
+        <div class="flex items-start justify-between gap-2.5 pb-3 border-b border-white/15 relative z-10">
+          <div class="flex items-center space-x-2.5 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center text-lg shadow-inner shrink-0">
+              🌴
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-black tracking-wider text-amber-300 uppercase leading-snug">
+                KOPERASI KARYAWAN PT. MSL
+              </div>
+              <div class="text-[9.5px] text-emerald-100/90 font-medium leading-tight mt-0.5">
+                Bente Tualan • Toko Utama & Cabang Mill
+              </div>
             </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <span class="px-2 py-0.5 rounded-md bg-teal-400/20 text-teal-200 border border-teal-300/30 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-              <span>🛡️</span>
-              <span>PIN Aktif</span>
-            </span>
-            <span id="cardStatusBadge" class="px-2 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[9px] font-black uppercase tracking-wider">
-              AKTIF
-            </span>
+          
+          <div class="flex flex-col items-end gap-1.5 shrink-0">
+            <!-- EMV Chip Gold Graphic -->
+            <div class="w-9 h-7 rounded-md bg-gradient-to-tr from-amber-400 via-amber-300 to-amber-200 p-0.5 shadow-sm border border-amber-300/70 flex flex-col justify-between overflow-hidden">
+              <div class="h-0.5 bg-amber-700/30 rounded-full"></div>
+              <div class="flex items-center justify-between px-0.5">
+                <div class="w-2 h-2.5 border border-amber-700/40 rounded-xs"></div>
+                <div class="w-2 h-2.5 border border-amber-700/40 rounded-xs"></div>
+              </div>
+              <div class="h-0.5 bg-amber-700/30 rounded-full"></div>
+            </div>
+            <!-- Status Badges -->
+            <div class="flex items-center gap-1">
+              <span class="px-1.5 py-0.5 rounded-md bg-teal-400/20 text-teal-200 border border-teal-300/30 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5">
+                <span>🛡️</span>
+                <span>PIN Aktif</span>
+              </span>
+              <span id="cardStatusBadge" class="px-1.5 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[8.5px] font-black uppercase tracking-wider">
+                AKTIF
+              </span>
+            </div>
           </div>
         </div>
 
         <!-- Employee Identity -->
-        <div class="pt-3 pb-2">
-          <div class="text-[9.5px] uppercase font-bold tracking-wider text-emerald-200/80">NAMA KARYAWAN</div>
-          <div id="empName" class="text-lg font-black text-white tracking-tight leading-snug">Nama Karyawan</div>
-          <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-            <span id="empCode" class="font-mono text-xs font-bold text-amber-300 bg-black/30 px-2 py-0.5 rounded border border-white/15">NIK</span>
-            <span id="empMetaBadge" class="text-[10px] text-emerald-100 bg-white/10 px-2 py-0.5 rounded font-semibold">Unit • Afdeling</span>
+        <div class="pt-3 pb-2.5 relative z-10 space-y-1">
+          <div class="text-[9px] uppercase font-extrabold tracking-widest text-emerald-200/90">
+            NAMA KARYAWAN
+          </div>
+          <div id="empName" class="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight drop-shadow-sm truncate">
+            Nama Karyawan
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5 pt-1">
+            <span id="empCode" class="font-mono text-xs font-black text-amber-300 bg-black/40 px-2.5 py-1 rounded-lg border border-white/20 tracking-wider shadow-inner">
+              NIK
+            </span>
+            <span id="empMetaBadge" class="text-[10.5px] text-emerald-100 bg-white/10 px-2.5 py-1 rounded-lg font-bold border border-white/15">
+              Unit • Afdeling
+            </span>
           </div>
         </div>
 
         <!-- Balance Box (Max 2 Juta, Reset Tgl 1) -->
-        <div class="my-2.5 p-3 bg-black/30 rounded-xl border border-white/15 flex items-center justify-between">
+        <div class="my-2.5 p-3.5 bg-black/35 backdrop-blur-md rounded-2xl border border-white/20 flex items-center justify-between shadow-inner relative z-10">
           <div>
-            <div class="text-[9.5px] uppercase font-bold text-emerald-200">SISA SALDO KUOTA BULAN INI</div>
-            <div id="empBalance" class="text-2xl font-black text-amber-300 font-mono tracking-tight">Rp 2.000.000</div>
+            <div class="text-[9.5px] uppercase font-extrabold text-emerald-200 tracking-wider">
+              SISA SALDO KUOTA BULAN INI
+            </div>
+            <div id="empBalance" class="text-2xl sm:text-3xl font-black text-amber-300 font-sans tracking-tight mt-0.5">
+              Rp 2.000.000
+            </div>
           </div>
-          <div class="text-right">
-            <div class="text-[9px] text-white/70">Maks Plafon / Bln</div>
-            <div id="empAllowance" class="text-xs font-bold font-mono text-emerald-100">Rp 2.000.000</div>
+          <div class="text-right border-l border-white/15 pl-3.5 space-y-0.5 shrink-0">
+            <div class="text-[9px] text-emerald-100/80 font-medium">Maks Plafon:</div>
+            <div id="empAllowance" class="text-xs sm:text-sm font-black text-white font-sans">
+              Rp 2.000.000
+            </div>
+            <div class="text-[8.5px] text-amber-300/90 font-bold uppercase">
+              Reset Tgl 1
+            </div>
           </div>
         </div>
 
-        <!-- Barcode + QR Code Box -->
-        <div class="bg-white rounded-xl p-2.5 text-[#1f2937] shadow-sm">
-          <div class="text-[9px] font-extrabold text-stone-500 uppercase tracking-wider text-center mb-1.5">
-            Tunjukkan ke Scanner Kasir Saat Belanja
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex-1 flex flex-col items-center justify-center overflow-hidden">
-              <svg id="barcodeSvg" class="max-w-full h-12"></svg>
-              <div id="barcodeCodeText" class="font-mono font-extrabold text-[11px] tracking-wider text-stone-900 mt-0.5">NIK</div>
+        <!-- Barcode + QR Code Box (Rapi, Simetris & Tajam) -->
+        <div class="bg-white rounded-2xl p-3 sm:p-4 text-stone-900 shadow-lg border border-emerald-100 relative z-10">
+          <!-- Header & Switcher Bar -->
+          <div class="flex items-center justify-between pb-2 mb-2 border-b border-stone-100">
+            <span class="text-[10px] font-black uppercase text-stone-600 tracking-wider flex items-center gap-1">
+              <span>🛒</span>
+              <span>Pindai di Scanner Kasir</span>
+            </span>
+            <!-- Tab Switcher Barcode vs QR Code -->
+            <div class="flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-200 text-[10px] font-bold">
+              <button
+                type="button"
+                id="tabBtnBarcode"
+                onclick="switchScannerView('barcode')"
+                class="px-2 py-0.5 rounded-md bg-emerald-700 text-white shadow-xs transition-all cursor-pointer"
+              >
+                Barcode 1D
+              </button>
+              <button
+                type="button"
+                id="tabBtnQr"
+                onclick="switchScannerView('qr')"
+                class="px-2 py-0.5 rounded-md text-stone-600 hover:text-stone-900 transition-all cursor-pointer"
+              >
+                QR Code
+              </button>
             </div>
-            <div class="shrink-0 border-l border-stone-200 pl-2 flex flex-col items-center">
-              <canvas id="qrCanvas" class="w-14 h-14"></canvas>
-              <span class="text-[8px] font-bold text-stone-500">QR KASIR</span>
+          </div>
+
+          <!-- View 1: Barcode 1D (Centered & Full Width, Easy to Scan by Laser/CCD) -->
+          <div id="scannerViewBarcode" class="flex flex-col items-center justify-center py-1">
+            <div class="w-full flex justify-center overflow-hidden">
+              <svg id="barcodeSvg" class="max-w-full h-14"></svg>
+            </div>
+            <div id="barcodeCodeText" class="font-mono font-black text-sm tracking-widest text-stone-900 mt-1">
+              NIK
+            </div>
+          </div>
+
+          <!-- View 2: QR Code (Large, Sharp, No Blank Space) -->
+          <div id="scannerViewQr" class="hidden flex flex-col items-center justify-center py-2 space-y-1.5">
+            <div class="p-2.5 bg-white rounded-xl border border-stone-200 shadow-inner flex items-center justify-center">
+              <img id="qrImg" class="w-32 h-32 object-contain" alt="QR Code Kasir" />
+              <canvas id="qrCanvas" class="hidden"></canvas>
+            </div>
+            <div id="qrCodeText" class="font-mono font-black text-xs tracking-wider text-stone-800">
+              NIK
             </div>
           </div>
         </div>
 
         <!-- Reset Cycle Footer -->
-        <div class="mt-2.5 flex items-center justify-between text-[9.5px] text-emerald-100/90">
-          <span>🔄 Reset otomatis ke Rp 2.000.000 tiap Tanggal 1</span>
-          <span id="resetMonthBadge" class="font-bold text-amber-300">Periode Aktif</span>
+        <div class="mt-3 flex items-center justify-between text-[10px] text-emerald-100/90 relative z-10 pt-1">
+          <div class="flex items-center space-x-1.5 font-semibold">
+            <span class="text-amber-300">🔄</span>
+            <span>Reset otomatis ke Rp 2.000.000 tiap Tanggal 1</span>
+          </div>
+          <span id="resetMonthBadge" class="font-extrabold text-amber-300 bg-black/25 px-2.5 py-0.5 rounded-full border border-white/10 shrink-0">
+            Kuota Nov 2026
+          </span>
         </div>
       </div>
 
@@ -969,28 +1045,46 @@
         }
       }
 
-      // Render 1D Barcode (CODE128)
+      // Render 1D Barcode (CODE128 - Full Width, High Contrast, Centered)
       try {
         JsBarcode('#barcodeSvg', codeStr, {
           format: 'CODE128',
-          width: 1.7,
-          height: 44,
+          width: 2.1,
+          height: 54,
           displayValue: false,
-          margin: 0
+          margin: 0,
+          lineColor: '#0f172a'
         });
       } catch (e) {
         console.warn('Barcode error:', e);
       }
 
-      // Render 2D QR Code
+      // Render 2D QR Code (Sharp, Large, No blank space with Auto-Fallback)
       try {
-        const qrCanvas = document.getElementById('qrCanvas');
-        if (window.QRCode && qrCanvas) {
-          QRCode.toCanvas(qrCanvas, codeStr, { width: 56, margin: 0 });
+        const qrImg = document.getElementById('qrImg');
+        const qrCodeText = document.getElementById('qrCodeText');
+        if (qrCodeText) qrCodeText.textContent = codeStr;
+
+        if (window.QRCode && typeof QRCode.toDataURL === 'function') {
+          QRCode.toDataURL(codeStr, {
+            width: 256,
+            margin: 1,
+            color: { dark: '#0f172a', light: '#ffffff' }
+          }).then(url => {
+            if (qrImg) qrImg.src = url;
+          }).catch(() => {
+            if (qrImg) qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=2&data=' + encodeURIComponent(codeStr);
+          });
+        } else {
+          if (qrImg) qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=2&data=' + encodeURIComponent(codeStr);
         }
       } catch (e) {
-        console.warn('QR error:', e);
+        const qrImg = document.getElementById('qrImg');
+        if (qrImg) qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=2&data=' + encodeURIComponent(codeStr);
       }
+
+      // Pastikan default switcher kembali ke barcode 1D
+      switchScannerView('barcode');
 
       // Render Last Purchase Card (Barang Terakhir Dibeli & Nominalnya)
       const lastTrx = data.last_transaction || ((data.transactions && data.transactions.length > 0) ? data.transactions[0] : null);
@@ -1081,6 +1175,27 @@
 
       resultSec.classList.remove('hidden');
       resultSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function switchScannerView(mode) {
+      const btnBarcode = document.getElementById('tabBtnBarcode');
+      const btnQr = document.getElementById('tabBtnQr');
+      const viewBarcode = document.getElementById('scannerViewBarcode');
+      const viewQr = document.getElementById('scannerViewQr');
+
+      if (!btnBarcode || !btnQr || !viewBarcode || !viewQr) return;
+
+      if (mode === 'qr') {
+        btnBarcode.className = 'px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 transition-all cursor-pointer font-bold text-[10px]';
+        btnQr.className = 'px-2.5 py-1 rounded-md bg-emerald-700 text-white shadow-xs transition-all cursor-pointer font-bold text-[10px]';
+        viewBarcode.classList.add('hidden');
+        viewQr.classList.remove('hidden');
+      } else {
+        btnBarcode.className = 'px-2.5 py-1 rounded-md bg-emerald-700 text-white shadow-xs transition-all cursor-pointer font-bold text-[10px]';
+        btnQr.className = 'px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 transition-all cursor-pointer font-bold text-[10px]';
+        viewBarcode.classList.remove('hidden');
+        viewQr.classList.add('hidden');
+      }
     }
 
     function lockCard() {
