@@ -92,6 +92,25 @@ export function formatCustomerAddressDisplay(address?: string | null): string {
 }
 
 /**
+ * Menghasilkan key deterministik di tabel `app_configurations` Supabase (`emp_pin_<kode>`)
+ * untuk brankas PIN terpisah yang 100% kebal terhadap sinkronisasi transaksi/alamat kasir.
+ */
+export function getEmployeePinVaultKey(codeOrCustomer?: Partial<Customer> | string | null): string {
+  if (!codeOrCustomer) return '';
+  const raw =
+    typeof codeOrCustomer === 'string'
+      ? codeOrCustomer
+      : String(codeOrCustomer.code || codeOrCustomer.id || '');
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^msl-emp-/i, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized ? `emp_pin_${normalized}` : '';
+}
+
+/**
  * Mengekstrak PIN hash dari teks alamat mentah
  */
 export function extractPinHashFromText(address?: string | null): string | null {
@@ -379,6 +398,30 @@ export function getStoresForCluster(activeStoreId?: string | null): RegisteredSt
     if (filtered.length > 0) return filtered;
   } catch {}
   return [];
+}
+
+/**
+ * Mengambil seluruh daftar store_id dalam satu cluster bisnis yang sama
+ * (misal Koperasi 1 `store-koperasimsl`, Koperasi 2 `store-koperasimsl-cabang`, maupun cabang Koperasi baru lainnya)
+ * agar saldo kuota karyawan & riwayat transaksi koperasi tersambung otomatis antar semua cabang koperasi.
+ */
+export function getClusterStoreIds(activeStoreId?: string | null): string[] {
+  const resolvedActive = normalizeStoreId(activeStoreId || getCurrentActiveStoreId());
+  const clusterId = getStoreClusterId(resolvedActive);
+  if (clusterId === 'cluster-tumbuhmakmur' || resolvedActive === 'store-01') {
+    return ['store-01'];
+  }
+  const ids = new Set<string>([resolvedActive]);
+  if (clusterId === 'cluster-koperasi-msl') {
+    ids.add('store-koperasimsl');
+    ids.add('store-koperasimsl-cabang');
+  }
+  for (const s of getStoresForCluster(resolvedActive)) {
+    if (s?.id && s.id !== 'store-01') {
+      ids.add(s.id);
+    }
+  }
+  return Array.from(ids);
 }
 
 /**

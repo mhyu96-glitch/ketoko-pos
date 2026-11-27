@@ -10,12 +10,15 @@ import {
   normalizeStoreId,
   normalizeAccessScope,
   getStoreDisplayName,
+  getStoreClusterId,
+  getClusterStoreIds,
   isCustomerBelongsToStoreOrCluster,
   MAX_EMPLOYEE_ALLOWANCE,
   clampEmployeeAllowance,
   clampEmployeeBalance,
   parseEmployeeMeta,
   encodeEmployeeAddressWithReset,
+  getEmployeePinVaultKey,
   extractEmployeePinHash,
   extractPinHashFromText,
   isCustomerCardBlocked,
@@ -177,22 +180,10 @@ function buildCustomerCloudPayload(c: Customer, fallbackStoreId: string, include
 }
 
 async function upsertCustomerBatchWithFallback(supabase: any, rows: Customer[], fallbackStoreId: string) {
-  const extendedPayload = rows.map((c) => buildCustomerCloudPayload(c, fallbackStoreId, true));
-  const { error } = await supabase.from('customers').upsert(extendedPayload, { onConflict: 'id' });
-  if (!error) return { error: null };
-
-  const msg = String(error.message || '');
-  const code = String(error.code || '');
-  const isMissingCol =
-    code === 'PGRST204' ||
-    code === '42703' ||
-    /column|schema cache/i.test(msg);
-
-  if (isMissingCol) {
-    const corePayload = rows.map((c) => buildCustomerCloudPayload(c, fallbackStoreId, false));
-    return await supabase.from('customers').upsert(corePayload, { onConflict: 'id' });
-  }
-  return { error };
+  // Tabel Supabase `customers` menggunakan 11 kolom inti standar (saldo dihitung presisi dari credit_limit - current_debt & tag [RST]/[PIN] di address).
+  // Langsung kirim corePayload tanpa membuang 1 round-trip gagal 400 PGRST204 yang berisiko memicu timeout!
+  const corePayload = rows.map((c) => buildCustomerCloudPayload(c, fallbackStoreId, false));
+  return await supabase.from('customers').upsert(corePayload, { onConflict: 'id' });
 }
 
 export interface SyncStatusInfo {
@@ -222,6 +213,7 @@ export class SyncService {
   private lastSyncTime: string | null = localStorage.getItem('ketoko_last_sync_time');
   private lastError: string | null = null;
   private cloudLiveChannel: any = null;
+  private coopLiveChannel: any = null;
   private channelReadyPromise: Promise<void> | null = null;
   private realtimeCallbacks: CloudRealtimeCallbacks = {};
 
@@ -247,12 +239,19 @@ export class SyncService {
     });
 
     const activeStoreId = this.getActiveStoreId();
+    const activeClusterId = getStoreClusterId(activeStoreId);
     const ch = supabase.channel(`ketoko_live_${activeStoreId}`, {
       config: { broadcast: { self: false } }
     });
-    const coopCh = supabase.channel('ketoko_live_coop_central', {
-      config: { broadcast: { self: false } }
-    });
+    // Channel lintas cabang untuk Koperasi (agar Koperasi 1 & Koperasi 2 sinkron saldo karyawan seketika, tetap terisolasi dari store-01)
+    const coopCh = activeStoreId !== 'store-01'
+      ? supabase.channel(
+          activeClusterId === 'cluster-koperasi-msl'
+            ? 'ketoko_live_coop_central'
+            : `ketoko_live_cluster_${activeClusterId}`,
+          { config: { broadcast: { self: false } } }
+        )
+      : null;
 
     const setupChannelListeners = (targetChannel: any) => {
       targetChannel.on('broadcast', { event: 'product_updated' }, ({ payload }: any) => {
@@ -292,34 +291,67 @@ export class SyncService {
       })
       .on('broadcast', { event: 'transaction_created' }, async ({ payload }: any) => {
         const activeStore = this.getActiveStoreId();
-        if (payload?.store_id && payload.store_id !== activeStore) return;
         const trx = payload?.transaction || (payload?.items ? payload : null);
+        const trxStore = trx?.store_id || payload?.store_id || activeStore;
+        const sameStore = trxStore === activeStore;
+        const sameCluster = isCustomerBelongsToStoreOrCluster(trxStore, activeStore);
+        if (!sameStore && !sameCluster) return;
+
         if (trx && trx.id) {
-          if (trx.store_id && trx.store_id !== activeStore) return;
           await db.transactions.put(trx).catch(() => {});
         }
-        if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+        // Stok fisik rak HANYA dikurangi jika terjadi di cabang toko yang persis sama
+        if (sameStore && payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
           for (const s of payload.updated_stocks) {
             db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
           }
         }
-        this.realtimeCallbacks.onTransactionCreated?.(payload);
+        if (sameStore) {
+          this.realtimeCallbacks.onTransactionCreated?.(payload);
+        } else if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed'));
+        }
+      })
+      .on('broadcast', { event: 'transaction_updated' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        const trx = payload?.transaction || (payload?.items ? payload : null);
+        const trxStore = trx?.store_id || payload?.store_id || activeStore;
+        const sameStore = trxStore === activeStore;
+        const sameCluster = isCustomerBelongsToStoreOrCluster(trxStore, activeStore);
+        if (!sameStore && !sameCluster) return;
+
+        if (trx && trx.id) {
+          await db.transactions.put(trx).catch(() => {});
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ketoko_transaction_updated', { detail: { transaction: trx } }));
+          }
+        }
+        if (sameStore && payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+          for (const s of payload.updated_stocks) {
+            db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
+          }
+          this.realtimeCallbacks.onStockUpdated?.(payload.updated_stocks);
+        }
       })
       .on('broadcast', { event: 'transaction_deleted' }, async ({ payload }: any) => {
         const activeStore = this.getActiveStoreId();
-        if (payload?.store_id && payload.store_id !== activeStore) return;
+        const trxStore = payload?.store_id || activeStore;
+        const sameStore = !payload?.store_id || trxStore === activeStore;
+        const sameCluster = isCustomerBelongsToStoreOrCluster(trxStore, activeStore);
+        if (!sameStore && !sameCluster) return;
+
         const trxId = payload?.transaction_id || payload?.id;
         if (trxId) {
           this.markTransactionDeletedLocally(trxId);
           await db.transactions.delete(trxId).catch(() => {});
           await db.syncQueue.delete(trxId).catch(() => {});
         }
-        if (payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
+        if (sameStore && payload?.updated_stocks && Array.isArray(payload.updated_stocks)) {
           for (const s of payload.updated_stocks) {
             db.products.update(String(s.id), { stock: Number(s.stock) || 0 }).catch(() => {});
           }
         }
-        this.realtimeCallbacks.onTransactionDeleted?.(payload);
+        this.realtimeCallbacks.onTransactionDeleted?.(sameStore ? payload : { transaction_id: trxId });
       })
       .on('broadcast', { event: 'stock_updated' }, ({ payload }: any) => {
         const activeStore = this.getActiveStoreId();
@@ -350,6 +382,7 @@ export class SyncService {
         const cust = payload as Customer;
         if (cust && cust.id) {
           const activeStore = this.getActiveStoreId();
+          if (!isCustomerBelongsToStoreOrCluster(cust.store_id || activeStore, activeStore)) return;
           const existing = await db.customers.get(String(cust.id).trim()).catch(() => undefined);
           const normalizedCust = hydrateCloudCustomer(cust, activeStore, existing);
           await db.customers.put(normalizedCust).catch(() => {});
@@ -366,7 +399,44 @@ export class SyncService {
           this.realtimeCallbacks.onCustomerUpdated?.(normalizedCust);
         }
       })
+      .on('broadcast', { event: 'member_deposit_updated' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        const cust = payload?.customer as Customer | undefined;
+        if (cust && cust.id) {
+          if (!isCustomerBelongsToStoreOrCluster(cust.store_id || payload?.store_id || activeStore, activeStore)) return;
+          const existing = await db.customers.get(String(cust.id).trim()).catch(() => undefined);
+          const normalizedCust = hydrateCloudCustomer(cust, activeStore, existing);
+          await db.customers.put(normalizedCust).catch(() => {});
+          if (payload?.mutation?.id) {
+            await db.memberDeposits.put(payload.mutation).catch(() => {});
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: normalizedCust }));
+            window.dispatchEvent(
+              new CustomEvent('ketoko_member_deposit_updated', {
+                detail: { customer: normalizedCust, mutation: payload?.mutation }
+              })
+            );
+          }
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              const bc = new BroadcastChannel('ketoko_customer_sync');
+              bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: normalizedCust });
+              bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: normalizedCust, mutation: payload?.mutation });
+              bc.close();
+            }
+          } catch {}
+          this.realtimeCallbacks.onCustomerUpdated?.(normalizedCust);
+        }
+      })
+      .on('broadcast', { event: 'customers_bulk_synced' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (!isCustomerBelongsToStoreOrCluster(payload?.store_id || activeStore, activeStore)) return;
+        await this.pullCustomersFromSupabase().catch(() => {});
+      })
       .on('broadcast', { event: 'customer_deleted' }, async ({ payload }: any) => {
+        const activeStore = this.getActiveStoreId();
+        if (payload?.store_id && !isCustomerBelongsToStoreOrCluster(payload.store_id, activeStore)) return;
         const custId = String(payload?.id || '').trim();
         if (custId) {
           await db.customers.delete(custId).catch(() => {});
@@ -386,9 +456,10 @@ export class SyncService {
     };
 
     setupChannelListeners(ch);
-    setupChannelListeners(coopCh);
-
-    coopCh.subscribe();
+    if (coopCh) {
+      setupChannelListeners(coopCh);
+      coopCh.subscribe();
+    }
 
     ch.subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
@@ -397,22 +468,28 @@ export class SyncService {
       }
     });
 
+    this.coopLiveChannel = coopCh;
     (this as any).coopChannel = coopCh;
     this.cloudLiveChannel = ch;
     return ch;
   }
 
   public resetCloudLiveChannel() {
+    const supabase = getSupabaseClient();
     if (this.cloudLiveChannel) {
       try {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          supabase.removeChannel(this.cloudLiveChannel);
-        }
+        if (supabase) supabase.removeChannel(this.cloudLiveChannel);
       } catch {}
       this.cloudLiveChannel = null;
-      this.channelReadyPromise = null;
     }
+    if (this.coopLiveChannel) {
+      try {
+        if (supabase) supabase.removeChannel(this.coopLiveChannel);
+      } catch {}
+      this.coopLiveChannel = null;
+      (this as any).coopChannel = null;
+    }
+    this.channelReadyPromise = null;
   }
 
   public getCloudLiveChannel() {
@@ -1328,14 +1405,139 @@ export class SyncService {
   }
 
   /**
+   * Helper internal untuk mengembalikan (REFUND) atau menyesuaikan (ADJUSTMENT) saldo kuota karyawan/member
+   * saat transaksi SALDO dihapus atau diedit, sekaligus menyinkronkan ke Cloud & Koperasi Kedua secara real-time.
+   */
+  private async resolveAndAdjustMemberSaldo(params: {
+    memberId?: string;
+    customerName?: string;
+    amountDelta: number; // positif = kembalikan saldo ke karyawan, negatif = potong saldo tambahan
+    mutationType: 'REFUND' | 'ADJUSTMENT';
+    receiptNumber?: string;
+    notes: string;
+    trxCreatedAt?: string;
+    storeId?: string;
+  }): Promise<Customer | null> {
+    if (!params.amountDelta) return null;
+    const activeStoreId = params.storeId || this.getActiveStoreId();
+
+    try {
+      let cust: Customer | undefined | null = null;
+      const cleanMemberId = String(params.memberId || '').trim();
+      if (cleanMemberId) {
+        cust =
+          (await db.customers.get(cleanMemberId).catch(() => undefined)) ||
+          (await db.customers.where('code').equalsIgnoreCase(cleanMemberId).first().catch(() => undefined));
+      }
+      if (!cust && params.customerName) {
+        const lowerName = params.customerName.trim().toLowerCase();
+        const allLocal = await db.customers.toArray().catch(() => []);
+        cust = allLocal.find(
+          (c) =>
+            isCustomerBelongsToStoreOrCluster(c.store_id, activeStoreId) &&
+            String(c.name || '').trim().toLowerCase() === lowerName
+        );
+      }
+
+      // Segarkan saldo terbaru dari Cloud (batas 1.5 detik) agar sinkron dengan transaksi di Koperasi Kedua
+      if (navigator.onLine && (cust?.id || cleanMemberId)) {
+        const fresh = await Promise.race([
+          this.refreshSingleCustomerFromCloud(cust?.id || cleanMemberId),
+          new Promise<null>((r) => setTimeout(() => r(null), 1500))
+        ]).catch(() => null);
+        if (fresh) cust = fresh;
+      }
+
+      if (!cust) return null;
+
+      const isEmployee = cust.type === 'KARYAWAN';
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const trxMonth = String(params.trxCreatedAt || currentMonth).slice(0, 7);
+
+      // Untuk karyawan kuota bulanan, hanya sesuaikan saldo aktif jika nota berasal dari bulan berjalan
+      if (isEmployee && params.trxCreatedAt && trxMonth !== currentMonth) {
+        return cust;
+      }
+
+      const allowance = isEmployee
+        ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit ?? MAX_EMPLOYEE_ALLOWANCE)
+        : 0;
+      const oldBalance = isEmployee
+        ? clampEmployeeBalance(cust.deposit_balance, allowance)
+        : (Number(cust.deposit_balance) || 0);
+      const newBalance = isEmployee
+        ? clampEmployeeBalance(oldBalance + params.amountDelta, allowance)
+        : Math.max(0, oldBalance + params.amountDelta);
+      const newDebt = isEmployee
+        ? Math.max(0, allowance - newBalance)
+        : (Number(cust.current_debt) || 0);
+
+      const nowIso = new Date().toISOString();
+      const updatedCust: Customer = {
+        ...cust,
+        deposit_balance: newBalance,
+        current_debt: newDebt,
+        updated_at: nowIso
+      };
+
+      const syncedCust = await this.syncCustomerChange(updatedCust);
+
+      const mutationRecord: MemberDepositMutation = {
+        id: `dep-${params.mutationType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        customer_id: syncedCust.id,
+        customer_name: syncedCust.name,
+        customer_code: syncedCust.code,
+        type: params.mutationType,
+        amount: Math.abs(params.amountDelta),
+        balance_before: oldBalance,
+        balance_after: newBalance,
+        payment_method: 'SYSTEM',
+        store_id: activeStoreId,
+        store_name: getStoreDisplayName(activeStoreId),
+        cashier_id: 'ADMIN',
+        cashier_name: 'Admin',
+        receipt_number: params.receiptNumber || '-',
+        notes: params.notes,
+        created_at: nowIso
+      };
+
+      await db.memberDeposits.put(mutationRecord).catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('ketoko_member_deposit_updated', {
+            detail: { customer: syncedCust, mutation: mutationRecord }
+          })
+        );
+      }
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('ketoko_customer_sync');
+          bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: syncedCust, mutation: mutationRecord });
+          bc.close();
+        }
+      } catch {}
+      this.broadcastCloudEvent('member_deposit_updated', {
+        customer: syncedCust,
+        mutation: mutationRecord,
+        store_id: activeStoreId
+      }).catch(() => {});
+
+      return syncedCust;
+    } catch (err) {
+      console.warn('[Sync] Gagal sesuaikan saldo member/karyawan:', err);
+      return null;
+    }
+  }
+
+  /**
    * Menghapus transaksi secara real-time ke seluruh terminal (Lokal, Tab lain, LAN, dan Cloud Supabase)
-   * Otomatis mengembalikan stok fisik produk yang terjual ke rak toko
+   * Otomatis mengembalikan stok fisik produk ke rak toko & mengembalikan saldo kuota karyawan/member jika dibayar SALDO
    */
   async deleteTransaction(trxId: string): Promise<boolean> {
     // 1. Catat ke daftar tombstone lokal SEGERA agar tidak pernah di-re-upload lagi
     this.markTransactionDeletedLocally(trxId);
 
-    // 2. Ambil data transaksi sebelum dihapus untuk restore stok
+    // 2. Ambil data transaksi sebelum dihapus untuk restore stok & restore saldo karyawan
     const trx = await db.transactions.get(trxId);
     const updatedStocks: Array<{ id: string; stock: number }> = [];
 
@@ -1347,6 +1549,23 @@ export class SyncService {
     // 4. DISPATCH DOM EVENT LOKAL SEKETIKA agar Dashboard & Laporan langsung berkurang tanpa delay
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ketoko_transaction_deleted', { detail: { id: trxId } }));
+    }
+
+    // 4.b Kembalikan saldo kuota karyawan / simpanan member otomatis jika transaksi ini menggunakan SALDO
+    if (trx && trx.payment_method === 'SALDO' && (trx.member_id || trx.customer_name)) {
+      const refundAmount = Math.max(0, Number(trx.grand_total) || 0);
+      if (refundAmount > 0) {
+        await this.resolveAndAdjustMemberSaldo({
+          memberId: trx.member_id,
+          customerName: trx.customer_name,
+          amountDelta: refundAmount,
+          mutationType: 'REFUND',
+          receiptNumber: trx.receipt_number || trxId,
+          notes: `Pengembalian Saldo Otomatis (Hapus Nota ${trx.receipt_number || trxId})`,
+          trxCreatedAt: trx.created_at,
+          storeId: trx.store_id || this.getActiveStoreId()
+        });
+      }
     }
 
     // 5. Kembalikan stok fisik barang yang terjual di nota ini (update lokal cepat & broadcast cloud)
@@ -1386,11 +1605,10 @@ export class SyncService {
       try {
         const supabase = getSupabaseClient();
         if (supabase) {
-          const storeId = this.getActiveStoreId();
           Promise.allSettled([
             supabase.from('transaction_items').delete().eq('transaction_id', trxId),
             supabase.from('receivables').delete().eq('transaction_id', trxId),
-            supabase.from('transactions').delete().eq('id', trxId).eq('store_id', storeId),
+            supabase.from('transactions').delete().eq('id', trxId),
             supabase.from('sync_logs').insert({
               branch_id: trx?.branch_id || 'BR-01',
               operation_type: 'DELETE_TRANSACTION',
@@ -1405,10 +1623,10 @@ export class SyncService {
       }
     }
 
-    // 9. Siarkan realtime broadcast ke semua terminal kasir di cloud (berbeda jaringan)
+    // 9. Siarkan realtime broadcast ke semua terminal kasir & cabang Koperasi di cloud
     this.broadcastCloudEvent('transaction_deleted', {
       transaction_id: trxId,
-      store_id: this.getActiveStoreId(),
+      store_id: trx?.store_id || this.getActiveStoreId(),
       updated_stocks: updatedStocks
     });
     if (updatedStocks.length > 0) {
@@ -1531,10 +1749,27 @@ export class SyncService {
           await db.receivables.put(newRec);
         }
       } else {
-        // Jika sebelumnya TEMPO lalu diubah jadi CASH / QRIS / DEBIT / TRANSFER, bersihkan piutang
+        // Jika sebelumnya TEMPO lalu diubah jadi CASH / QRIS / DEBIT / TRANSFER / SALDO, bersihkan piutang
         await db.receivables.where('transaction_id').equals(finalTrx.id).delete().catch(() => {});
       }
     });
+
+    // 3.b Sesuaikan selisih saldo karyawan/member jika nota SALDO diedit nominal atau metode pembayarannya
+    const oldSaldoUsed = oldTrx?.payment_method === 'SALDO' ? (Number(oldTrx.grand_total) || 0) : 0;
+    const newSaldoUsed = finalTrx.payment_method === 'SALDO' ? (Number(finalTrx.grand_total) || 0) : 0;
+    const saldoDelta = oldSaldoUsed - newSaldoUsed; // positif = kembalikan selisih ke karyawan, negatif = potong tambahan
+    if (saldoDelta !== 0) {
+      await this.resolveAndAdjustMemberSaldo({
+        memberId: finalTrx.member_id || oldTrx?.member_id,
+        customerName: finalTrx.customer_name || oldTrx?.customer_name,
+        amountDelta: saldoDelta,
+        mutationType: saldoDelta > 0 ? 'REFUND' : 'ADJUSTMENT',
+        receiptNumber: finalTrx.receipt_number,
+        notes: `Penyesuaian Saldo Edit Nota ${finalTrx.receipt_number}`,
+        trxCreatedAt: finalTrx.created_at || oldTrx?.created_at,
+        storeId: finalTrx.store_id || activeStoreId
+      });
+    }
 
     // 4. Siarkan via BroadcastChannel lokal ke seluruh tab di browser yang sama
     try {
@@ -1785,7 +2020,41 @@ export class SyncService {
 
       if (!remoteRow) return localExisting || null;
 
-      const hydrated = hydrateCloudCustomer(remoteRow, storeId, localExisting);
+      let hydrated = hydrateCloudCustomer(remoteRow, storeId, localExisting);
+
+      // Tarik juga dari Brankas PIN Terpisah (`app_configurations`) agar 100% kebal bila kolom address sempat tertimpa
+      const vaultKey = getEmployeePinVaultKey(hydrated);
+      if (vaultKey) {
+        try {
+          const { data: vaultRow } = await supabase
+            .from('app_configurations')
+            .select('metadata')
+            .eq('key_name', vaultKey)
+            .maybeSingle();
+          const vMeta = vaultRow?.metadata;
+          if (vMeta) {
+            const wasReset = Boolean(vMeta.reset_at && !vMeta.pin_hash);
+            const vPin = !wasReset && vMeta.pin_hash ? String(vMeta.pin_hash).toLowerCase().trim() : null;
+            const vBlocked = Boolean(vMeta.is_blocked);
+            const vPhone = vMeta.phone && vMeta.phone !== '-' ? String(vMeta.phone) : undefined;
+            hydrated = preserveCustomerSecurityMetadata(
+              {
+                ...hydrated,
+                phone: (!hydrated.phone || hydrated.phone === '-') && vPhone ? vPhone : hydrated.phone
+              },
+              {
+                pin_hash: vPin || undefined,
+                is_card_blocked: vBlocked
+              },
+              {
+                allowPinRemoval: wasReset,
+                allowBlockChange: false
+              }
+            );
+          }
+        } catch {}
+      }
+
       await db.customers.put(hydrated);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: hydrated }));
@@ -1879,49 +2148,108 @@ export class SyncService {
             ).catch(() => {});
 
             let finalCustForCloud = updatedCust;
+            const vaultKey = getEmployeePinVaultKey(finalCustForCloud);
 
-            // Jaga agar PIN atau status blokir yang baru dibuat karyawan di HP (Cloud) TIDAK PERNAH tertimpa oleh data kasir lama!
+            // Jaga agar PIN atau status blokir dari HP karyawan (Brankas `app_configurations` maupun `customers.address`)
+            // TIDAK PERNAH tertimpa oleh transaksi kasir di komputer mana pun!
             if (!options?.allowPinRemoval || !options?.allowBlockChange) {
               try {
-                const { data: remoteRow } = await supabase
-                  .from('customers')
-                  .select('address, phone')
-                  .eq('id', cleanId)
-                  .maybeSingle();
+                const [custRes, vaultRes] = await Promise.all([
+                  supabase.from('customers').select('address, phone').eq('id', cleanId).maybeSingle(),
+                  vaultKey
+                    ? supabase.from('app_configurations').select('metadata').eq('key_name', vaultKey).maybeSingle()
+                    : Promise.resolve({ data: null })
+                ]);
 
-                if (remoteRow) {
-                  const remotePin = extractPinHashFromText(remoteRow.address);
-                  const localHasPin = Boolean(extractEmployeePinHash(finalCustForCloud));
-                  const remoteBlocked = /\[STATUS:BLOCKED\]/i.test(String(remoteRow.address || ''));
-                  const localBlocked = isCustomerCardBlocked(finalCustForCloud);
-                  const needRemotePin = !options?.allowPinRemoval && Boolean(remotePin) && !localHasPin;
-                  const needRemoteBlock = !options?.allowBlockChange && remoteBlocked && !localBlocked;
-                  const needRemotePhone =
-                    (!finalCustForCloud.phone || finalCustForCloud.phone === '-') &&
-                    Boolean(remoteRow.phone && remoteRow.phone !== '-');
+                const remoteRow = custRes?.data;
+                const vMeta = (vaultRes as any)?.data?.metadata;
+                const vaultWasReset = Boolean(vMeta?.reset_at && !vMeta?.pin_hash);
+                const vaultPin = !vaultWasReset && vMeta?.pin_hash ? String(vMeta.pin_hash).toLowerCase().trim() : null;
+                const addrPin = !vaultWasReset ? extractPinHashFromText(remoteRow?.address) : null;
+                const remotePin = vaultPin || addrPin;
 
-                  if (needRemotePin || needRemoteBlock || needRemotePhone) {
-                    finalCustForCloud = preserveCustomerSecurityMetadata(
-                      {
-                        ...finalCustForCloud,
-                        phone: needRemotePhone ? remoteRow.phone : finalCustForCloud.phone
-                      },
-                      {
-                        address: remoteRow.address,
-                        pin_hash: remotePin || undefined,
-                        is_card_blocked: remoteBlocked
-                      },
-                      options
+                const localHasPin = Boolean(extractEmployeePinHash(finalCustForCloud));
+                const remoteBlocked =
+                  Boolean(vMeta?.is_blocked) || /\[STATUS:BLOCKED\]/i.test(String(remoteRow?.address || ''));
+                const localBlocked = isCustomerCardBlocked(finalCustForCloud);
+                const remotePhone =
+                  (remoteRow?.phone && remoteRow.phone !== '-' ? remoteRow.phone : null) ||
+                  (vMeta?.phone && vMeta.phone !== '-' ? vMeta.phone : null);
+
+                const needRemotePin = !options?.allowPinRemoval && Boolean(remotePin) && !localHasPin;
+                const needRemoteBlock = !options?.allowBlockChange && remoteBlocked && !localBlocked;
+                const needRemotePhone =
+                  (!finalCustForCloud.phone || finalCustForCloud.phone === '-') && Boolean(remotePhone);
+
+                if (needRemotePin || needRemoteBlock || needRemotePhone) {
+                  finalCustForCloud = preserveCustomerSecurityMetadata(
+                    {
+                      ...finalCustForCloud,
+                      phone: needRemotePhone && remotePhone ? remotePhone : finalCustForCloud.phone
+                    },
+                    {
+                      address: remoteRow?.address,
+                      pin_hash: remotePin || undefined,
+                      is_card_blocked: remoteBlocked
+                    },
+                    options
+                  );
+                  await db.customers.put(finalCustForCloud).catch(() => {});
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('ketoko_customer_updated', { detail: finalCustForCloud })
                     );
-                    await db.customers.put(finalCustForCloud).catch(() => {});
-                    if (typeof window !== 'undefined') {
-                      window.dispatchEvent(
-                        new CustomEvent('ketoko_customer_updated', { detail: finalCustForCloud })
-                      );
-                    }
                   }
                 }
               } catch {}
+            }
+
+            // Sinkronkan juga ke Brankas PIN Terpisah (`app_configurations`) bila PIN dibuat/diubah/direset
+            if (vaultKey) {
+              const activePinAfterMerge = extractEmployeePinHash(finalCustForCloud);
+              const activeBlockedAfterMerge = isCustomerCardBlocked(finalCustForCloud);
+              const nowVaultIso = new Date().toISOString();
+              if (options?.allowPinRemoval) {
+                Promise.resolve(
+                  supabase.from('app_configurations').upsert(
+                    {
+                      key_name: vaultKey,
+                      last_sync_timestamp: nowVaultIso,
+                      metadata: {
+                        emp_id: cleanId,
+                        code: finalCustForCloud.code,
+                        name: finalCustForCloud.name,
+                        phone: finalCustForCloud.phone || '-',
+                        pin_hash: null,
+                        is_blocked: activeBlockedAfterMerge,
+                        reset_at: nowVaultIso,
+                        updated_at: nowVaultIso
+                      }
+                    },
+                    { onConflict: 'key_name' }
+                  )
+                ).catch(() => {});
+              } else if (activePinAfterMerge || options?.allowBlockChange) {
+                Promise.resolve(
+                  supabase.from('app_configurations').upsert(
+                    {
+                      key_name: vaultKey,
+                      last_sync_timestamp: nowVaultIso,
+                      metadata: {
+                        emp_id: cleanId,
+                        code: finalCustForCloud.code,
+                        name: finalCustForCloud.name,
+                        phone: finalCustForCloud.phone || '-',
+                        pin_hash: activePinAfterMerge || null,
+                        is_blocked: activeBlockedAfterMerge,
+                        reset_at: null,
+                        updated_at: nowVaultIso
+                      }
+                    },
+                    { onConflict: 'key_name' }
+                  )
+                ).catch(() => {});
+              }
             }
 
             const upsertPromise = upsertCustomerBatchWithFallback(
@@ -1930,7 +2258,7 @@ export class SyncService {
               assignedStoreId
             );
             const timeoutPromise = new Promise<{ error: any }>((_, reject) =>
-              setTimeout(() => reject(new Error('Customer upsert timeout')), 4000)
+              setTimeout(() => reject(new Error('Customer upsert timeout')), 12000)
             );
             await Promise.race([upsertPromise, timeoutPromise]).catch(() => {});
 
@@ -2020,7 +2348,14 @@ export class SyncService {
     cashier_name?: string;
     notes?: string;
   }): Promise<{ success: boolean; customer?: Customer; mutation?: MemberDepositMutation; error?: string }> {
-    const cust = await db.customers.get(payload.customer_id);
+    let cust = await db.customers.get(payload.customer_id);
+    if (navigator.onLine) {
+      const fresh = await Promise.race([
+        this.refreshSingleCustomerFromCloud(payload.customer_id),
+        new Promise<null>((r) => setTimeout(() => r(null), 1500))
+      ]).catch(() => null);
+      if (fresh) cust = fresh;
+    }
     if (!cust) {
       return { success: false, error: 'Member tidak ditemukan di database' };
     }
@@ -2040,8 +2375,11 @@ export class SyncService {
         };
       }
     }
+    const allowanceCap = cust.type === 'KARYAWAN'
+      ? clampEmployeeAllowance(cust.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
+      : 0;
     const balanceAfter = cust.type === 'KARYAWAN'
-      ? clampEmployeeBalance(balanceBefore + amount, cust.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
+      ? clampEmployeeBalance(balanceBefore + amount, allowanceCap)
       : balanceBefore + amount;
     const now = new Date().toISOString();
     const activeStoreId = payload.store_id || this.getActiveStoreId();
@@ -2050,6 +2388,7 @@ export class SyncService {
     const updatedCust: Customer = {
       ...cust,
       deposit_balance: balanceAfter,
+      current_debt: cust.type === 'KARYAWAN' ? Math.max(0, allowanceCap - balanceAfter) : cust.current_debt,
       updated_at: now
     };
 
@@ -2073,27 +2412,22 @@ export class SyncService {
       created_at: now
     };
 
-    // 1. Simpan ke IndexedDB lokal seketika (< 5ms)
-    await db.customers.put(updatedCust);
+    // 1. Simpan mutasi & sinkronkan perubahan pelanggan ke Lokal, Tab lain, LAN, Cloud Supabase & Koperasi Kedua
     await db.memberDeposits.put(mutationRecord);
+    const syncedCust = await this.syncCustomerChange(updatedCust);
 
-    // 2. Dispatch DOM events
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedCust }));
-      window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: updatedCust, mutation: mutationRecord } }));
+      window.dispatchEvent(new CustomEvent('ketoko_member_deposit_updated', { detail: { customer: syncedCust, mutation: mutationRecord } }));
     }
 
-    // 3. Siarkan via BroadcastChannel
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('ketoko_customer_sync');
-        bc.postMessage({ type: 'CUSTOMER_UPDATED', customer: updatedCust });
-        bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: updatedCust, mutation: mutationRecord });
+        bc.postMessage({ type: 'MEMBER_DEPOSIT_UPDATED', customer: syncedCust, mutation: mutationRecord });
         bc.close();
       }
     } catch {}
 
-    // 4. Background Sync ke Central Server LAN & Cloud
     void (async () => {
       try {
         await lanService.submitMemberTopup({
@@ -2110,14 +2444,14 @@ export class SyncService {
 
       try {
         await this.broadcastCloudEvent('member_deposit_updated', {
-          customer: updatedCust,
+          customer: syncedCust,
           mutation: mutationRecord,
           store_id: activeStoreId
         });
       } catch {}
     })();
 
-    return { success: true, customer: updatedCust, mutation: mutationRecord };
+    return { success: true, customer: syncedCust, mutation: mutationRecord };
   }
 
   /**
@@ -2154,6 +2488,23 @@ export class SyncService {
         console.warn('[Sync] Gagal tarik tombstone pelanggan:', err);
       }
 
+      // 1.b Tarik seluruh Brankas PIN Karyawan (`emp_pin_%` di `app_configurations`) untuk seluruh karyawan sekaligus
+      const pinVaultMap = new Map<string, any>();
+      try {
+        const { data: vaultRows } = await supabase
+          .from('app_configurations')
+          .select('key_name, metadata')
+          .like('key_name', 'emp_pin_%')
+          .limit(3000);
+        if (Array.isArray(vaultRows)) {
+          for (const vr of vaultRows) {
+            if (vr?.key_name && vr.metadata) {
+              pinVaultMap.set(String(vr.key_name), vr.metadata);
+            }
+          }
+        }
+      } catch {}
+
       // 2. Tarik SELURUH pelanggan aktif dari DB terpusat Koperasi (lintas cabang agar penguncian cabang bisa mendeteksi kartu member cabang lain)
       const localMap = new Map<string, Customer>();
       try {
@@ -2174,11 +2525,12 @@ export class SyncService {
           .select('*')
           .order('name', { ascending: true });
 
-        // Isolasi penarikan data pelanggan dari Cloud Supabase per cluster toko
+        // Isolasi penarikan data pelanggan dari Cloud Supabase per cluster toko (Koperasi 1 & Koperasi 2 berbagi 1 pool saldo)
+        const clusterIds = getClusterStoreIds(activeStoreId);
         if (activeStoreId === 'store-01') {
           query = query.or('store_id.eq.store-01,store_id.is.null');
-        } else if (activeStoreId.startsWith('store-koperasimsl')) {
-          query = query.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+        } else if (clusterIds.length > 1) {
+          query = query.in('store_id', clusterIds);
         } else {
           query = query.eq('store_id', activeStoreId);
         }
@@ -2193,7 +2545,28 @@ export class SyncService {
           .filter((c) => isCustomerBelongsToStoreOrCluster(c.store_id || activeStoreId, activeStoreId))
           .map((c) => {
             const existing = localMap.get(String(c.id).trim());
-            return hydrateCloudCustomer(c, activeStoreId, existing);
+            const baseHydrated = hydrateCloudCustomer(c, activeStoreId, existing);
+            const vKey = getEmployeePinVaultKey(baseHydrated);
+            const vMeta = vKey ? pinVaultMap.get(vKey) : null;
+            if (!vMeta) return baseHydrated;
+            const wasReset = Boolean(vMeta.reset_at && !vMeta.pin_hash);
+            const vPin = !wasReset && vMeta.pin_hash ? String(vMeta.pin_hash).toLowerCase().trim() : null;
+            const vBlocked = Boolean(vMeta.is_blocked);
+            const vPhone = vMeta.phone && vMeta.phone !== '-' ? String(vMeta.phone) : undefined;
+            return preserveCustomerSecurityMetadata(
+              {
+                ...baseHydrated,
+                phone: (!baseHydrated.phone || baseHydrated.phone === '-') && vPhone ? vPhone : baseHydrated.phone
+              },
+              {
+                pin_hash: vPin || undefined,
+                is_card_blocked: vBlocked
+              },
+              {
+                allowPinRemoval: wasReset,
+                allowBlockChange: false
+              }
+            );
           });
 
         allCloudCustomers = allCloudCustomers.concat(normalizedBatch);
@@ -2245,10 +2618,11 @@ export class SyncService {
         const step = 1000;
         while (true) {
           let q = supabase.from('customers').select('id, address, phone');
+          const clusterIds = getClusterStoreIds(storeId);
           if (storeId === 'store-01') {
             q = q.or('store_id.eq.store-01,store_id.is.null');
-          } else if (storeId.startsWith('store-koperasimsl')) {
-            q = q.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+          } else if (clusterIds.length > 1) {
+            q = q.in('store_id', clusterIds);
           } else {
             q = q.eq('store_id', storeId);
           }
@@ -2550,13 +2924,14 @@ export class SyncService {
 
     try {
       const storeId = this.getActiveStoreId();
+      const clusterIds = getClusterStoreIds(storeId);
       let trxQuery = supabase
         .from('transactions')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(limit);
-      if (storeId.startsWith('store-koperasimsl')) {
-        trxQuery = trxQuery.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+      if (storeId !== 'store-01' && clusterIds.length > 1) {
+        trxQuery = trxQuery.in('store_id', clusterIds);
       } else {
         trxQuery = trxQuery.eq('store_id', storeId);
       }

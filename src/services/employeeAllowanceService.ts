@@ -165,6 +165,17 @@ export class EmployeeAllowanceService {
         await lanService.resetEmployeeAllowance().catch(() => {});
       }
 
+      // Sync hasil auto-reset bulanan ke Supabase Cloud & siarkan ke cabang Koperasi lain
+      if (navigator.onLine) {
+        syncService.pushCustomersToSupabase().then(() => {
+          syncService.broadcastCloudEvent('customers_bulk_synced', {
+            store_id: activeStoreId,
+            month: currentMonth,
+            count: resetCount
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+
       console.log(`[EmployeeAllowance] Berhasil auto-reset kuota saldo ${resetCount} karyawan ke Rp 2.000.000`);
       return resetCount;
     } catch (err) {
@@ -239,6 +250,22 @@ export class EmployeeAllowanceService {
       // Sync ke LAN Server
       if (lanService.isLanActive()) {
         lanService.resetEmployeeAllowance(customerId, customAmount).catch(() => {});
+      }
+
+      // Sync ke Supabase Cloud & Cabang Koperasi Kedua secara real-time
+      if (customerId && targets.length === 1) {
+        const singleUpdated = await db.customers.get(targets[0].id).catch(() => null);
+        if (singleUpdated) {
+          await syncService.syncCustomerChange(singleUpdated).catch(() => {});
+        }
+      } else if (navigator.onLine) {
+        syncService.pushCustomersToSupabase().then(() => {
+          syncService.broadcastCloudEvent('customers_bulk_synced', {
+            store_id: activeStoreId,
+            month: currentMonth,
+            count
+          }).catch(() => {});
+        }).catch(() => {});
       }
 
       return {

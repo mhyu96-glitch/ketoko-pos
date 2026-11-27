@@ -141,12 +141,19 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   };
 
   const handleDeleteTransaction = async (trxId: string) => {
+    const targetTrx = transactions.find((t) => t.id === trxId);
     // 1. Optimistic UI update: langsung hilangkan nota dari layar kasir seketika (0ms latency)
     setTransactions(prev => prev.filter(t => t.id !== trxId));
     setDeleteConfirmId(null);
-    setDeleteStatus({ success: true, message: 'Transaksi berhasil dihapus & stok barang otomatis dikembalikan.' });
+    const isSaldoRefund = targetTrx?.payment_method === 'SALDO';
+    setDeleteStatus({
+      success: true,
+      message: isSaldoRefund
+        ? `Transaksi dihapus! Stok barang & saldo ${formatRupiah(targetTrx?.grand_total || 0)} otomatis dikembalikan ke ${targetTrx?.customer_name || 'karyawan'}.`
+        : 'Transaksi berhasil dihapus & stok barang otomatis dikembalikan.'
+    });
     onTransactionDeleted?.(trxId);
-    setTimeout(() => setDeleteStatus(null), 3000);
+    setTimeout(() => setDeleteStatus(null), 4000);
 
     try {
       // 2. Eksekusi penghapusan di IndexedDB, Cloud Supabase, LAN & restore stok di background
@@ -168,6 +175,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     const totalSales = todayTrx.reduce((s, t) => s + t.grand_total, 0);
     const totalItems = todayTrx.reduce((s, t) => s + t.items.reduce((a, it) => a + it.qty, 0), 0);
     const cashSales = todayTrx.filter(t => t.payment_method === 'CASH').reduce((s, t) => s + t.grand_total, 0);
+    const saldoSales = todayTrx.filter(t => t.payment_method === 'SALDO').reduce((s, t) => s + t.grand_total, 0);
     const qrisSales = todayTrx.filter(t => t.payment_method === 'QRIS').reduce((s, t) => s + t.grand_total, 0);
     const debitSales = todayTrx.filter(t => t.payment_method === 'DEBIT').reduce((s, t) => s + t.grand_total, 0);
     const transferSales = todayTrx.filter(t => t.payment_method === 'TRANSFER').reduce((s, t) => s + t.grand_total, 0);
@@ -220,6 +228,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
     <table class="summary-tbl">
       <tr><td class="label">💵 Penjualan CASH (Tunai):</td><td class="val font-mono">${formatRupiah(cashSales)} (${todayTrx.filter(t => t.payment_method === 'CASH').length} Nota)</td></tr>
+      ${saldoSales > 0 ? `<tr><td class="label">🪪 Potong SALDO Karyawan/Member:</td><td class="val font-mono">${formatRupiah(saldoSales)} (${todayTrx.filter(t => t.payment_method === 'SALDO').length} Nota)</td></tr>` : ''}
       <tr><td class="label">🏦 Penjualan TRANSFER (TF):</td><td class="val font-mono">${formatRupiah(transferSales)} (${todayTrx.filter(t => t.payment_method === 'TRANSFER').length} Nota)</td></tr>
       <tr><td class="label">📱 Penjualan QRIS Digital:</td><td class="val font-mono">${formatRupiah(qrisSales)} (${todayTrx.filter(t => t.payment_method === 'QRIS').length} Nota)</td></tr>
       <tr><td class="label">💳 Penjualan KARTU DEBIT:</td><td class="val font-mono">${formatRupiah(debitSales)} (${todayTrx.filter(t => t.payment_method === 'DEBIT').length} Nota)</td></tr>
@@ -277,10 +286,12 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   };
 
   const filtered = transactions.filter((trx) => {
+    const q = search.toLowerCase();
     const matchQuery =
-      trx.receipt_number.toLowerCase().includes(search.toLowerCase()) ||
-      (trx.cashier_name && trx.cashier_name.toLowerCase().includes(search.toLowerCase())) ||
-      (trx.member_id && trx.member_id.toLowerCase().includes(search.toLowerCase()));
+      trx.receipt_number.toLowerCase().includes(q) ||
+      (trx.cashier_name && trx.cashier_name.toLowerCase().includes(q)) ||
+      (trx.customer_name && trx.customer_name.toLowerCase().includes(q)) ||
+      (trx.member_id && trx.member_id.toLowerCase().includes(q));
 
     const matchMethod =
       selectedMethod === 'ALL' || trx.payment_method === selectedMethod;
@@ -469,7 +480,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
           {/* Payment Method Filter Chips */}
           <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
-            {['ALL', 'CASH', 'QRIS', 'DEBIT', 'TRANSFER', 'TEMPO'].map((method) => (
+            {['ALL', 'CASH', 'SALDO', 'QRIS', 'DEBIT', 'TRANSFER', 'TEMPO'].map((method) => (
               <button
                 key={method}
                 onClick={() => setSelectedMethod(method)}
@@ -479,7 +490,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
                     : 'bg-[#f5ebe0] text-[#5c3c26] hover:bg-[#ebd7c5] border-[#ddc3aa]'
                 }`}
               >
-                {method === 'ALL' ? 'Semua Metode' : method === 'TEMPO' ? 'TEMPO / BON' : method}
+                {method === 'ALL' ? 'Semua Metode' : method === 'SALDO' ? 'POTONG SALDO' : method === 'TEMPO' ? 'TEMPO / BON' : method}
               </button>
             ))}
 

@@ -884,13 +884,21 @@ function handleHttpRequest(req, res) {
             custRow = sqliteDb.prepare('SELECT * FROM customers WHERE LOWER(name) = LOWER(?)').get(trx.customer_name.trim());
           }
           if (custRow) {
-            const refundAmount = Number(trx.grand_total) || 0;
+            const refundAmount = Math.max(0, Number(trx.grand_total) || 0);
+            const isEmp = custRow.type === 'KARYAWAN';
+            const allowance = isEmp ? Math.min(2000000, Math.max(0, Number(custRow.monthly_allowance || custRow.credit_limit) || 2000000)) : 0;
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            const trxMonth = String(trx.created_at || currentMonth).slice(0, 7);
             const oldBalance = Number(custRow.deposit_balance) || 0;
-            const newBalance = oldBalance + refundAmount;
+            const shouldRefundActiveQuota = !isEmp || trxMonth === currentMonth;
+            const newBalance = shouldRefundActiveQuota
+              ? (isEmp ? Math.min(allowance, Math.max(0, oldBalance + refundAmount)) : (oldBalance + refundAmount))
+              : oldBalance;
+            const newDebt = isEmp ? Math.max(0, allowance - newBalance) : (Number(custRow.current_debt) || 0);
             const nowTime = new Date().toISOString();
 
-            sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, updated_at = ? WHERE id = ?')
-              .run(newBalance, nowTime, custRow.id);
+            sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, current_debt = ?, updated_at = ? WHERE id = ?')
+              .run(newBalance, newDebt, nowTime, custRow.id);
 
             const mutId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             sqliteDb.prepare(`
@@ -1017,6 +1025,37 @@ function handleHttpRequest(req, res) {
           }
         }
 
+        // Sesuaikan selisih saldo member/karyawan jika transaksi menggunakan SALDO dan nominal/metode berubah
+        let updatedSaldoCustomer = null;
+        if (existingRow) {
+          const oldSaldo = existingRow.payment_method === 'SALDO' ? (Number(existingRow.grand_total) || 0) : 0;
+          const newSaldo = (trx.payment_method || 'CASH') === 'SALDO' ? (Number(trx.grand_total) || 0) : 0;
+          const saldoDelta = oldSaldo - newSaldo; // positif = kembalikan saldo, negatif = potong tambahan saldo
+          if (saldoDelta !== 0) {
+            const targetMember = trx.member_id || existingRow.member_id;
+            const targetName = trx.customer_name || existingRow.customer_name;
+            let custRow = null;
+            if (targetMember) {
+              custRow = sqliteDb.prepare('SELECT * FROM customers WHERE id = ? OR code = ?').get(targetMember, targetMember);
+            }
+            if (!custRow && targetName) {
+              custRow = sqliteDb.prepare('SELECT * FROM customers WHERE LOWER(name) = LOWER(?)').get(String(targetName).trim());
+            }
+            if (custRow) {
+              const isEmp = custRow.type === 'KARYAWAN';
+              const allowance = isEmp ? Math.min(2000000, Math.max(0, Number(custRow.monthly_allowance || custRow.credit_limit) || 2000000)) : 0;
+              const oldBal = Number(custRow.deposit_balance) || 0;
+              const newBal = isEmp
+                ? Math.min(allowance, Math.max(0, oldBal + saldoDelta))
+                : Math.max(0, oldBal + saldoDelta);
+              const newDebt = isEmp ? Math.max(0, allowance - newBal) : (Number(custRow.current_debt) || 0);
+              sqliteDb.prepare('UPDATE customers SET deposit_balance = ?, current_debt = ?, updated_at = ? WHERE id = ?')
+                .run(newBal, newDebt, now, custRow.id);
+              updatedSaldoCustomer = sqliteDb.prepare('SELECT * FROM customers WHERE id = ?').get(custRow.id);
+            }
+          }
+        }
+
         // Perbarui baris transaksi di SQLite jika sudah ada
         if (existingRow) {
           const updateTrxStmt = sqliteDb.prepare(`
@@ -1064,6 +1103,14 @@ function handleHttpRequest(req, res) {
         });
         if (updatedStocks.length > 0) {
           broadcastSseEvent('stock_updated', updatedStocks);
+        }
+        if (updatedSaldoCustomer) {
+          broadcastSseEvent('customer_updated', updatedSaldoCustomer);
+          broadcastSseEvent('member_deposit_updated', {
+            customer: updatedSaldoCustomer,
+            customer_id: updatedSaldoCustomer.id,
+            deposit_balance: updatedSaldoCustomer.deposit_balance
+          });
         }
 
         return sendJson(200, {

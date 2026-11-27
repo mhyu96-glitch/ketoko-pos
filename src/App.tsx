@@ -55,7 +55,7 @@ import {
   saveStoresList,
   getStoredStores
 } from './services/storeRegistry';
-import { checkCustomerBranchAccess, normalizeStoreId, isCustomerBelongsToStoreOrCluster } from './utils/customerAccess';
+import { checkCustomerBranchAccess, normalizeStoreId, isCustomerBelongsToStoreOrCluster, getStoreClusterId } from './utils/customerAccess';
 
 function resolveInitialTerminalStore() {
   const hostStore = resolveStoreFromCurrentHost();
@@ -92,9 +92,9 @@ function resolveInitialTerminalStore() {
  * ke IndexedDB lokal bila masih kosong. Data lalu disegarkan dari Supabase Cloud.
  */
 async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
-  if (!storeId || !storeId.startsWith('store-koperasimsl')) return;
+  if (!storeId || getStoreClusterId(storeId) !== 'cluster-koperasi-msl') return;
   try {
-    const isCabang = storeId === 'store-koperasimsl-cabang';
+    const isCabang = storeId !== 'store-koperasimsl';
     await db.users.bulkPut([
       { id: 'usr-000', username: 'superadmin', name: 'Master Superadmin (Developer)', role: 'SUPERADMIN', branch_id: isCabang ? 'BR-03' : 'BR-02' },
       { id: 'usr-msl-admin', username: 'satria', name: 'SATRIA HARDIANSYAH', role: 'ADMIN', branch_id: isCabang ? 'BR-03' : 'BR-02' },
@@ -110,7 +110,18 @@ async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
       const res = await fetch('/data/koperasi_msl_products.json');
       if (res.ok) {
         const all = (await res.json()) as any[];
-        const mine = all.filter((p) => p.store_id === storeId);
+        let mine = all.filter((p) => p.store_id === storeId);
+        // Bila ini cabang koperasi baru yang belum ada di JSON statis, kloning template produk dari cabang koperasi
+        if (mine.length === 0) {
+          mine = all
+            .filter((p) => p.store_id === 'store-koperasimsl-cabang' || p.store_id === 'store-koperasimsl')
+            .slice(0, 308)
+            .map((p) => ({
+              ...p,
+              id: `${storeId}-${p.barcode || p.id}`,
+              store_id: storeId
+            }));
+        }
         for (let i = 0; i < mine.length; i += 500) await db.products.bulkPut(mine.slice(i, i + 500));
       }
     }
@@ -118,8 +129,16 @@ async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
     console.warn('[Koperasi MSL] Seed produk lokal gagal:', e);
   }
 
+  // Tarik saldo & PIN karyawan terbaru dari Cloud terlebih dahulu agar Koperasi Kedua langsung terkoneksi saldo real-time
+  if (navigator.onLine) {
+    await syncService.pullCustomersFromSupabase().catch(() => {});
+    syncService.pullTransactionsFromSupabase(300).catch(() => {});
+  }
+
   try {
-    const localEmps = (await db.customers.toArray()).filter((c: any) => c.type === 'KARYAWAN' && String(c.store_id || '').startsWith('store-koperasimsl'));
+    const localEmps = (await db.customers.toArray()).filter(
+      (c: any) => c.type === 'KARYAWAN' && isCustomerBelongsToStoreOrCluster(c.store_id, storeId)
+    );
     if (localEmps.length === 0) {
       const res = await fetch('/data/koperasi_msl_employees.json');
       if (res.ok) {
@@ -131,9 +150,6 @@ async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
     console.warn('[Koperasi MSL] Seed karyawan lokal gagal:', e);
   }
 
-  if (navigator.onLine) {
-    syncService.pullCustomersFromSupabase().catch(() => {});
-  }
   employeeAllowanceService.checkAndAutoResetMonthlyAllowance(storeId).catch(() => {});
 }
 
@@ -1391,8 +1407,17 @@ export const App: React.FC = () => {
             };
           }
           setCustomerName(matchedCust.name);
+
+          // Segarkan saldo terbaru dari Cloud secara non-blocking agar belanja lintas Koperasi 1 & Koperasi 2 selalu 100% sinkron
+          if (navigator.onLine) {
+            syncService.refreshSingleCustomerFromCloud(matchedCust.id).catch(() => {});
+          }
+
           try {
             if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const liveBal = matchedCust.type === 'KARYAWAN'
+                ? clampEmployeeBalance(matchedCust.deposit_balance, matchedCust.monthly_allowance ?? matchedCust.credit_limit)
+                : (Number(matchedCust.deposit_balance) || 0);
               const qrUrl = await QRCode.toDataURL(matchedCust.code || matchedCust.id, { width: 128, margin: 1 }).catch(() => '');
               const channel = new BroadcastChannel('ketoko_customer_display');
               channel.postMessage({
@@ -1401,8 +1426,8 @@ export const App: React.FC = () => {
                 card: {
                   holderName: matchedCust.name,
                   nik: matchedCust.code || matchedCust.id,
-                  limit: matchedCust.credit_limit || 1500000,
-                  balance: 500000,
+                  limit: matchedCust.monthly_allowance || matchedCust.credit_limit || 2000000,
+                  balance: liveBal,
                   qrDataUrl: qrUrl
                 }
               });
@@ -1606,10 +1631,20 @@ export const App: React.FC = () => {
       }
     }
 
-    // 1.c Potong Saldo Simpanan Anggota secara lokal jika transaksi dibayar dengan SALDO
+    // 1.c Potong Saldo Simpanan Anggota secara lokal & lintas cabang jika transaksi dibayar dengan SALDO
     if (paymentData.payment_method === 'SALDO' && memberId) {
       try {
-        const cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
+        let cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
+        // Tarik saldo paling mutakhir dari Cloud (batas 1.5 detik) agar potongan dari Koperasi 1 & Koperasi 2 tidak pernah saling menimpa
+        if (navigator.onLine) {
+          const freshFromCloud = await Promise.race([
+            syncService.refreshSingleCustomerFromCloud(cust?.id || memberId),
+            new Promise<null>((r) => setTimeout(() => r(null), 1500))
+          ]).catch(() => null);
+          if (freshFromCloud) {
+            cust = freshFromCloud;
+          }
+        }
         if (cust) {
           const maxQuota = cust.type === 'KARYAWAN'
             ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit)
@@ -2500,8 +2535,14 @@ export const App: React.FC = () => {
               }
             }
             setMemberId(selectedId, member?.name);
+            if (member && navigator.onLine) {
+              syncService.refreshSingleCustomerFromCloud(member.id).catch(() => {});
+            }
             if (member && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
               try {
+                const liveBal = member.type === 'KARYAWAN'
+                  ? clampEmployeeBalance(member.deposit_balance, member.monthly_allowance ?? member.credit_limit)
+                  : (Number(member.deposit_balance) || 0);
                 const qrUrl = await QRCode.toDataURL(member.code || member.id, { width: 128, margin: 1 }).catch(() => '');
                 const channel = new BroadcastChannel('ketoko_customer_display');
                 channel.postMessage({
@@ -2510,8 +2551,8 @@ export const App: React.FC = () => {
                   card: {
                     holderName: member.name,
                     nik: member.code || member.id,
-                    limit: member.credit_limit || 1500000,
-                    balance: 500000,
+                    limit: member.monthly_allowance || member.credit_limit || 2000000,
+                    balance: liveBal,
                     qrDataUrl: qrUrl
                   }
                 });

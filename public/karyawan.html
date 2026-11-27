@@ -554,6 +554,66 @@
       return m ? m[1].toLowerCase() : null;
     }
 
+    function getPinVaultKey(codeOrId) {
+      const norm = String(codeOrId || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^msl-emp-/i, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      return norm ? 'emp_pin_' + norm : '';
+    }
+
+    async function fetchPinVaultMeta(emp) {
+      const vaultKey = getPinVaultKey(emp.code || emp.id);
+      if (!vaultKey) return null;
+      try {
+        const rows = await sbFetch(
+          `app_configurations?key_name=eq.${encodeURIComponent(vaultKey)}&select=key_name,metadata&limit=1`
+        );
+        if (Array.isArray(rows) && rows.length > 0 && rows[0].metadata) {
+          return rows[0].metadata;
+        }
+      } catch (e) {
+        console.warn('Pin vault lookup warning:', e);
+      }
+      return null;
+    }
+
+    async function savePinVaultMeta(emp, metaUpdates) {
+      const vaultKey = getPinVaultKey(emp.code || emp.id);
+      if (!vaultKey) return false;
+      const nowIso = new Date().toISOString();
+      try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/app_configurations?on_conflict=key_name', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation',
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY
+          },
+          body: JSON.stringify({
+            key_name: vaultKey,
+            last_sync_timestamp: nowIso,
+            metadata: {
+              emp_id: emp.id,
+              code: emp.code || emp.id,
+              name: emp.name,
+              phone: emp.phone || '-',
+              updated_at: nowIso,
+              ...metaUpdates
+            }
+          })
+        });
+        return res.ok;
+      } catch (e) {
+        console.warn('Pin vault save warning:', e);
+        return false;
+      }
+    }
+
     function extractResetMonth(addr, explicitReset) {
       if (explicitReset) return explicitReset;
       const m = String(addr || '').match(/\[RST:(\d{4}-\d{2})\]/i);
@@ -563,6 +623,9 @@
     function getStoreLabel(storeId) {
       if (storeId === 'store-koperasimsl-cabang') return 'Cabang Mill';
       if (storeId === 'store-koperasimsl') return 'Toko Utama';
+      if (storeId && String(storeId).startsWith('store-koperasimsl')) {
+        return 'Cabang ' + String(storeId).replace(/^store-koperasimsl-?/i, '').toUpperCase();
+      }
       return storeId || 'Koperasi MSL';
     }
 
@@ -667,7 +730,21 @@
       }
 
       const emp = exact || matches[0];
-      const pinHash = extractPinHash(emp.address) || emp.pin_hash || null;
+      const vaultMeta = await fetchPinVaultMeta(emp);
+      const vaultWasExplicitlyReset = Boolean(vaultMeta && vaultMeta.reset_at && !vaultMeta.pin_hash);
+      const addrPinHash = extractPinHash(emp.address) || emp.pin_hash || null;
+      const vaultPinHash = (vaultMeta && vaultMeta.pin_hash) ? String(vaultMeta.pin_hash).toLowerCase().trim() : null;
+      const pinHash = vaultWasExplicitlyReset ? null : (vaultPinHash || addrPinHash || null);
+
+      // Self-heal: jika PIN ada di address tapi belum masuk brankas terpisah app_configurations, cadangkan otomatis!
+      if (pinHash && !vaultPinHash && !vaultWasExplicitlyReset) {
+        savePinVaultMeta(emp, {
+          pin_hash: pinHash,
+          is_blocked: isAddressBlocked(emp.address, emp.is_card_blocked),
+          reset_at: null
+        });
+      }
+
       const resetMonth = extractResetMonth(emp.address, emp.last_allowance_reset);
       const isNewMonth = Boolean(resetMonth && resetMonth !== currentMonth);
       const allowance = Math.min(MAX_ALLOWANCE, Math.max(0, Number(emp.monthly_allowance || emp.credit_limit) || MAX_ALLOWANCE));
@@ -681,18 +758,18 @@
         }
       }
 
-      // Fetch employee transactions from Supabase Cloud
+      // Fetch employee transactions from Supabase Cloud across ALL Koperasi branches (Koperasi 1, Koperasi 2 / Mill, dst.)
       let allEmpTrx = [];
       try {
         const byId = await sbFetch(
-          `transactions?store_id=in.(store-koperasimsl,store-koperasimsl-cabang)&customer_id=eq.${encodeURIComponent(emp.id)}&order=created_at.desc&limit=25`
+          `transactions?customer_id=eq.${encodeURIComponent(emp.id)}&order=created_at.desc&limit=30`
         );
         const byName = await sbFetch(
-          `transactions?store_id=in.(store-koperasimsl,store-koperasimsl-cabang)&customer_name=ilike.${encodeURIComponent(emp.name)}&order=created_at.desc&limit=25`
+          `transactions?store_id=neq.store-01&customer_name=ilike.${encodeURIComponent(emp.name)}&order=created_at.desc&limit=30`
         );
         const map = new Map();
         [...(byId || []), ...(byName || [])].forEach(t => {
-          if (t && t.id) map.set(t.id, t);
+          if (t && t.id && t.store_id !== 'store-01') map.set(t.id, t);
         });
         allEmpTrx = Array.from(map.values()).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
@@ -738,7 +815,13 @@
         items: topTrx.items || []
       } : null;
 
-      const isBlocked = isAddressBlocked(emp.address, emp.is_card_blocked);
+      const isBlocked = Boolean(
+        (vaultMeta && vaultMeta.is_blocked === true) ||
+        isAddressBlocked(emp.address, emp.is_card_blocked)
+      );
+      const effectivePhone = (emp.phone && emp.phone !== '-')
+        ? emp.phone
+        : ((vaultMeta && vaultMeta.phone && vaultMeta.phone !== '-') ? vaultMeta.phone : '-');
 
       return {
         data: {
@@ -746,11 +829,12 @@
             id: emp.id,
             code: emp.code || emp.id,
             name: emp.name,
-            phone: emp.phone || '-',
+            phone: effectivePhone,
             address: cleanAddressText(emp.address),
             raw_address: emp.address,
             has_pin: Boolean(pinHash),
             pin_hash: pinHash,
+            pin_was_reset: vaultWasExplicitlyReset,
             is_blocked: isBlocked,
             store_id: emp.store_id || 'store-koperasimsl',
             store_name: getStoreLabel(emp.store_id),
@@ -787,6 +871,17 @@
         // 1. Coba LAN Server lokal terlebih dahulu
         const lanData = await tryLanPortal(q);
         if (lanData) {
+          if (lanData.employee && !lanData.employee.has_pin && navigator.onLine) {
+            const vMeta = await fetchPinVaultMeta(lanData.employee);
+            if (vMeta) {
+              const wasReset = Boolean(vMeta.reset_at && !vMeta.pin_hash);
+              lanData.employee.pin_was_reset = wasReset;
+              if (!wasReset && vMeta.pin_hash) {
+                lanData.employee.has_pin = true;
+                lanData.employee.pin_hash = String(vMeta.pin_hash).toLowerCase().trim();
+              }
+            }
+          }
           resolvedData = lanData;
         } else {
           // 2. Query langsung ke Supabase Cloud / Master Koperasi MSL
@@ -842,6 +937,39 @@
       const codeStr = (emp.code || emp.id).toLowerCase();
       const sessionKey = 'msl_pin_auth_' + codeStr;
       const savedHash = localStorage.getItem(sessionKey);
+
+      // Jika Admin baru saja melakukan Reset PIN resmi, bersihkan sesi PIN lama di HP agar karyawan membuat PIN baru
+      if (emp.pin_was_reset && !emp.has_pin) {
+        localStorage.removeItem(sessionKey);
+      } else if (!emp.has_pin && savedHash && /^[a-f0-9]{32,64}$/i.test(savedHash.trim())) {
+        // Self-Heal Otomatis untuk seluruh karyawan: bila HP pemilik asli masih menyimpan hash PIN sah di localStorage
+        // namun tag di tabel sempat terhapus oleh transaksi lama, pulihkan otomatis ke Brankas Cloud & langsung buka kartu!
+        const cleanSavedHash = savedHash.trim().toLowerCase();
+        emp.has_pin = true;
+        emp.pin_hash = cleanSavedHash;
+        savePinVaultMeta(emp, {
+          pin_hash: cleanSavedHash,
+          is_blocked: Boolean(emp.is_blocked),
+          reset_at: null
+        });
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        const rawSrc = String(emp.raw_address || emp.address || '').replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '').trim();
+        const withRst = /\[RST:\d{4}-\d{2}\]/i.test(rawSrc) ? rawSrc : `${rawSrc || 'Koperasi PT. MSL'} [RST:${currentMonth}]`.trim();
+        const healedAddr = `${withRst} [PIN:${cleanSavedHash}]`.trim();
+        emp.raw_address = healedAddr;
+        fetch(SUPABASE_URL + '/rest/v1/customers?id=eq.' + encodeURIComponent(emp.id), {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY
+          },
+          body: JSON.stringify({ address: healedAddr, updated_at: new Date().toISOString() })
+        }).catch(() => {});
+        hideAllCards();
+        renderEmployeeData(resolvedData);
+        return;
+      }
 
       // 1. Cek Auto-Login (HP pemilik asli yang sudah verifikasi sebelumnya)
       if (emp.has_pin && savedHash && savedHash.toLowerCase() === (emp.pin_hash || '').toLowerCase()) {
@@ -918,7 +1046,15 @@
           emp.phone = phoneVal;
         }
 
-        // 1. Simpan ke Supabase Cloud (dengan verifikasi baris terupdate + fallback by code / upsert bila belum ada di Cloud)
+        // 0. Simpan ke Brankas PIN Terpisah di Supabase (`app_configurations`) — 100% kebal terhadap timpaan transaksi kasir!
+        await savePinVaultMeta(emp, {
+          pin_hash: pinHash,
+          phone: (phoneVal && phoneVal !== '-') ? phoneVal : (emp.phone || '-'),
+          is_blocked: Boolean(emp.is_blocked),
+          reset_at: null
+        });
+
+        // 1. Simpan ke Supabase Cloud `customers` (dengan verifikasi baris terupdate + fallback by code / upsert bila belum ada di Cloud)
         try {
           let cloudSaved = false;
           const patchById = await fetch(SUPABASE_URL + '/rest/v1/customers?id=eq.' + encodeURIComponent(emp.id), {
@@ -1330,6 +1466,13 @@
         if (!isCurrentlyBlocked) {
           newAddr = `${baseAddr} [STATUS:BLOCKED]`.trim();
         }
+
+        // 0. Simpan status blokir + PIN ke Brankas PIN Terpisah (`app_configurations`)
+        await savePinVaultMeta(emp, {
+          pin_hash: emp.pin_hash || null,
+          is_blocked: !isCurrentlyBlocked,
+          reset_at: null
+        });
 
         // 1. Simpan ke Supabase Cloud (dengan fallback by code bila perlu)
         try {

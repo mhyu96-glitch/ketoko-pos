@@ -1,5 +1,5 @@
 // Ketoko POS - Offline-First Service Worker
-const CACHE_NAME = 'ketoko-pos-pwa-v17';
+const CACHE_NAME = 'ketoko-pos-pwa-v19';
 
 const STATIC_PRECACHE = [
   '/',
@@ -44,6 +44,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Portal Karyawan & API LAN wajib selalu mengambil data segar langsung dari jaringan (jangan di-cache SW)
+  if (url.pathname.startsWith('/karyawan') || url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(req));
+    return;
+  }
+
   // Navigation requests (HTML pages) -> Network first, cache update, fallback to cached index.html
   if (req.mode === 'navigate') {
     event.respondWith(
@@ -58,6 +64,22 @@ self.addEventListener('fetch', (event) => {
         .catch(() => {
           return caches.match('/index.html') || caches.match('/');
         })
+    );
+    return;
+  }
+
+  // JS & CSS Bundles -> Network-first agar update kode terbaru langsung aktif tanpa tersangkut cache lama, fallback ke cache saat offline
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    event.respondWith(
+      fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }
