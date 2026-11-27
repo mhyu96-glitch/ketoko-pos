@@ -92,12 +92,26 @@ export function formatCustomerAddressDisplay(address?: string | null): string {
 }
 
 /**
+ * Mengekstrak PIN hash dari teks alamat mentah
+ */
+export function extractPinHashFromText(address?: string | null): string | null {
+  const addr = String(address || '');
+  const m = addr.match(/\[PIN:([a-f0-9]{32,64})\]/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
  * Mengekstrak PIN hash dari objek Customer / teks alamat
  */
 export function extractEmployeePinHash(customer?: Partial<Customer> | null): string | null {
-  const addr = String(customer?.address || '');
-  const m = addr.match(/\[PIN:([a-f0-9]{32,64})\]/i);
-  return m ? m[1].toLowerCase() : null;
+  if (!customer) return null;
+  const fromAddr = extractPinHashFromText(customer.address);
+  if (fromAddr) return fromAddr;
+  const explicit = String(customer.pin_hash || '').trim();
+  if (/^[a-f0-9]{32,64}$/i.test(explicit)) {
+    return explicit.toLowerCase();
+  }
+  return null;
 }
 
 /**
@@ -193,17 +207,91 @@ export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEm
 }
 
 /**
- * Menyusun string address dengan tag [RST:YYYY-MM] agar sinkron ke kolom standar Supabase
+ * Menyusun string address dengan tag [RST:YYYY-MM] serta menjaga tag keamanan [PIN:...] & [STATUS:BLOCKED]
+ * agar tidak pernah hilang saat sinkronisasi ke kolom standar Supabase maupun LAN Server.
  */
 export function encodeEmployeeAddressWithReset(
   cleanAddress: string,
   resetMonth?: string | null,
-  isEmployee?: boolean
+  isEmployee?: boolean,
+  options?: {
+    pinHash?: string | null;
+    isBlocked?: boolean | null;
+  }
 ): string {
-  const base = formatCustomerAddressDisplay(cleanAddress);
-  if (!isEmployee) return base;
-  const month = (resetMonth || new Date().toISOString().slice(0, 7)).trim();
-  return `${base === '-' ? 'Koperasi PT. MSL' : base} [RST:${month}]`;
+  const rawStr = String(cleanAddress || '');
+  const base = formatCustomerAddressDisplay(rawStr);
+  const resolvedPin =
+    options?.pinHash !== undefined ? options.pinHash : extractPinHashFromText(rawStr);
+  const resolvedBlocked =
+    options?.isBlocked !== undefined
+      ? Boolean(options.isBlocked)
+      : /\[STATUS:BLOCKED\]/i.test(rawStr);
+
+  const tags: string[] = [];
+  if (isEmployee) {
+    const month = (resetMonth || new Date().toISOString().slice(0, 7)).trim();
+    tags.push(`[RST:${month}]`);
+  }
+  if (resolvedPin && /^[a-f0-9]{32,64}$/i.test(resolvedPin.trim())) {
+    tags.push(`[PIN:${resolvedPin.toLowerCase().trim()}]`);
+  }
+  if (resolvedBlocked) {
+    tags.push('[STATUS:BLOCKED]');
+  }
+
+  const normalizedBase = isEmployee && base === '-' ? 'Koperasi PT. MSL' : base;
+  if (tags.length === 0) return normalizedBase;
+  return `${normalizedBase} ${tags.join(' ')}`.trim();
+}
+
+/**
+ * Menjaga metadata keamanan ([PIN:...], pin_hash, [STATUS:BLOCKED], is_card_blocked)
+ * agar tidak tertimpa/hilang saat update saldo, transaksi kasir, atau edit profil pelanggan.
+ */
+export function preserveCustomerSecurityMetadata(
+  customer: Customer,
+  reference?: Partial<Customer> | null,
+  options?: {
+    allowPinRemoval?: boolean;
+    allowBlockChange?: boolean;
+  }
+): Customer {
+  const isEmployee = (customer.type || reference?.type) === 'KARYAWAN';
+  const currentPin = extractEmployeePinHash(customer);
+  const refPin = extractEmployeePinHash(reference);
+  const finalPin = options?.allowPinRemoval ? null : (currentPin || refPin || null);
+
+  const currentBlocked = isCustomerCardBlocked(customer);
+  const refBlocked = isCustomerCardBlocked(reference);
+  const finalBlocked = options?.allowBlockChange
+    ? currentBlocked
+    : (currentBlocked || refBlocked);
+
+  const rstMatch =
+    String(customer.address || '').match(/\[RST:(\d{4}-\d{2})\]/i) ||
+    String(reference?.address || '').match(/\[RST:(\d{4}-\d{2})\]/i);
+  const resetMonth =
+    customer.last_allowance_reset ||
+    reference?.last_allowance_reset ||
+    (rstMatch ? rstMatch[1] : new Date().toISOString().slice(0, 7));
+
+  const encodedAddress = encodeEmployeeAddressWithReset(
+    customer.address || reference?.address || '-',
+    resetMonth,
+    isEmployee,
+    {
+      pinHash: finalPin,
+      isBlocked: finalBlocked
+    }
+  );
+
+  return {
+    ...customer,
+    address: encodedAddress,
+    pin_hash: finalPin || undefined,
+    is_card_blocked: finalBlocked
+  };
 }
 
 /**

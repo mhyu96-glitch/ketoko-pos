@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { Transaction, Customer, StoreProfile } from '../types';
 import { formatRupiah, numberToWordsID } from '../services/escposService';
+import { formatCustomerAddressDisplay } from '../utils/customerAccess';
 import { db } from '../db';
 
 interface InvoiceModalProps {
@@ -131,7 +132,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
   const custName = customer?.name || transaction.customer_name || 'Pelanggan Umum';
   const custPhone = customer?.phone || '-';
-  const custAddress = customer?.address || '-';
+  const custAddress = formatCustomerAddressDisplay(customer?.address);
   const custCode = customer?.code || transaction.member_id || '-';
 
   // Handle Print via Window Print (A4 Format)

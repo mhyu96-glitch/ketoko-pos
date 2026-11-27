@@ -7,7 +7,7 @@ import { api } from './api/client';
 import { syncService } from './services/syncService';
 import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation, CartItem } from './types';
 import { formatRupiah } from './services/escposService';
-import { getStoreDisplayName, clampEmployeeAllowance, clampEmployeeBalance } from './utils/customerAccess';
+import { getStoreDisplayName, clampEmployeeAllowance, clampEmployeeBalance, isCustomerCardBlocked } from './utils/customerAccess';
 
 import { Navbar } from './components/Navbar';
 import { TopMenuBar, type NavView } from './components/TopMenuBar';
@@ -1764,10 +1764,22 @@ export const App: React.FC = () => {
         return;
       }
       const cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
-      const currentBalance = Number(cust?.deposit_balance) || 0;
+      if (isCustomerCardBlocked(cust)) {
+        setSyncToastMessage(`🚫 TRANSAKSI DITOLAK: Kartu "${cust?.name || memberId}" sedang diblokir karena dilaporkan hilang.`);
+        setTimeout(() => setSyncToastMessage(null), 5000);
+        return;
+      }
+      const currentBalance = cust?.type === 'KARYAWAN'
+        ? clampEmployeeBalance(cust.deposit_balance, cust.monthly_allowance ?? cust.credit_limit)
+        : (Number(cust?.deposit_balance) || 0);
       if (currentBalance < grandTotal) {
         setSyncToastMessage(`⚠️ Saldo Anggota tidak mencukupi (Saldo: ${formatRupiah(currentBalance)} | Belanja: ${formatRupiah(grandTotal)}). Silakan Top Up terlebih dahulu.`);
         setTimeout(() => setSyncToastMessage(null), 5000);
+        return;
+      }
+      // Untuk karyawan koperasi, wajib buka PaymentModal agar verifikasi 6-digit PIN dijalankan
+      if (cust?.type === 'KARYAWAN') {
+        setIsPaymentOpen(true);
         return;
       }
     }

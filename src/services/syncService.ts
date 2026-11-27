@@ -15,7 +15,11 @@ import {
   clampEmployeeAllowance,
   clampEmployeeBalance,
   parseEmployeeMeta,
-  encodeEmployeeAddressWithReset
+  encodeEmployeeAddressWithReset,
+  extractEmployeePinHash,
+  extractPinHashFromText,
+  isCustomerCardBlocked,
+  preserveCustomerSecurityMetadata
 } from '../utils/customerAccess';
 
 function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: Customer): Customer {
@@ -24,12 +28,37 @@ function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: C
   const currentMonth = new Date().toISOString().slice(0, 7);
   const isEmployee = c.type === 'KARYAWAN' || existing?.type === 'KARYAWAN';
 
+  const cloudPin = extractEmployeePinHash(c);
+  const localPin = extractEmployeePinHash(existing);
+  const pinWasExplicitlyReset = Boolean((c as any)?._pin_reset);
+  const resolvedPin =
+    cloudPin ||
+    (!pinWasExplicitlyReset &&
+    localPin &&
+    String(existing?.updated_at || '') > String(c.updated_at || '')
+      ? localPin
+      : null);
+
+  const cloudBlocked = isCustomerCardBlocked(c);
+  const localBlocked = isCustomerCardBlocked(existing);
+  const resolvedBlocked =
+    cloudBlocked ||
+    (localBlocked && String(existing?.updated_at || '') > String(c.updated_at || ''));
+
+  const resolvedPhone =
+    c.phone && c.phone !== '-'
+      ? c.phone
+      : existing?.phone && existing.phone !== '-'
+        ? existing.phone
+        : c.phone || '-';
+
   if (isEmployee) {
     const allowance = clampEmployeeAllowance(
       c.monthly_allowance ?? existing?.monthly_allowance ?? c.credit_limit ?? MAX_EMPLOYEE_ALLOWANCE
     );
     const resetMonth = meta.reset_month || existing?.last_allowance_reset || currentMonth;
     const isNewMonth = resetMonth !== currentMonth;
+    const targetResetMonth = isNewMonth ? currentMonth : resetMonth;
 
     let balance = allowance;
     if (!isNewMonth) {
@@ -42,6 +71,16 @@ function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: C
       }
     }
 
+    const preservedAddress = encodeEmployeeAddressWithReset(
+      meta.clean_address,
+      targetResetMonth,
+      true,
+      {
+        pinHash: resolvedPin,
+        isBlocked: resolvedBlocked
+      }
+    );
+
     return {
       ...(existing || {}),
       ...c,
@@ -49,12 +88,15 @@ function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: C
       store_id: sid,
       store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
       access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope ?? 'ALL_STORES'),
-      address: meta.clean_address,
+      phone: resolvedPhone,
+      address: preservedAddress,
+      pin_hash: resolvedPin || undefined,
+      is_card_blocked: resolvedBlocked,
       credit_limit: allowance,
       current_debt: isNewMonth ? 0 : Math.max(0, allowance - balance),
       monthly_allowance: allowance,
       deposit_balance: balance,
-      last_allowance_reset: isNewMonth ? currentMonth : resetMonth,
+      last_allowance_reset: targetResetMonth,
       unit_profile: c.unit_profile || meta.unit_profile || existing?.unit_profile,
       afdeling: c.afdeling || meta.afdeling || existing?.afdeling,
       job_code: c.job_code || meta.job_code || existing?.job_code,
@@ -62,13 +104,26 @@ function hydrateCloudCustomer(c: Customer, fallbackStoreId: string, existing?: C
     };
   }
 
+  const preservedAddress = encodeEmployeeAddressWithReset(
+    meta.clean_address,
+    undefined,
+    false,
+    {
+      pinHash: resolvedPin,
+      isBlocked: resolvedBlocked
+    }
+  );
+
   return {
     ...(existing || {}),
     ...c,
     store_id: sid,
     store_name: getStoreDisplayName(sid, c.store_name || existing?.store_name),
     access_scope: normalizeAccessScope(c.access_scope ?? existing?.access_scope),
-    address: meta.clean_address
+    phone: resolvedPhone,
+    address: preservedAddress,
+    pin_hash: resolvedPin || undefined,
+    is_card_blocked: resolvedBlocked
   };
 }
 
@@ -88,7 +143,11 @@ function buildCustomerCloudPayload(c: Customer, fallbackStoreId: string, include
   const encodedAddress = encodeEmployeeAddressWithReset(
     c.address || '-',
     c.last_allowance_reset || currentMonth,
-    isEmployee
+    isEmployee,
+    {
+      pinHash: extractEmployeePinHash(c),
+      isBlocked: isCustomerCardBlocked(c)
+    }
   );
 
   // 11 kolom inti yang 100% dijamin ada di tabel Supabase `customers`
@@ -410,7 +469,9 @@ export class SyncService {
   }
 
   /**
-   * Pastikan customer tersimpan di Supabase sebelum digunakan sebagai foreign key
+   * Pastikan customer tersimpan di Supabase sebelum digunakan sebagai foreign key.
+   * PENTING: JANGAN PERNAH menimpa (upsert) baris customer yang sudah ada di Supabase saat sinkron transaksi,
+   * karena akan menghapus PIN karyawan ([PIN:...]), status blokir kartu, atau saldo terbaru di Cloud!
    */
   async ensureCustomerExists(supabase: any, customerId: string, customerName?: string): Promise<string | null> {
     if (!customerId) return null;
@@ -418,23 +479,62 @@ export class SyncService {
     if (!cleanId) return null;
     const storeId = this.getActiveStoreId();
     try {
-      // Ambil detail pelanggan lokal dari Dexie jika tersedia
-      const localCust = await db.customers.get(cleanId).catch(() => null);
-      const custData = {
-        id: cleanId,
-        store_id: storeId,
-        code: localCust?.code || cleanId,
-        name: localCust?.name || customerName || `Pelanggan ${cleanId}`,
-        phone: localCust?.phone || '-',
-        address: localCust?.address || '-',
-        type: localCust?.type || 'RETAIL',
-        credit_limit: Number(localCust?.credit_limit) || 0,
-        current_debt: Number(localCust?.current_debt) || 0,
-        updated_at: localCust?.updated_at || new Date().toISOString()
-      };
-      const { data, error } = await supabase.from('customers').upsert(custData, { onConflict: 'id' }).select('id').single();
-      if (!error && data?.id) return String(data.id);
-      if (!error) return cleanId;
+      const localCust =
+        (await db.customers.get(cleanId).catch(() => null)) ||
+        (await db.customers.where('code').equalsIgnoreCase(cleanId).first().catch(() => null));
+
+      const targetId = localCust?.id ? String(localCust.id).trim() : cleanId;
+
+      // 1. Cek apakah customer sudah ada di Supabase berdasarkan ID (TANPA menimpa!)
+      const { data: existingById } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (existingById?.id) {
+        return String(existingById.id);
+      }
+
+      // 2. Cek berdasarkan kode NIK bila ada
+      const targetCode = localCust?.code?.trim() || cleanId;
+      if (targetCode) {
+        const { data: existingByCode } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('code', targetCode)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingByCode?.id) {
+          return String(existingByCode.id);
+        }
+      }
+
+      // 3. Hanya insert jika benar-benar belum ada sama sekali di tabel customers Supabase
+      if (localCust) {
+        const { error } = await upsertCustomerBatchWithFallback(supabase, [localCust], storeId);
+        if (!error) return targetId;
+      } else {
+        const custData = {
+          id: targetId,
+          store_id: storeId,
+          code: cleanId,
+          name: customerName || `Pelanggan ${cleanId}`,
+          phone: '-',
+          address: '-',
+          type: 'RETAIL',
+          credit_limit: 0,
+          current_debt: 0,
+          updated_at: new Date().toISOString()
+        };
+        const { data, error } = await supabase
+          .from('customers')
+          .insert(custData)
+          .select('id')
+          .maybeSingle();
+        if (!error && data?.id) return String(data.id);
+      }
     } catch {}
     return null;
   }
@@ -1649,15 +1749,70 @@ export class SyncService {
   }
 
   /**
+   * Menarik pembaruan 1 pelanggan spesifik dari Cloud Supabase (misal saat membuka PaymentModal
+   * agar PIN yang baru diaktifkan karyawan di HP langsung terbaca di kasir tanpa harus full sync)
+   */
+  async refreshSingleCustomerFromCloud(idOrCode: string): Promise<Customer | null> {
+    const q = String(idOrCode || '').trim();
+    if (!q || !navigator.onLine) return null;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+
+    try {
+      const storeId = this.getActiveStoreId();
+      const localExisting =
+        (await db.customers.get(q).catch(() => undefined)) ||
+        (await db.customers.where('code').equalsIgnoreCase(q).first().catch(() => undefined));
+
+      let remoteRow: Customer | null = null;
+      if (localExisting?.id) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', localExisting.id)
+          .maybeSingle();
+        if (data) remoteRow = data as Customer;
+      }
+      if (!remoteRow) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .or(`id.eq.${q},code.ilike.${q}`)
+          .limit(1)
+          .maybeSingle();
+        if (data) remoteRow = data as Customer;
+      }
+
+      if (!remoteRow) return localExisting || null;
+
+      const hydrated = hydrateCloudCustomer(remoteRow, storeId, localExisting);
+      await db.customers.put(hydrated);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: hydrated }));
+      }
+      return hydrated;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Menyelaraskan penambahan atau pembaruan pelanggan ke seluruh terminal kasir & admin
    * (Lokal Dexie, Tab lain via BroadcastChannel, Server LAN, dan Supabase Cloud Realtime)
    */
-  async syncCustomerChange(customer: Customer): Promise<Customer> {
+  async syncCustomerChange(
+    customer: Customer,
+    options?: {
+      allowPinRemoval?: boolean;
+      allowBlockChange?: boolean;
+    }
+  ): Promise<Customer> {
     const storeId = this.getActiveStoreId();
     const cleanId = String(customer.id).trim();
     const assignedStoreId = normalizeStoreId(customer.store_id || storeId);
+    const existingLocal = await db.customers.get(cleanId).catch(() => undefined);
 
-    const updatedCust: Customer = {
+    const baseCust: Customer = {
       ...customer,
       id: cleanId,
       store_id: assignedStoreId,
@@ -1665,14 +1820,21 @@ export class SyncService {
       access_scope: normalizeAccessScope(customer.access_scope),
       code: customer.code?.trim() || cleanId,
       name: customer.name.trim(),
-      phone: customer.phone?.trim() || '-',
-      address: customer.address?.trim() || '-',
-      type: customer.type || 'RETAIL',
+      phone:
+        customer.phone && customer.phone.trim() !== '-'
+          ? customer.phone.trim()
+          : existingLocal?.phone && existingLocal.phone !== '-'
+            ? existingLocal.phone
+            : '-',
+      address: customer.address?.trim() || existingLocal?.address || '-',
+      type: customer.type || existingLocal?.type || 'RETAIL',
       credit_limit: Number(customer.credit_limit) || 0,
       current_debt: Number(customer.current_debt) || 0,
       deposit_balance: Number(customer.deposit_balance !== undefined ? customer.deposit_balance : 0),
       updated_at: new Date().toISOString()
     };
+
+    const updatedCust = preserveCustomerSecurityMetadata(baseCust, existingLocal, options);
 
     // 1. Simpan ke IndexedDB lokal (Dexie) seketika
     await db.customers.put(updatedCust);
@@ -1694,7 +1856,13 @@ export class SyncService {
     // 4 & 5. Kirim ke LAN Server terpusat & Supabase Cloud di latar belakang (non-blocking)
     void (async () => {
       try {
-        await lanService.submitCustomer(updatedCust).catch(() => {});
+        await lanService
+          .submitCustomer({
+            ...updatedCust,
+            ...(options?.allowPinRemoval ? { _allow_pin_removal: true } : {}),
+            ...(options?.allowBlockChange ? { _allow_block_change: true } : {})
+          } as Customer)
+          .catch(() => {});
       } catch {}
 
       if (navigator.onLine) {
@@ -1710,14 +1878,67 @@ export class SyncService {
                 .eq('error_message', cleanId)
             ).catch(() => {});
 
-            const upsertPromise = upsertCustomerBatchWithFallback(supabase, [updatedCust], assignedStoreId);
+            let finalCustForCloud = updatedCust;
+
+            // Jaga agar PIN atau status blokir yang baru dibuat karyawan di HP (Cloud) TIDAK PERNAH tertimpa oleh data kasir lama!
+            if (!options?.allowPinRemoval || !options?.allowBlockChange) {
+              try {
+                const { data: remoteRow } = await supabase
+                  .from('customers')
+                  .select('address, phone')
+                  .eq('id', cleanId)
+                  .maybeSingle();
+
+                if (remoteRow) {
+                  const remotePin = extractPinHashFromText(remoteRow.address);
+                  const localHasPin = Boolean(extractEmployeePinHash(finalCustForCloud));
+                  const remoteBlocked = /\[STATUS:BLOCKED\]/i.test(String(remoteRow.address || ''));
+                  const localBlocked = isCustomerCardBlocked(finalCustForCloud);
+                  const needRemotePin = !options?.allowPinRemoval && Boolean(remotePin) && !localHasPin;
+                  const needRemoteBlock = !options?.allowBlockChange && remoteBlocked && !localBlocked;
+                  const needRemotePhone =
+                    (!finalCustForCloud.phone || finalCustForCloud.phone === '-') &&
+                    Boolean(remoteRow.phone && remoteRow.phone !== '-');
+
+                  if (needRemotePin || needRemoteBlock || needRemotePhone) {
+                    finalCustForCloud = preserveCustomerSecurityMetadata(
+                      {
+                        ...finalCustForCloud,
+                        phone: needRemotePhone ? remoteRow.phone : finalCustForCloud.phone
+                      },
+                      {
+                        address: remoteRow.address,
+                        pin_hash: remotePin || undefined,
+                        is_card_blocked: remoteBlocked
+                      },
+                      options
+                    );
+                    await db.customers.put(finalCustForCloud).catch(() => {});
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(
+                        new CustomEvent('ketoko_customer_updated', { detail: finalCustForCloud })
+                      );
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            const upsertPromise = upsertCustomerBatchWithFallback(
+              supabase,
+              [finalCustForCloud],
+              assignedStoreId
+            );
             const timeoutPromise = new Promise<{ error: any }>((_, reject) =>
               setTimeout(() => reject(new Error('Customer upsert timeout')), 4000)
             );
             await Promise.race([upsertPromise, timeoutPromise]).catch(() => {});
 
             // Siarkan realtime broadcast ke semua terminal kasir & admin lintas cabang
-            this.broadcastCloudEvent('customer_updated', updatedCust);
+            this.broadcastCloudEvent('customer_updated', {
+              ...finalCustForCloud,
+              ...(options?.allowPinRemoval ? { _pin_reset: true } : {})
+            });
           }
         } catch (e) {
           console.warn('[Sync] Gagal push pelanggan ke Supabase:', e);
@@ -2003,6 +2224,7 @@ export class SyncService {
 
   /**
    * Mengirim seluruh pelanggan lokal ke Supabase Cloud (Inisialisasi / Rekonsiliasi)
+   * sambil menjaga tag [PIN:...] & [STATUS:BLOCKED] yang sudah diaktifkan karyawan di Cloud.
    */
   async pushCustomersToSupabase(): Promise<{ count: number }> {
     const supabase = getSupabaseClient();
@@ -2011,13 +2233,52 @@ export class SyncService {
     try {
       const storeId = this.getActiveStoreId();
       const allLocal = await db.customers.toArray();
-      const valid = allLocal.filter((c) => c && c.id && c.name);
+      const valid = allLocal.filter(
+        (c) => c && c.id && c.name && isCustomerBelongsToStoreOrCluster(c.store_id || storeId, storeId)
+      );
       if (valid.length === 0) return { count: 0 };
+
+      // Tarik peta ringkas address & phone dari Cloud agar PIN HP karyawan tidak pernah tertimpa saat batch push
+      const remoteSecurityMap = new Map<string, { address?: string; phone?: string }>();
+      try {
+        let from = 0;
+        const step = 1000;
+        while (true) {
+          let q = supabase.from('customers').select('id, address, phone');
+          if (storeId === 'store-01') {
+            q = q.or('store_id.eq.store-01,store_id.is.null');
+          } else if (storeId.startsWith('store-koperasimsl')) {
+            q = q.in('store_id', ['store-koperasimsl', 'store-koperasimsl-cabang']);
+          } else {
+            q = q.eq('store_id', storeId);
+          }
+          const { data: batch, error: qErr } = await q.range(from, from + step - 1);
+          if (qErr || !batch || batch.length === 0) break;
+          for (const row of batch as Array<{ id: string; address?: string; phone?: string }>) {
+            if (row?.id) remoteSecurityMap.set(String(row.id).trim(), row);
+          }
+          from += step;
+          if (batch.length < step) break;
+        }
+      } catch {}
+
+      const mergedValid = valid.map((c) => {
+        const remote = remoteSecurityMap.get(String(c.id).trim());
+        if (!remote) return c;
+        const mergedPhone =
+          (!c.phone || c.phone === '-') && remote.phone && remote.phone !== '-'
+            ? remote.phone
+            : c.phone;
+        return preserveCustomerSecurityMetadata(
+          { ...c, phone: mergedPhone || '-' },
+          { address: remote.address }
+        );
+      });
 
       const chunkSize = 100;
       let pushed = 0;
-      for (let i = 0; i < valid.length; i += chunkSize) {
-        const slice = valid.slice(i, i + chunkSize);
+      for (let i = 0; i < mergedValid.length; i += chunkSize) {
+        const slice = mergedValid.slice(i, i + chunkSize);
         const { error } = await upsertCustomerBatchWithFallback(supabase, slice, storeId);
         if (!error) pushed += slice.length;
       }

@@ -27,6 +27,7 @@ import {
   isCustomerBelongsToStoreOrCluster,
   normalizeAccessScope,
   normalizeStoreId,
+  preserveCustomerSecurityMetadata,
   type CustomerAccessScope,
 } from '../utils/customerAccess';
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
@@ -190,21 +191,24 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     try {
       const targetStoreId = normalizeStoreId(custStoreId || activeStoreId);
       const existing = editingCustId ? await db.customers.get(editingCustId) : null;
-      const targetCust: Customer = {
-        ...(existing || {}),
-        id: editingCustId || `cust-${Date.now()}`,
-        store_id: targetStoreId,
-        store_name: getStoreDisplayName(targetStoreId),
-        access_scope: normalizeAccessScope(custAccessScope),
-        type: existing?.type || 'MEMBER',
-        code: custCode.trim() || existing?.code || `PLG-${String(customers.length + 1).padStart(3, '0')}`,
-        name: custName.trim(),
-        phone: custPhone.trim() || '-',
-        address: custAddress.trim() || '-',
-        credit_limit: Number(custCreditLimit) || 0,
-        current_debt: existing?.current_debt || 0,
-        created_at: existing?.created_at || new Date().toISOString()
-      };
+      const targetCust = preserveCustomerSecurityMetadata(
+        {
+          ...(existing || {}),
+          id: editingCustId || `cust-${Date.now()}`,
+          store_id: targetStoreId,
+          store_name: getStoreDisplayName(targetStoreId),
+          access_scope: normalizeAccessScope(custAccessScope),
+          type: existing?.type || 'MEMBER',
+          code: custCode.trim() || existing?.code || `PLG-${String(customers.length + 1).padStart(3, '0')}`,
+          name: custName.trim(),
+          phone: custPhone.trim() || '-',
+          address: formatCustomerAddressDisplay(custAddress.trim() || '-'),
+          credit_limit: Number(custCreditLimit) || 0,
+          current_debt: existing?.current_debt || 0,
+          created_at: existing?.created_at || new Date().toISOString()
+        },
+        existing
+      );
 
       await syncService.syncCustomerChange(targetCust);
     } catch (err) {
@@ -223,7 +227,8 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
     setCustCode(c.code);
     setCustName(c.name);
     setCustPhone(c.phone || '');
-    setCustAddress(c.address || '');
+    const cleanedAddr = formatCustomerAddressDisplay(c.address);
+    setCustAddress(cleanedAddr !== '-' ? cleanedAddr : '');
     setCustCreditLimit(c.credit_limit || 0);
     setCustStoreId(normalizeStoreId(c.store_id));
     setCustOriginalStoreId(normalizeStoreId(c.store_id));

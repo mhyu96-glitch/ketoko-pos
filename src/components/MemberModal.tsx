@@ -52,6 +52,7 @@ import {
   normalizeAccessScope,
   normalizeStoreId,
   parseEmployeeMeta,
+  preserveCustomerSecurityMetadata,
   removeEmployeePinFromAddress,
   setCustomerCardBlocked,
   isCustomerCardBlocked,
@@ -326,14 +327,9 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
 
     try {
-      const newAddress = removeEmployeePinFromAddress(m.address);
-      const updated: Customer = {
-        ...m,
-        address: newAddress,
-        updated_at: new Date().toISOString()
-      };
+      const updated = removeEmployeePinFromAddress(m);
       await db.customers.put(updated);
-      await syncService.syncCustomerChange(updated);
+      await syncService.syncCustomerChange(updated, { allowPinRemoval: true });
       setMembers((prev) => prev.map((item) => (item.id === m.id ? updated : item)));
       showToast(`PIN untuk "${m.name}" berhasil di-reset! Karyawan dapat membuat PIN baru di HP.`);
     } catch (err: any) {
@@ -353,7 +349,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     try {
       const updatedCustomer = setCustomerCardBlocked(m, !isCurrentlyBlocked);
       await db.customers.put(updatedCustomer);
-      await syncService.syncCustomerChange(updatedCustomer);
+      await syncService.syncCustomerChange(updatedCustomer, { allowBlockChange: true });
       setMembers((prev) => prev.map((item) => (item.id === updatedCustomer.id ? updatedCustomer : item)));
       showToast(
         !isCurrentlyBlocked
@@ -403,22 +399,25 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       const oldStoreId = normalizeStoreId(editingMember.store_id);
       const isBranchMoved = targetStoreId !== oldStoreId;
 
-      const updatedMember: Customer = {
-        ...editingMember,
-        store_id: targetStoreId,
-        store_name: getStoreDisplayName(targetStoreId),
-        access_scope: normalizeAccessScope(editAccessScope),
-        type: editType,
-        code: editCode.trim() || editingMember.code || `PLG-${Date.now().toString().slice(-4)}`,
-        name: editName.trim(),
-        phone: editPhone.trim() || '-',
-        address: formatCustomerAddressDisplay(editAddress.trim() || '-'),
-        credit_limit: editType === 'KARYAWAN' ? clampEmployeeAllowance(editAllowance) : (Number(editCreditLimit) || 0),
-        monthly_allowance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editAllowance) || 2000000)) : undefined,
-        deposit_balance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editDepositBalance) || 0)) : (Number(editDepositBalance) || 0),
-        notes: editNotes.trim(),
-        updated_at: new Date().toISOString()
-      };
+      const updatedMember = preserveCustomerSecurityMetadata(
+        {
+          ...editingMember,
+          store_id: targetStoreId,
+          store_name: getStoreDisplayName(targetStoreId),
+          access_scope: normalizeAccessScope(editAccessScope),
+          type: editType,
+          code: editCode.trim() || editingMember.code || `PLG-${Date.now().toString().slice(-4)}`,
+          name: editName.trim(),
+          phone: editPhone.trim() || '-',
+          address: formatCustomerAddressDisplay(editAddress.trim() || '-'),
+          credit_limit: editType === 'KARYAWAN' ? clampEmployeeAllowance(editAllowance) : (Number(editCreditLimit) || 0),
+          monthly_allowance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editAllowance) || 2000000)) : undefined,
+          deposit_balance: editType === 'KARYAWAN' ? Math.min(2000000, Math.max(0, Number(editDepositBalance) || 0)) : (Number(editDepositBalance) || 0),
+          notes: editNotes.trim(),
+          updated_at: new Date().toISOString()
+        },
+        editingMember
+      );
 
       await syncService.syncCustomerChange(updatedMember);
       setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));

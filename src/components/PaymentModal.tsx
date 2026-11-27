@@ -139,11 +139,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
       setIsProcessing(false);
 
-      // Load customers for suggestion
+      // Load customers for suggestion, and refresh active member from Cloud so newly created PIN on HP is immediately detected
       db.customers.toArray().then((list) => {
         const activeStoreId = getCurrentActiveStoreId();
         setCustomerList(filterCustomersForStore(list || [], activeStoreId));
       }).catch(() => {});
+
+      if (memberId && navigator.onLine) {
+        syncService.refreshSingleCustomerFromCloud(memberId).then((refreshed) => {
+          if (refreshed) {
+            setCustomerList((prev) => {
+              const exists = prev.some((c) => c.id === refreshed.id);
+              return exists
+                ? prev.map((c) => (c.id === refreshed.id ? refreshed : c))
+                : [refreshed, ...prev];
+            });
+          }
+        }).catch(() => {});
+      }
       
       // Auto-focus input on keyboard mode
       if (!isTouchscreenMode) {
@@ -175,7 +188,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         }
 
         const salt = (selectedSaldoCustomer.code || selectedSaldoCustomer.id).toLowerCase();
-        const existingHash = extractEmployeePinHash(selectedSaldoCustomer);
+        let latestCust = selectedSaldoCustomer;
+        let existingHash = extractEmployeePinHash(latestCust);
+
+        // Jika di lokal belum terbaca ada PIN, cek cepat ke Cloud (jaga-jaga karyawan baru saja bikin PIN di HP detik ini)
+        if (!existingHash && navigator.onLine) {
+          const refreshed = await syncService
+            .refreshSingleCustomerFromCloud(latestCust.id || latestCust.code)
+            .catch(() => null);
+          if (refreshed) {
+            latestCust = refreshed;
+            existingHash = extractEmployeePinHash(refreshed);
+            if (isCustomerCardBlocked(refreshed)) {
+              alert('🚫 TRANSAKSI DITOLAK!\n\nKartu karyawan ini baru saja dikunci/diblokir melalui Portal Karyawan.');
+              return;
+            }
+          }
+        }
+
         const inputHash = await hashEmployeePin(cleanPin, salt);
 
         if (existingHash) {
@@ -184,9 +214,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             return;
           }
         } else {
-          // Karyawan belum punya PIN (misal kartu fisik baru pertama kali belanja): otomatis daftarkan PIN ini
+          // Karyawan benar-benar belum punya PIN baik di lokal maupun di Cloud: daftarkan PIN pertama ini
           try {
-            const updatedCustomer = setEmployeePinInAddress(selectedSaldoCustomer, inputHash);
+            const updatedCustomer = setEmployeePinInAddress(latestCust, inputHash);
             await db.customers.put(updatedCustomer);
             await syncService.syncCustomerChange(updatedCustomer);
           } catch (pinErr) {

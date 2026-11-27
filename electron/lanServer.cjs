@@ -354,14 +354,13 @@ function initCentralDatabase(dataDir) {
       }
     } catch (err) {
       try { sqliteDb.exec('ROLLBACK;'); } catch {}
+      console.warn('[LAN Server] Auto-reset notice:', err.message);
     }
   }
 
   runAutoMonthlyAllowanceReset();
   // Cek berkala setiap 15 menit agar tepat pukul 00:00 setiap Tanggal 1 otomatis kereset tanpa perlu restart server
   setInterval(runAutoMonthlyAllowanceReset, 15 * 60 * 1000);
-    console.warn('[LAN Server] Auto-reset notice:', err.message);
-  }
 
   // Tabel Profil Toko & Pengaturan
   sqliteDb.exec(`
@@ -1340,10 +1339,29 @@ function handleHttpRequest(req, res) {
       }
 
       const id = String(cust.id || `cust-${Date.now()}`);
+      const existingRow = sqliteDb.prepare('SELECT address, phone, created_at FROM customers WHERE id = ?').get(id);
+
       const code = cust.code || '';
       const name = cust.name || 'Pelanggan';
-      const phone = cust.phone || '-';
-      const address = cust.address || '-';
+      const rawPhone = String(cust.phone || '').trim();
+      const phone = (!rawPhone || rawPhone === '-') && existingRow && existingRow.phone && existingRow.phone !== '-'
+        ? existingRow.phone
+        : (rawPhone || '-');
+
+      let address = String(cust.address || '-').trim();
+      if (existingRow && existingRow.address) {
+        const existingPinMatch = String(existingRow.address).match(/\[PIN:([a-f0-9]{32,64})\]/i);
+        const incomingHasPin = /\[PIN:[a-f0-9]{32,64}\]/i.test(address);
+        if (existingPinMatch && !incomingHasPin && cust._allow_pin_removal !== true) {
+          address = `${address} [PIN:${existingPinMatch[1].toLowerCase()}]`.trim();
+        }
+        const existingBlocked = /\[STATUS:BLOCKED\]/i.test(String(existingRow.address));
+        const incomingBlocked = /\[STATUS:BLOCKED\]/i.test(address);
+        if (existingBlocked && !incomingBlocked && cust._allow_block_change !== true) {
+          address = `${address} [STATUS:BLOCKED]`.trim();
+        }
+      }
+
       const type = cust.type || 'MEMBER';
       const credit_limit = Number(cust.credit_limit) || 0;
       const current_debt = Number(cust.current_debt) || 0;
@@ -1352,7 +1370,7 @@ function handleHttpRequest(req, res) {
       const last_allowance_reset = cust.last_allowance_reset || (type === 'KARYAWAN' ? new Date().toISOString().slice(0, 7) : '');
       const rawDeposit = Number(cust.deposit_balance !== undefined ? cust.deposit_balance : (type === 'KARYAWAN' ? (monthly_allowance || 2000000) : 0));
       const deposit_balance = type === 'KARYAWAN' ? Math.min(monthly_allowance || 2000000, Math.max(0, rawDeposit)) : rawDeposit;
-      const created_at = cust.created_at || new Date().toISOString();
+      const created_at = cust.created_at || (existingRow && existingRow.created_at) || new Date().toISOString();
       const updated_at = new Date().toISOString();
 
       const store_id = String(cust.store_id || '').trim() || 'store-01';
@@ -1804,8 +1822,15 @@ function handleHttpRequest(req, res) {
       LIMIT 10
     `).all(emp.id, emp.code);
 
-    const pinMatch = String(emp.address || '').match(/\[PIN:([a-f0-9]{32,64})\]/i);
+    const rawEmpAddr = String(emp.address || '');
+    const pinMatch = rawEmpAddr.match(/\[PIN:([a-f0-9]{32,64})\]/i);
     const pinHash = pinMatch ? pinMatch[1].toLowerCase() : null;
+    const isBlocked = /\[STATUS:BLOCKED\]/i.test(rawEmpAddr);
+    const cleanAddr = rawEmpAddr
+      .replace(/\s*\[RST:\d{4}-\d{2}\]\s*/gi, '')
+      .replace(/\s*\[PIN:[a-f0-9]+\]\s*/gi, '')
+      .replace(/\s*\[STATUS:BLOCKED\]\s*/gi, '')
+      .trim() || 'Koperasi PT. MSL';
 
     return sendJson(200, {
       status: 'success',
@@ -1815,9 +1840,11 @@ function handleHttpRequest(req, res) {
           code: emp.code,
           name: emp.name,
           phone: emp.phone,
-          address: emp.address,
+          address: cleanAddr,
+          raw_address: rawEmpAddr,
           has_pin: Boolean(pinHash),
           pin_hash: pinHash,
+          is_blocked: isBlocked,
           store_id: emp.store_id,
           store_name: emp.store_name,
           type: emp.type || 'KARYAWAN',
