@@ -269,7 +269,7 @@ export const ErrorMonitoringModal: React.FC<ErrorMonitoringModalProps> = ({ isOp
 
           {/* 3. LOG ITEMS STREAM */}
           <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
-            <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-200 custom-scroll">
+            <div className="max-h-[calc(100vh-310px)] overflow-y-auto divide-y divide-slate-200 custom-scroll">
               {filteredLogs.length === 0 ? (
                 <div className="py-12 px-4 text-center text-slate-400 space-y-2">
                   <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />

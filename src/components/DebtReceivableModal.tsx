@@ -677,7 +677,7 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
 
               {/* Table Hutang */}
               <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+                <div className="overflow-x-auto max-h-[calc(100vh-280px)] custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
@@ -984,7 +984,7 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
 
               {/* Table Piutang */}
               <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+                <div className="overflow-x-auto max-h-[calc(100vh-280px)] custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">

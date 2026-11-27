@@ -450,7 +450,7 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
 
               {/* Table Movement IN */}
               <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+                <div className="overflow-x-auto max-h-[calc(100vh-260px)] custom-scroll">
                   <table className="w-full text-left text-xs">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[11px] font-black uppercase tracking-wider">
@@ -604,7 +604,7 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
 
               {/* Table Movement OUT */}
               <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+                <div className="overflow-x-auto max-h-[calc(100vh-260px)] custom-scroll">
                   <table className="w-full text-left text-xs">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[11px] font-black uppercase tracking-wider">
@@ -680,7 +680,7 @@ export const StockAdjustmentsModal: React.FC<StockAdjustmentsModalProps> = ({
 
               {/* Table Opname Grid */}
               <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+                <div className="overflow-x-auto max-h-[calc(100vh-260px)] custom-scroll">
                   <table className="w-full text-left text-xs">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[11px] font-black uppercase tracking-wider">

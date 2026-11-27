@@ -1475,7 +1475,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   <span className="text-xs text-[#856b59] font-medium">{filteredTransactions.length} Transaksi Ditemukan</span>
                 </div>
 
-                <div className="overflow-x-auto max-h-[350px] border border-[#f0e4d7] rounded-2xl">
+                <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
@@ -1791,7 +1791,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto max-h-[380px] border border-[#f0e4d7] rounded-2xl">
+                <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
@@ -1959,7 +1959,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   )}
                 </div>
 
-                <div className="overflow-x-auto max-h-[350px] border border-[#f0e4d7] rounded-2xl">
+                <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">

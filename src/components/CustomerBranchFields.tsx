@@ -108,14 +108,22 @@ export const CustomerBranchBadge: React.FC<CustomerBranchBadgeProps> = ({
 }) => {
   const access = checkCustomerBranchAccess(customer, activeStoreId);
 
+  const shortBranchLabel = (() => {
+    const raw = access.homeStoreName || '';
+    if (/mill/i.test(raw)) return 'Cabang Mill';
+    if (/muaratoyu|koperasi\s+karyawan\s+pt\.\s*msl/i.test(raw)) return 'Toko Utama';
+    if (/tumbuh\s*makmur/i.test(raw)) return 'Pusat Samarinda';
+    return raw.length > 26 ? `${raw.slice(0, 24)}…` : raw;
+  })();
+
   if (access.scope === 'ALL_STORES') {
     return (
       <span
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap"
         title={`Terdaftar di ${access.homeStoreName}, diizinkan transaksi di semua cabang`}
       >
-        <Globe className="w-2.5 h-2.5" />
-        <span>Semua Cabang ({access.homeStoreName})</span>
+        <Globe className="w-2.5 h-2.5 shrink-0" />
+        <span>Semua Cabang</span>
       </span>
     );
   }
@@ -126,8 +134,8 @@ export const CustomerBranchBadge: React.FC<CustomerBranchBadgeProps> = ({
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap"
         title={`Terdaftar dan aktif untuk transaksi di ${access.homeStoreName}`}
       >
-        <Store className="w-2.5 h-2.5" />
-        <span>{access.homeStoreName}</span>
+        <Store className="w-2.5 h-2.5 shrink-0" />
+        <span>{shortBranchLabel}</span>
       </span>
     );
   }
@@ -137,8 +145,8 @@ export const CustomerBranchBadge: React.FC<CustomerBranchBadgeProps> = ({
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap"
       title={`Terkunci: hanya bisa transaksi member di ${access.homeStoreName}`}
     >
-      <Lock className="w-2.5 h-2.5" />
-      <span>Khusus {access.homeStoreName}</span>
+      <Lock className="w-2.5 h-2.5 shrink-0" />
+      <span>Khusus {shortBranchLabel}</span>
     </span>
   );
 };

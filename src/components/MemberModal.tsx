@@ -1298,8 +1298,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
           {/* VIEW MODE 1: TABEL DATA PELANGGAN */}
           {viewMode === 'table' ? (
-            <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-              <div className="overflow-x-auto max-h-[460px]">
+            <div className="bg-white rounded-2xl border border-[#e4d5c7] shadow-xs overflow-hidden">
+              <div className="overflow-x-auto max-h-[calc(100vh-235px)] custom-scroll">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                     <tr className="border-b border-[#dfcebe] text-[#634837] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
@@ -1376,30 +1376,32 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                   </span>
                                 )}
                               </div>
-                              {m.notes && <div className="text-[11px] text-[#856b59] mt-0.5">{m.notes}</div>}
+                              {m.notes && m.type !== 'KARYAWAN' && <div className="text-[11px] text-[#856b59] mt-0.5">{m.notes}</div>}
                             </td>
 
                             {/* Kontak & Alamat */}
                             <td className="py-3 px-4 whitespace-nowrap text-[#543c2e]">
-                              <div className="flex items-center space-x-1 text-xs">
-                                <Phone className="w-3.5 h-3.5 text-[#166534]" />
-                                <span className="font-mono">{m.phone || '-'}</span>
-                              </div>
-                              <div className="flex items-center space-x-1 text-[11px] text-[#856b59] mt-0.5 max-w-[240px] truncate">
+                              <div className="flex items-center space-x-1.5 text-xs text-[#332219] font-medium max-w-[280px] truncate">
                                 <MapPin className="w-3.5 h-3.5 text-[#8c7766] shrink-0" />
                                 <span className="truncate">{formatCustomerAddressDisplay(m.address)}</span>
                               </div>
+                              {m.phone && m.phone.trim() !== '-' && (
+                                <div className="flex items-center space-x-1.5 text-[11px] text-[#856b59] mt-0.5 tabular-nums">
+                                  <Phone className="w-3 h-3 text-[#166534] shrink-0" />
+                                  <span>{m.phone}</span>
+                                </div>
+                              )}
                             </td>
 
                             {/* Saldo Member */}
                             <td className="py-3 px-4 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1.5">
                                 <div className="text-right">
-                                  <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs block">
+                                  <span className="tabular-nums font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 text-xs block">
                                     {formatRupiah(Number(m.deposit_balance) || 0)}
                                   </span>
                                   {m.type === 'KARYAWAN' && (
-                                    <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
+                                    <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5 tabular-nums">
                                       Plafon: {formatRupiah(m.monthly_allowance || 2000000)}/bln
                                     </span>
                                   )}
@@ -1407,16 +1409,16 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setSelectedMemberForTopUp(m)}
-                                  className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
                                   title="Top Up Saldo Anggota"
                                 >
-                                  <Wallet className="w-3 h-3" />
+                                  <Wallet className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </td>
 
                             {/* Plafon Piutang */}
-                            <td className="py-3 px-4 text-right font-mono font-bold text-[#332219] whitespace-nowrap">
+                            <td className="py-3 px-4 text-right tabular-nums font-bold text-[#332219] whitespace-nowrap">
                               {formatRupiah(m.credit_limit || 0)}
                             </td>
 
@@ -1593,7 +1595,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             </div>
           ) : (
             /* VIEW MODE 2: KARTU PELANGGAN */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[calc(100vh-235px)] overflow-y-auto pr-1 custom-scroll">
               {displayedMembers.length === 0 ? (
                 <div className="col-span-full py-12 text-center text-[#856b59] bg-white rounded-2xl border border-[#e4d5c7]">
                   <Users className="w-8 h-8 mx-auto text-[#dfcebe] mb-2" />

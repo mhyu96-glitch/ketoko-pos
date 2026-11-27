@@ -20,6 +20,7 @@ import { lanService } from '../services/lanService';
 import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
 import {
   filterCustomersForStore,
+  formatCustomerAddressDisplay,
   getCurrentActiveStoreId,
   getStoreDisplayName,
   getStoresForCluster,
@@ -31,6 +32,7 @@ import {
 import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchFields';
 import { MemberCardModal } from './MemberCardModal';
 import { MemberTopUpModal } from './MemberTopUpModal';
+import { CustomSelect } from './CustomSelect';
 
 interface CustomerSupplierModalProps {
   isOpen: boolean;
@@ -51,6 +53,8 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [search, setSearch] = useState('');
+  const [unitFilter, setUnitFilter] = useState('ALL');
+  const [visibleCustLimit, setVisibleCustLimit] = useState(150);
 
   // Customer Form State
   const activeStoreId = getCurrentActiveStoreId();
@@ -294,6 +298,40 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
 
   if (!isOpen) return null;
 
+  const storeScopedCustomers = customers.filter((c) =>
+    isCustomerBelongsToStoreOrCluster(c.store_id, activeStoreId)
+  );
+
+  const unitOptions = Array.from(
+    new Set(
+      storeScopedCustomers
+        .map((c) => {
+          const disp = formatCustomerAddressDisplay(c.address);
+          if (!disp || disp === '-') return '';
+          const parts = disp.split('•').map((s) => s.trim());
+          return parts.length >= 2 ? `${parts[0]} • ${parts[1]}` : '';
+        })
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const filteredCustList = storeScopedCustomers.filter((c) => {
+    if (unitFilter !== 'ALL') {
+      const disp = formatCustomerAddressDisplay(c.address);
+      if (!disp.startsWith(unitFilter)) return false;
+    }
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      Boolean(c.phone && c.phone.includes(q)) ||
+      formatCustomerAddressDisplay(c.address).toLowerCase().includes(q)
+    );
+  });
+
+  const displayedCustList = filteredCustList.slice(0, visibleCustLimit);
+
   return (
     <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
@@ -305,22 +343,23 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
               {activeTab === 'customer' ? <Users className="w-5 h-5" /> : <Truck className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-black text-lg leading-tight tracking-tight text-white">Master Data Pelanggan & Supplier</h3>
-              <p className="text-xs text-[#fcefe3] font-medium">Kelola kode unik, kontak, alamat, dan batas kredit rekanan toko</p>
+              <h3 className="font-black text-base sm:text-xl leading-tight tracking-tight text-white">Master Data Pelanggan & Supplier</h3>
+              <p className="text-xs text-[#fcefe3] font-medium">Kelola kode unik, kontak, unit/alamat, dan batas kredit rekanan toko</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#fcefe3] hover:text-white hover:bg-[#83532e] transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
+            <span>Tutup</span>
           </button>
         </div>
 
-        {/* Tab & Search Bar - Coklat Susu Foam Bar */}
-        <div className="px-4 py-3 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center space-x-2">
+        {/* Tab & Search Bar */}
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-[#e4d5c7] bg-[#f5ece3] flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
                 setActiveTab('customer');
@@ -333,7 +372,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>Data Pelanggan ({customers.length})</span>
+              <span>Data Pelanggan ({storeScopedCustomers.length.toLocaleString('id-ID')})</span>
             </button>
 
             <button
@@ -350,17 +389,36 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
               <Truck className="w-3.5 h-3.5" />
               <span>Data Supplier ({suppliers.length})</span>
             </button>
+
+            {activeTab === 'customer' && unitOptions.length > 1 && (
+              <CustomSelect
+                value={unitFilter}
+                onChange={(val) => {
+                  setUnitFilter(val);
+                  setVisibleCustLimit(150);
+                }}
+                size="sm"
+                className="min-w-[205px]"
+                options={[
+                  { value: 'ALL', label: 'Semua Unit / Afdeling' },
+                  ...unitOptions.map((u) => ({ value: u, label: u })),
+                ]}
+              />
+            )}
           </div>
 
           <div className="flex items-center space-x-2">
-            <div className="relative w-64">
+            <div className="relative w-64 sm:w-72">
               <Search className="w-4 h-4 text-[#856b59] absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={activeTab === 'customer' ? 'Cari nama / kode pelanggan...' : 'Cari supplier / distributor...'}
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#dfcebe] text-xs focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20 bg-white"
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setVisibleCustLimit(150);
+                }}
+                placeholder={activeTab === 'customer' ? 'Cari nama / NIK / kode pelanggan...' : 'Cari supplier / distributor...'}
+                className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#dfcebe] text-xs font-medium focus:border-[#7c4e2f] focus:ring-2 focus:ring-[#7c4e2f]/20 bg-white"
               />
             </div>
 
@@ -393,7 +451,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 bg-[#f6f0ea] min-h-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-5 overflow-y-auto flex-1 space-y-4 bg-[#fcf9f5] min-h-0 flex flex-col">
           
           {/* TAB 1: PELANGGAN */}
           {activeTab === 'customer' && (
@@ -494,120 +552,154 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
               )}
 
               {/* Table Data Pelanggan */}
-              <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+              <div className="bg-white rounded-2xl border border-[#e4d5c7] shadow-xs overflow-hidden flex flex-col">
+                <div className="overflow-x-auto max-h-[calc(100vh-230px)] custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
-                      <tr className="border-b border-[#dfcebe] text-[#634837] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
-                        <th className="py-3 px-4">Kode</th>
-                        <th className="py-3 px-4">Nama Pelanggan</th>
-                        <th className="py-3 px-4">Kontak & Alamat</th>
-                        <th className="py-3 px-4 text-right">Saldo Member</th>
-                        <th className="py-3 px-4 text-right">Plafon Piutang</th>
-                        <th className="py-3 px-4 text-center">Aksi & Barcode</th>
+                    <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
+                      <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[10.5px] font-black uppercase tracking-wider whitespace-nowrap">
+                        <th className="py-3.5 px-4">Kode / NIK</th>
+                        <th className="py-3.5 px-4">Nama Pelanggan</th>
+                        <th className="py-3.5 px-4">Unit / Alamat &amp; Kontak</th>
+                        <th className="py-3.5 px-4 text-right">Saldo Member</th>
+                        <th className="py-3.5 px-4 text-right">Plafon Piutang</th>
+                        <th className="py-3.5 px-4 text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f0e4d7] font-medium">
-                      {customers
-                        .filter((c) => isCustomerBelongsToStoreOrCluster(c.store_id, activeStoreId) && (!search || c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase()) || (c.phone && c.phone.includes(search))))
-                        .map((c) => (
-                          <tr key={c.id} className="hover:bg-[#fcf8f4] transition-colors">
-                            <td className="py-3 px-4 whitespace-nowrap">
-                              <span className="px-2 py-0.5 rounded-lg bg-[#faebd7] text-[#7c4e2f] font-mono font-black text-xs border border-[#eed7c4]">
-                                {c.code}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="font-bold text-[#332219] text-sm flex items-center flex-wrap gap-1.5">
-                                <span>{c.name}</span>
-                                <CustomerBranchBadge customer={c} activeStoreId={activeStoreId} />
-                              </div>
-                              {c.notes && <div className="text-[11px] text-[#856b59] mt-0.5">{c.notes}</div>}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="flex items-center space-x-1 text-[#543c2e]">
-                                <Phone className="w-3 h-3 text-[#a08573]" />
-                                <span>{c.phone || '-'}</span>
-                              </div>
-                              <div className="flex items-center space-x-1 text-[#856b59] text-[11px] mt-0.5">
-                                <MapPin className="w-3 h-3 text-[#a08573]" />
-                                <span>{c.address || '-'}</span>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
-                                  {formatRupiah(Number(c.deposit_balance) || 0)}
+                      {displayedCustList.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-16 text-center text-[#856b59]">
+                            <Users className="w-9 h-9 mx-auto text-[#dfcebe] mb-2" />
+                            <p className="font-bold text-sm text-[#543c2e]">Tidak ada data pelanggan yang cocok</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        displayedCustList.map((c) => {
+                          const cleanAddress = formatCustomerAddressDisplay(c.address);
+                          const hasPhone = Boolean(c.phone && c.phone.trim() && c.phone.trim() !== '-');
+                          const showNotes = Boolean(
+                            c.notes &&
+                              c.type !== 'KARYAWAN' &&
+                              c.notes.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() !==
+                                cleanAddress.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+                          );
+
+                          return (
+                            <tr key={c.id} className="hover:bg-[#fcf8f4] transition-colors">
+                              <td className="py-3 px-4 whitespace-nowrap align-middle">
+                                <span className="px-2.5 py-1 rounded-lg bg-[#fcf5ed] text-[#7c4e2f] font-mono font-bold text-xs border border-[#eed7c4]">
+                                  {c.code}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedCustForTopUp(c)}
-                                  className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all active:scale-95 cursor-pointer"
-                                  title="Top Up Saldo Anggota"
-                                >
-                                  <Wallet className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono font-bold text-[#332219] whitespace-nowrap">
-                              {formatRupiah(c.credit_limit || 0)}
-                            </td>
-                            <td className="py-3 px-4 text-center whitespace-nowrap">
-                              {deleteConfirmCustId === c.id ? (
-                                <div className="flex items-center justify-center space-x-1 animate-fadeIn">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteCustomer(c.id)}
-                                    className="px-2 py-0.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-xs"
-                                  >
-                                    Ya, Hapus
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeleteConfirmCustId(null)}
-                                    className="px-2 py-0.5 text-[11px] font-medium bg-[#ebdccf] hover:bg-[#dfcebe] text-[#5c3c26] rounded-lg"
-                                  >
-                                    Batal
-                                  </button>
+                              </td>
+                              <td className="py-3 px-4 align-middle">
+                                <div className="flex items-center flex-wrap gap-1.5">
+                                  <span className="font-extrabold text-[#332219] text-xs sm:text-sm">{c.name}</span>
+                                  {c.type === 'KARYAWAN' && (
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                      Karyawan
+                                    </span>
+                                  )}
+                                  <CustomerBranchBadge customer={c} activeStoreId={activeStoreId} />
                                 </div>
-                              ) : (
-                                <div className="flex items-center justify-center space-x-1.5">
+                                {showNotes && <div className="text-[11px] text-[#856b59] mt-0.5">{c.notes}</div>}
+                              </td>
+                              <td className="py-3 px-4 align-middle">
+                                <div className="flex items-center gap-1.5 text-[#332219] text-xs font-medium">
+                                  <MapPin className="w-3.5 h-3.5 text-[#8a6b53] shrink-0" />
+                                  <span className="truncate max-w-[320px]">{cleanAddress || '-'}</span>
+                                </div>
+                                {hasPhone && (
+                                  <div className="flex items-center gap-1.5 text-[#856b59] text-[11px] mt-0.5 tabular-nums">
+                                    <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <span>{c.phone}</span>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-right whitespace-nowrap align-middle">
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  <span className="tabular-nums font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 text-xs">
+                                    {formatRupiah(Number(c.deposit_balance) || 0)}
+                                  </span>
                                   <button
+                                    type="button"
                                     onClick={() => setSelectedCustForTopUp(c)}
-                                    className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition-colors"
-                                    title="Top Up Saldo"
+                                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                    title="Top Up Saldo Anggota"
                                   >
-                                    <Wallet className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setSelectedCustForCard(c)}
-                                    className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition-colors"
-                                    title="Cetak Barcode & Kartu Digital"
-                                  >
-                                    <QrCode className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleEditCustomer(c)}
-                                    className="p-1.5 rounded-lg text-[#856b59] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
-                                    title="Edit Pelanggan"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteConfirmCustId(c.id)}
-                                    className="p-1.5 rounded-lg text-[#a08573] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                    title="Hapus Pelanggan"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Wallet className="w-3 h-3" />
+                                    <span>Top Up</span>
                                   </button>
                                 </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="py-3 px-4 text-right tabular-nums font-bold text-[#332219] text-xs whitespace-nowrap align-middle">
+                                {formatRupiah(c.credit_limit || 0)}
+                              </td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap align-middle">
+                                {deleteConfirmCustId === c.id ? (
+                                  <div className="flex items-center justify-center space-x-1.5 animate-fadeIn">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCustomer(c.id)}
+                                      className="px-2.5 py-1 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-xs"
+                                    >
+                                      Ya, Hapus
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmCustId(null)}
+                                      className="px-2.5 py-1 text-[11px] font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg"
+                                    >
+                                      Batal
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => setSelectedCustForCard(c)}
+                                      className="p-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition-colors"
+                                      title="Kartu Digital & Barcode"
+                                    >
+                                      <QrCode className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditCustomer(c)}
+                                      className="p-1.5 rounded-lg border border-[#e4d5c7] bg-[#fcf9f5] text-[#543c2e] hover:text-[#7c4e2f] hover:bg-[#faebd7] transition-colors"
+                                      title="Edit Pelanggan"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirmCustId(c.id)}
+                                      className="p-1.5 rounded-lg border border-transparent text-[#a08573] hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+                                      title="Hapus Pelanggan"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
+
+                {filteredCustList.length > visibleCustLimit && (
+                  <div className="px-4 py-2.5 bg-[#fcf9f5] border-t border-[#e4d5c7] flex items-center justify-between text-xs">
+                    <span className="text-[#856b59]">
+                      Menampilkan <b>{displayedCustList.length}</b> dari <b>{filteredCustList.length.toLocaleString('id-ID')}</b> pelanggan
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleCustLimit((prev) => prev + 200)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-[#faebd7] text-[#7c4e2f] border border-[#ddc3aa] font-bold transition-colors"
+                    >
+                      Tampilkan Lebih Banyak (+200)
+                    </button>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -713,8 +805,8 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
               )}
 
               {/* Table Data Supplier */}
-              <div className="bg-white rounded-3xl border border-[#e4d5c7] shadow-xs overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px]">
+              <div className="bg-white rounded-2xl border border-[#e4d5c7] shadow-xs overflow-hidden">
+                <div className="overflow-x-auto max-h-[calc(100vh-230px)] custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-[#f1e5d8] backdrop-blur-xs z-10">
                       <tr className="border-b border-[#dfcebe] text-[#634837] text-[10px] font-black uppercase tracking-wider whitespace-nowrap">
