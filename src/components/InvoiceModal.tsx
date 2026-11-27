@@ -272,7 +272,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-[70] bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       {/* Print-specific style injection to guarantee only invoice sheet prints */}
       <style>{`
         @media print {

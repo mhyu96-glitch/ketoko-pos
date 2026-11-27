@@ -1856,7 +1856,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
       {/* FULL-SCREEN WORKSPACE: Bagikan Link Portal Kartu HP Karyawan */}
       {showSharePortalModal && (
-        <div className="fixed inset-0 z-60 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[70] bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
           <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
             {/* Header */}
             <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-emerald-800 to-teal-700 text-white flex items-center justify-between shrink-0 border-b border-emerald-900">
@@ -1962,7 +1962,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
       {/* FULL-SCREEN WORKSPACE: Cetak Kartu Fisik Massal (Kertas A4 / Standar ID Card) */}
       {showBatchPrintModal && (
-        <div className="fixed inset-0 z-60 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[70] bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
           <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
             {/* Header */}
             <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 border-b border-[#5e3519]">

@@ -270,7 +270,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-[70] bg-[#fcf9f5] flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       <div 
         className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}

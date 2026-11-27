@@ -626,7 +626,7 @@ Terima kasih.
     : 'from-slate-950 via-neutral-900 to-slate-900 border-slate-700 text-slate-300';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-[70] bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-fadeIn">
       <div className="bg-slate-50 w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Header */}
