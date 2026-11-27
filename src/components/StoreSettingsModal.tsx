@@ -801,7 +801,7 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="font-bold text-[#5c3c26] block mb-1">Pesan Penutup Struk (*Footer Receipt*):</label>
+                    <label className="font-bold text-[#5c3c26] block mb-1">Pesan Penutup Struk (Footer Receipt):</label>
                     <textarea
                       rows={2}
                       value={storeProfile.footer_message}
