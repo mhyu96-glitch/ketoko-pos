@@ -879,10 +879,13 @@
         console.warn('Supabase transactions lookup warning:', e);
       }
 
-      const monthSaldoTrx = allEmpTrx.filter(t =>
-        t.payment_method === 'SALDO' && String(t.created_at || '').startsWith(currentMonth)
+      const monthAllTrx = allEmpTrx.filter(t =>
+        String(t.created_at || '').startsWith(currentMonth)
       );
+      const monthSaldoTrx = monthAllTrx.filter(t => t.payment_method === 'SALDO');
+      const monthCashTrx = monthAllTrx.filter(t => t.payment_method !== 'SALDO' && t.payment_method !== 'TEMPO');
       const spentFromTrx = monthSaldoTrx.reduce((s, t) => s + (Number(t.grand_total) || 0), 0);
+      const cashSpentFromTrx = monthCashTrx.reduce((s, t) => s + (Number(t.grand_total) || 0), 0);
       const finalBalance = Math.min(allowance, Math.max(0, spentFromTrx > 0 ? Math.min(rawBalance, allowance - spentFromTrx) : rawBalance));
       const finalSpent = Math.max(spentFromTrx, allowance - finalBalance);
 
@@ -925,10 +928,11 @@
             monthly_allowance: allowance,
             deposit_balance: finalBalance,
             spent_this_month: finalSpent,
+            cash_spent_this_month: cashSpentFromTrx,
             current_month: currentMonth
           },
           last_transaction: lastTransaction,
-          transactions: monthSaldoTrx
+          transactions: monthAllTrx
         }
       };
     }
@@ -1429,19 +1433,30 @@
       document.getElementById('percentBadge').textContent = percent + '% Terpakai';
       document.getElementById('utilizationBar').style.width = percent + '%';
 
-      // Render Monthly Transactions List with item names
+      // Render Monthly Transactions List with item names (Saldo & Cash Member)
       const trxContainer = document.getElementById('trxListContainer');
       const trxs = data.transactions || [];
+      const cashSpentMonth = Number(emp.cash_spent_this_month) || trxs
+        .filter(t => t.payment_method && t.payment_method !== 'SALDO' && t.payment_method !== 'TEMPO')
+        .reduce((s, t) => s + (Number(t.grand_total) || 0), 0);
       document.getElementById('trxCountBadge').textContent = trxs.length + ' Nota';
 
+      const cashBannerHtml = cashSpentMonth > 0
+        ? `<div class="mb-2 px-3 py-2 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between text-xs">
+             <span class="font-bold text-sky-900">💵 Total Belanja Cash Bulan Ini (Saldo Utuh):</span>
+             <span class="font-mono font-black text-sky-800">${formatRupiah(cashSpentMonth)}</span>
+           </div>`
+        : '';
+
       if (trxs.length === 0) {
-        trxContainer.innerHTML = '<div class="py-4 text-center text-stone-400 text-xs">Belum ada transaksi potong saldo bulan ini.</div>';
+        trxContainer.innerHTML = '<div class="py-4 text-center text-stone-400 text-xs">Belum ada riwayat belanja bulan ini.</div>';
       } else {
-        trxContainer.innerHTML = trxs.map(t => {
+        trxContainer.innerHTML = cashBannerHtml + trxs.map(t => {
           const d = new Date(t.created_at);
           const dateStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
           const timeStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
           const itemList = (t.items || []).map(it => `${Number(it.qty) || 1}x ${it.product_name || it.name || 'Barang'}`).join(', ');
+          const isSaldo = !t.payment_method || t.payment_method === 'SALDO';
           return `
             <div class="py-2.5 space-y-1">
               <div class="flex items-center justify-between">
@@ -1450,8 +1465,8 @@
                   <div class="text-[10px] text-stone-500 font-medium">${dateStr} ${timeStr} • ${escapeHtml(getStoreLabel(t.store_id))}</div>
                 </div>
                 <div class="text-right">
-                  <div class="font-mono font-bold text-rose-700">-${formatRupiah(t.grand_total)}</div>
-                  <div class="text-[9px] font-extrabold text-emerald-700 uppercase">Potong Saldo</div>
+                  <div class="font-mono font-bold ${isSaldo ? 'text-rose-700' : 'text-sky-700'}">${isSaldo ? '-' : ''}${formatRupiah(t.grand_total)}</div>
+                  <div class="text-[9px] font-extrabold ${isSaldo ? 'text-emerald-700' : 'text-sky-700'} uppercase">${isSaldo ? '💳 Potong Saldo' : '💵 Beli Cash (Saldo Utuh)'}</div>
                 </div>
               </div>
               ${itemList ? `<div class="text-[10.5px] text-stone-600 bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">${escapeHtml(itemList)}</div>` : ''}

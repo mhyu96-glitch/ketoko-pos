@@ -824,11 +824,12 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                   const hasWholesale = prod.wholesale_price > 0 && prod.wholesale_price < prod.retail_price;
                   const unitLabel = (prod.unit || 'PCS').toUpperCase();
                   const cleanBarcode = (prod.barcode || '').trim();
-                  const primaryCode = cleanBarcode || prod.id;
+                  const cleanItemCode = prod.id.replace(/^(?:msl-(?:mill-)?prd-|prod-msl-)/i, '');
+                  const primaryCode = cleanBarcode || cleanItemCode || prod.id;
                   const showSecondaryId =
                     Boolean(cleanBarcode) &&
-                    prod.id !== cleanBarcode &&
-                    !prod.id.toLowerCase().endsWith('-' + cleanBarcode.toLowerCase());
+                    cleanItemCode !== cleanBarcode &&
+                    prod.id !== cleanBarcode;
 
                   const categoryLabel = (prod.category || 'Umum').trim() || 'Umum';
                   const cleanRack = (prod.rack_location || '').trim();
@@ -882,7 +883,9 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                                 <span>{primaryCode}</span>
                               </span>
                               {showSecondaryId && (
-                                <span className="text-[10px] text-[#8a6b53]">SKU: {prod.id}</span>
+                                <span className="text-[10px] font-semibold text-[#5c3c26] bg-[#fcf9f5] px-1.5 py-0.5 rounded border border-[#e5d0be]">
+                                  Kode: {cleanItemCode}
+                                </span>
                               )}
                             </div>
                           </div>

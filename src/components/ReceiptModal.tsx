@@ -18,7 +18,8 @@ import {
   printToWebSerial,
   printToWebBluetooth,
   printThermalReceiptSpooler,
-  printEpsonLX310Invoice
+  printEpsonLX310Invoice,
+  enrichTransactionMemberData
 } from '../services/escposService';
 
 interface ReceiptModalProps {
@@ -41,13 +42,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [config, setConfig] = useState<PrinterConfig>(() => loadActiveStorePrinterConfig());
   const [printStatus, setPrintStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [enrichedTrx, setEnrichedTrx] = useState<Transaction | null>(transaction);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && transaction) {
       setConfig(loadActiveStorePrinterConfig());
       setPrintStatus(null);
+      setEnrichedTrx(transaction);
+      enrichTransactionMemberData(transaction).then(setEnrichedTrx).catch(() => {});
     }
-  }, [isOpen]);
+  }, [isOpen, transaction]);
 
   // Keyboard shortcut: Enter or Esc for fast New Transaction
   useEffect(() => {
@@ -64,26 +68,29 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   if (!isOpen || !transaction) return null;
 
-  const cashGiven = transaction.cash_given || transaction.grand_total;
-  const changeDue = Math.max(0, cashGiven - transaction.grand_total);
-  const totalItemCount = transaction.items.reduce((sum, item) => sum + item.qty, 0);
+  const activeTrx = enrichedTrx || transaction;
+  const cashGiven = activeTrx.cash_given || activeTrx.grand_total;
+  const changeDue = Math.max(0, cashGiven - activeTrx.grand_total);
+  const totalItemCount = activeTrx.items.reduce((sum, item) => sum + item.qty, 0);
 
   const handlePrint = async () => {
     setIsPrinting(true);
     setPrintStatus({ success: true, message: `Menghubungkan via ${config.driverType} printer...` });
     try {
+      const readyTrx = await enrichTransactionMemberData(activeTrx);
+      setEnrichedTrx(readyTrx);
       const builder = new ESCPOSBuilder({ paperWidth: config.paperWidth === '58mm' ? 58 : 80 });
-      const rawBytes = builder.buildConfiguredReceipt(transaction, config);
+      const rawBytes = builder.buildConfiguredReceipt(readyTrx, config);
       
       let res;
       if (config.driverType === 'USB') {
-        res = await printToWebUSB(rawBytes);
+        res = await printToWebUSB(rawBytes, false, readyTrx, config);
       } else if (config.driverType === 'SERIAL') {
         res = await printToWebSerial(rawBytes, config.baudRate || 9600);
       } else if (config.driverType === 'BLUETOOTH') {
         res = await printToWebBluetooth(rawBytes);
       } else {
-        res = await printThermalReceiptSpooler(transaction, config);
+        res = await printThermalReceiptSpooler(readyTrx, config);
       }
 
       setPrintStatus(res);
@@ -101,7 +108,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     setIsPrinting(true);
     setPrintStatus({ success: true, message: 'Menyiapkan Faktur Continuous Form Epson LX-310...' });
     try {
-      const res = await printEpsonLX310Invoice(transaction, config);
+      const readyTrx = await enrichTransactionMemberData(activeTrx);
+      setEnrichedTrx(readyTrx);
+      const res = await printEpsonLX310Invoice(readyTrx, config);
       setPrintStatus(res);
     } catch (err: any) {
       setPrintStatus({
@@ -114,7 +123,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   const handleBrowserPrint = async () => {
-    const res = await printThermalReceiptSpooler(transaction, config);
+    const readyTrx = await enrichTransactionMemberData(activeTrx);
+    setEnrichedTrx(readyTrx);
+    const res = await printThermalReceiptSpooler(readyTrx, config);
     setPrintStatus(res);
   };
 
@@ -200,9 +211,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </div>
             )}
 
-            {transaction.customer_name && transaction.payment_method !== 'TEMPO' && (
-              <div className="text-center pt-1 text-xs text-[#5c3c26]">
-                Pelanggan: <b className="font-bold text-[#3d2617]">{transaction.customer_name}</b>
+            {activeTrx.customer_name && activeTrx.payment_method !== 'TEMPO' && (
+              <div className="pt-1.5 space-y-1">
+                <div className="text-center text-xs text-[#5c3c26]">
+                  Pelanggan: <b className="font-bold text-[#3d2617]">{activeTrx.customer_name}</b>
+                  {activeTrx.member_code && (
+                    <span className="font-mono text-[11px] text-stone-500 ml-1">({activeTrx.member_code})</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-center flex-wrap gap-2">
+                  {activeTrx.member_afdeling && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-900 border border-teal-200 text-[11px] font-extrabold">
+                      📍 {activeTrx.member_afdeling}
+                    </span>
+                  )}
+                  {activeTrx.member_remaining_balance !== undefined && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] font-extrabold font-mono">
+                      💳 Sisa Saldo Member: {formatRupiah(activeTrx.member_remaining_balance)}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -421,7 +449,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {onOpenInvoice && (
             <button
               type="button"
-              onClick={() => onOpenInvoice(transaction)}
+              onClick={() => onOpenInvoice(activeTrx)}
               className="w-full sm:w-auto px-4 py-3 bg-[#e8f5e9] hover:bg-[#c8e6c9] text-[#1b5e20] rounded-2xl font-bold text-xs border border-[#a5d6a7] flex items-center justify-center space-x-1.5 transition-all shadow-2xs active:scale-95"
               title="Buka / Cetak Invoice Resmi (Faktur Penjualan A4)"
             >

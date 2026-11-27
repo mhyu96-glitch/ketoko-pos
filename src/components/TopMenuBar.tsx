@@ -45,6 +45,7 @@ interface TopMenuBarProps {
   currentView: NavView;
   onNavigate: (view: NavView) => void;
   onOpenRecentTrx: () => void;
+  onOpenDirectInvoice?: () => void;
   onOpenQATest: () => void;
   onOpenPrinterSettings: () => void;
   onOpenRestock: () => void;
@@ -74,6 +75,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
   currentView,
   onNavigate,
   onOpenRecentTrx,
+  onOpenDirectInvoice,
   onOpenQATest,
   onOpenPrinterSettings,
   onOpenRestock,
@@ -444,6 +446,24 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
                     <div className="text-[10px] text-[#8c5e3c] font-medium whitespace-nowrap">Scan barcode & bayar nota kasir</div>
                   </div>
                 </button>
+
+                {onOpenDirectInvoice && (
+                  <button
+                    onClick={() => {
+                      onOpenDirectInvoice();
+                      setOpenDropdown(null);
+                    }}
+                    className="w-full p-2 text-left rounded-xl text-[#96633b] hover:bg-[#fbf7f2] flex items-center space-x-3 transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-[#edf5ee] text-[#166534] flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-xs text-[#332219] whitespace-nowrap">Input Invoice Penjualan</div>
+                      <div className="text-[10px] text-[#856b59] font-medium whitespace-nowrap">Buat invoice langsung (tempo / lunas) & cetak A4</div>
+                    </div>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -1176,7 +1196,20 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = React.memo(({
             </button>
           )}
 
-          {/* 4. Riwayat Transaksi */}
+          {/* 4. Input Invoice & Riwayat Transaksi */}
+          {onOpenDirectInvoice && (
+            <button
+              onClick={() => {
+                onOpenDirectInvoice();
+                setIsMobileMenuOpen(false);
+              }}
+              className="p-2.5 rounded-xl bg-[#fcf8f4] hover:bg-[#faebd7] border border-[#ebdccf] text-left flex items-center space-x-2 text-xs font-bold text-[#5c3c26]"
+            >
+              <FileText className="w-4 h-4 text-[#7c4e2f]" />
+              <span>Input Invoice</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               onOpenRecentTrx();

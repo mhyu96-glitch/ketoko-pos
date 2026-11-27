@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, PlusCircle, CheckCircle, ArrowDownRight, Search, Package } from 'lucide-react';
 import type { Product } from '../types';
 import { formatRupiah } from '../services/escposService';
@@ -23,6 +23,8 @@ export const RestockModal: React.FC<RestockModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [incomingQty, setIncomingQty] = useState<number>(10);
+  const [newBuyPrice, setNewBuyPrice] = useState<string>('');
+  const [newRetailPrice, setNewRetailPrice] = useState<string>('');
   const [notes, setNotes] = useState('Penerimaan dari Gudang / Distributor');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -30,6 +32,13 @@ export const RestockModal: React.FC<RestockModalProps> = ({
   const currentProduct = useMemo(() => {
     return products.find((p) => p.id === selectedProductId) || products[0];
   }, [products, selectedProductId]);
+
+  useEffect(() => {
+    if (currentProduct) {
+      setNewBuyPrice(String(currentProduct.buy_price || 0));
+      setNewRetailPrice(String(currentProduct.retail_price || 0));
+    }
+  }, [currentProduct?.id]);
 
   // Fast filtered autocomplete results capped at top 8
   const searchResults = useMemo(() => {
@@ -60,9 +69,18 @@ export const RestockModal: React.FC<RestockModalProps> = ({
     setIsSubmitting(true);
     try {
       const newStock = currentProduct.stock + incomingQty;
+      const updatedBuy = newBuyPrice !== '' ? Math.max(0, Number(newBuyPrice) || 0) : currentProduct.buy_price;
+      const updatedRetail = newRetailPrice !== '' ? Math.max(0, Number(newRetailPrice) || 0) : currentProduct.retail_price;
+      const updatedWholesale =
+        currentProduct.wholesale_price === currentProduct.retail_price
+          ? updatedRetail
+          : currentProduct.wholesale_price;
       const updatedProduct: Product = {
         ...currentProduct,
         stock: newStock,
+        buy_price: updatedBuy,
+        retail_price: updatedRetail,
+        wholesale_price: updatedWholesale,
         updated_at: new Date().toISOString()
       };
       await syncService.syncProductChange(updatedProduct);
@@ -181,19 +199,52 @@ export const RestockModal: React.FC<RestockModalProps> = ({
             </div>
           )}
 
-          {/* Input Incoming Quantity */}
-          <div>
-            <label className="text-[#5c3c26] font-semibold mb-1.5 block">
-              Jumlah Barang Masuk ({currentProduct?.unit || 'Pcs'})
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={incomingQty}
-              onChange={(e) => setIncomingQty(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-full px-4 py-2.5 bg-white text-[#3d2617] font-mono font-bold text-base rounded-xl border border-[#ddc3aa] focus:bg-white focus:border-[#96633b]"
-              required
-            />
+          {/* Input Incoming Quantity & Editable Cost/Retail Price */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[#5c3c26] font-semibold mb-1.5 block">
+                Jumlah Masuk ({currentProduct?.unit || 'Pcs'})
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={incomingQty}
+                onChange={(e) => setIncomingQty(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full px-3.5 py-2.5 bg-white text-[#3d2617] font-mono font-bold text-base rounded-xl border border-[#ddc3aa] focus:bg-white focus:border-[#96633b]"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-amber-900 font-semibold mb-1.5 block">
+                Harga Modal / Beli (Rp)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={newBuyPrice}
+                onChange={(e) => setNewBuyPrice(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-amber-50/40 text-stone-900 font-mono font-bold text-base rounded-xl border border-amber-300 focus:bg-white focus:border-amber-600"
+              />
+              {currentProduct && Number(newBuyPrice) > currentProduct.buy_price && (
+                <div className="text-[10px] font-bold text-amber-700 mt-1">
+                  ⬆ Modal naik +{formatRupiah(Number(newBuyPrice) - currentProduct.buy_price)}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-emerald-900 font-semibold mb-1.5 block">
+                Harga Jual Eceran (Rp)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={newRetailPrice}
+                onChange={(e) => setNewRetailPrice(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-emerald-50/40 text-emerald-950 font-mono font-bold text-base rounded-xl border border-emerald-300 focus:bg-white focus:border-emerald-600"
+              />
+            </div>
           </div>
 
           {/* Stock Simulation */}

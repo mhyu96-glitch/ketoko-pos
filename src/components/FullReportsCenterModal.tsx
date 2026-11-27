@@ -72,7 +72,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   // Employee Allowance Report States
   const [employeeReport, setEmployeeReport] = useState<EmployeeAllowanceReport | null>(null);
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
-  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXHAUSTED' | 'SHOPPED' | 'NOT_SHOPPED'>('ALL');
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXHAUSTED' | 'SHOPPED' | 'CASH_SHOPPED' | 'NOT_SHOPPED'>('ALL');
   const [employeeMonth, setEmployeeMonth] = useState<string>(() => employeeAllowanceService.getCurrentMonthKey());
   const [employeeAfdelingFilter, setEmployeeAfdelingFilter] = useState<string>('ALL');
   const [showAfdelingSummaryTable, setShowAfdelingSummaryTable] = useState(true);
@@ -631,8 +631,10 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
       list = list.filter((e: EmployeeAllowanceRecord) => e.status === 'EXHAUSTED');
     } else if (employeeStatusFilter === 'SHOPPED') {
       list = list.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0);
+    } else if (employeeStatusFilter === 'CASH_SHOPPED') {
+      list = list.filter((e: EmployeeAllowanceRecord) => (e.cash_spent_this_month || 0) > 0);
     } else if (employeeStatusFilter === 'NOT_SHOPPED') {
-      list = list.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0);
+      list = list.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0 && (e.cash_spent_this_month || 0) <= 0);
     }
     if (employeeAfdelingFilter !== 'ALL') {
       list = list.filter((e: EmployeeAllowanceRecord) => (e.afdeling || 'UMUM').toUpperCase() === employeeAfdelingFilter.toUpperCase());
@@ -2290,8 +2292,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 </div>
               </div>
 
-              {/* 5 KPI Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {/* 6 KPI Summary Cards (Termasuk Laporan Pembelian Cash Member) */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 {/* Total Karyawan */}
                 <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs flex flex-col justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Karyawan</span>
@@ -2307,7 +2309,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 {/* Total Plafon Anggaran */}
                 <div className="p-4 rounded-2xl bg-white border border-[#e4d5c7] shadow-xs flex flex-col justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#856b59]">Total Plafon Kuota</span>
-                  <div className="text-xl font-black font-mono text-[#332219] mt-2">
+                  <div className="text-lg sm:text-xl font-black font-mono text-[#332219] mt-2">
                     {formatRupiah(employeeReport?.summary.total_allowance_budget || 0)}
                   </div>
                   <div className="text-[10px] text-stone-500 font-medium mt-1">
@@ -2317,8 +2319,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                 {/* Total Kuota Terpakai */}
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs flex flex-col justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">Total Kuota Terpakai</span>
-                  <div className="text-xl font-black font-mono text-rose-900 mt-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">Potong Saldo / Gaji</span>
+                  <div className="text-lg sm:text-xl font-black font-mono text-rose-900 mt-2">
                     {formatRupiah(employeeReport?.summary.total_spent || 0)}
                   </div>
                   <div className="text-[10px] text-rose-700 font-medium mt-1">
@@ -2326,10 +2328,21 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
                 </div>
 
+                {/* Total Belanja Cash Member */}
+                <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800">Belanja Cash Member</span>
+                  <div className="text-lg sm:text-xl font-black font-mono text-sky-900 mt-2">
+                    {formatRupiah(employeeReport?.summary.total_cash_spent || 0)}
+                  </div>
+                  <div className="text-[10px] text-sky-700 font-medium mt-1">
+                    {employeeReport?.summary.cash_shopper_count || 0} org beli cash (saldo utuh)
+                  </div>
+                </div>
+
                 {/* Sisa Saldo Tersedia */}
                 <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-xs flex flex-col justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Sisa Saldo Kuota</span>
-                  <div className="text-xl font-black font-mono text-emerald-900 mt-2">
+                  <div className="text-lg sm:text-xl font-black font-mono text-emerald-900 mt-2">
                     {formatRupiah(employeeReport?.summary.total_remaining_balance || 0)}
                   </div>
                   <div className="text-[10px] text-emerald-700 font-medium mt-1">
@@ -2381,8 +2394,9 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     className="min-w-[210px]"
                     options={[
                       { value: 'ALL', label: `Semua Status (${employeeReport?.employees.length || 0})` },
-                      { value: 'SHOPPED', label: `🛒 Sudah Belanja / Potong Gaji (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0).length || 0})` },
-                      { value: 'NOT_SHOPPED', label: `⚪ Belum Belanja (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0).length || 0})` },
+                      { value: 'SHOPPED', label: `💳 Potong Saldo / Gaji (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month > 0).length || 0})` },
+                      { value: 'CASH_SHOPPED', label: `💵 Belanja Cash / Tunai (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => (e.cash_spent_this_month || 0) > 0).length || 0})` },
+                      { value: 'NOT_SHOPPED', label: `⚪ Belum Belanja (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.spent_this_month <= 0 && (e.cash_spent_this_month || 0) <= 0).length || 0})` },
                       { value: 'ACTIVE', label: `🟢 Masih Ada Kuota (${employeeReport?.employees.filter((e: EmployeeAllowanceRecord) => e.status === 'ACTIVE').length || 0})` },
                       { value: 'EXHAUSTED', label: `🔴 Kuota Habis (Rp 0) (${employeeReport?.summary.exhausted_count || 0})` }
                     ]}
@@ -2445,7 +2459,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           <th className="py-2 px-4 text-left">Afdeling / Divisi</th>
                           <th className="py-2 px-3 text-center">Jumlah Karyawan</th>
                           <th className="py-2 px-3 text-right">Total Plafon</th>
-                          <th className="py-2 px-3 text-right text-rose-700">Total Terpakai (Potong Gaji)</th>
+                          <th className="py-2 px-3 text-right text-rose-700">Potong Saldo / Gaji</th>
+                          <th className="py-2 px-3 text-right text-sky-700">Beli Cash (Tunai)</th>
                           <th className="py-2 px-3 text-right text-emerald-800">Sisa Saldo</th>
                           <th className="py-2 px-3 text-center">Penyerapan</th>
                         </tr>
@@ -2459,6 +2474,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                             <td className="py-2 px-3 text-center font-mono font-bold text-stone-700">{s.totalEmployees} Org</td>
                             <td className="py-2 px-3 text-right font-mono text-stone-700">{formatRupiah(s.totalAllowance)}</td>
                             <td className="py-2 px-3 text-right font-mono font-bold text-rose-700">{formatRupiah(s.totalSpent)}</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-sky-700">{s.totalCashSpent ? formatRupiah(s.totalCashSpent) : '-'}</td>
                             <td className="py-2 px-3 text-right font-mono font-bold text-emerald-800">{formatRupiah(s.totalRemaining)}</td>
                             <td className="py-2 px-3 text-center font-mono font-bold text-stone-600">{s.utilizationRate}%</td>
                           </tr>
@@ -2470,6 +2486,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           <td className="py-2.5 px-3 text-center font-mono">{afdelingSummaries.reduce((a, b) => a + b.totalEmployees, 0)} Org</td>
                           <td className="py-2.5 px-3 text-right font-mono">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalAllowance, 0))}</td>
                           <td className="py-2.5 px-3 text-right font-mono text-rose-800">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalSpent, 0))}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-sky-800">{formatRupiah(afdelingSummaries.reduce((a, b) => a + (b.totalCashSpent || 0), 0))}</td>
                           <td className="py-2.5 px-3 text-right font-mono text-emerald-900">{formatRupiah(afdelingSummaries.reduce((a, b) => a + b.totalRemaining, 0))}</td>
                           <td className="py-2.5 px-3 text-center font-mono">
                             {afdelingSummaries.reduce((a, b) => a + b.totalAllowance, 0) > 0 
@@ -2489,7 +2506,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   <div className="flex items-center space-x-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-800" />
                     <span className="text-xs font-black text-emerald-950 uppercase tracking-wider">
-                      Daftar Anggota Karyawan & Sisa Kuota Belanja Bulanan
+                      Daftar Anggota Karyawan, Sisa Kuota & Pembelian Cash Bulanan
                     </span>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-800 bg-white px-2.5 py-0.5 rounded-full border border-emerald-300">
@@ -2504,19 +2521,20 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                         <th className="py-2.5 px-3 text-center w-12">No</th>
                         <th className="py-2.5 px-3 text-left w-28">NIK / Kode</th>
                         <th className="py-2.5 px-4 text-left">Nama Karyawan</th>
-                        <th className="py-2.5 px-3 text-left w-36">No. WhatsApp</th>
-                        <th className="py-2.5 px-3 text-right w-36">Plafon Kuota</th>
-                        <th className="py-2.5 px-3 text-right w-36 text-rose-700">Terpakai</th>
+                        <th className="py-2.5 px-3 text-left w-32">No. WhatsApp</th>
+                        <th className="py-2.5 px-3 text-right w-32">Plafon Kuota</th>
+                        <th className="py-2.5 px-3 text-right w-32 text-rose-700">Potong Saldo</th>
+                        <th className="py-2.5 px-3 text-right w-32 text-sky-700">Beli Cash</th>
                         <th className="py-2.5 px-3 text-right w-36 text-emerald-800">Sisa Saldo</th>
-                        <th className="py-2.5 px-4 text-center w-36">% Terpakai</th>
-                        <th className="py-2.5 px-3 text-center w-28">Status</th>
-                        <th className="py-2.5 px-3 text-center w-24">Aksi</th>
+                        <th className="py-2.5 px-4 text-center w-32">% Saldo</th>
+                        <th className="py-2.5 px-3 text-center w-24">Status</th>
+                        <th className="py-2.5 px-3 text-center w-20">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-emerald-100 font-medium">
                       {filteredEmployees.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-12 text-center text-stone-500">
+                          <td colSpan={11} className="py-12 text-center text-stone-500">
                             <Users className="w-8 h-8 mx-auto mb-2 opacity-40 text-emerald-800" />
                             <p className="font-bold text-sm">Tidak ada data karyawan yang cocok</p>
                             <p className="text-xs opacity-75 mt-0.5">Daftarkan karyawan dengan tipe "KARYAWAN" di Master Data Member</p>
@@ -2525,6 +2543,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                       ) : (
                         filteredEmployees.map((emp: EmployeeAllowanceRecord, idx: number) => {
                           const percentUsed = emp.allowance > 0 ? Math.min(Math.round((emp.spent / emp.allowance) * 100), 100) : 0;
+                          const cashSpentVal = emp.cash_spent_this_month || 0;
                           return (
                             <tr key={emp.customer_id} className="hover:bg-emerald-50/50 transition-colors">
                               <td className="py-2.5 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
@@ -2538,7 +2557,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                                   <span>{emp.name}</span>
                                 </div>
                                 <div className="text-[10px] text-stone-500">
-                                  Reset Terakhir: {emp.last_reset || 'Awal Bulan'}
+                                  {emp.unit || '-'} • Afd {emp.afdeling || '-'}
                                 </div>
                               </td>
                               <td className="py-2.5 px-3 font-mono text-stone-700 whitespace-nowrap">
@@ -2549,6 +2568,20 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
                                 {formatRupiah(emp.spent)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                                {cashSpentVal > 0 ? (
+                                  <div>
+                                    <span className="font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-200 inline-block">
+                                      {formatRupiah(cashSpentVal)}
+                                    </span>
+                                    <div className="text-[9.5px] text-sky-600 font-sans font-semibold mt-0.5">
+                                      {emp.cash_trx_count_this_month} nota tunai
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-stone-400">-</span>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-right whitespace-nowrap">
                                 <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-300 text-xs inline-block">
@@ -2607,6 +2640,9 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-rose-800">
                             {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + e.spent, 0))}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-sky-800">
+                            {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + (e.cash_spent_this_month || 0), 0))}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-emerald-900 text-sm">
                             {formatRupiah(filteredEmployees.reduce((s: number, e: EmployeeAllowanceRecord) => s + e.remaining_balance, 0))}

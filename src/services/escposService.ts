@@ -1,6 +1,69 @@
-import type { Transaction } from '../types';
+import type { Transaction, Customer } from '../types';
 import type { PrinterConfig } from '../components/PrinterSettingsModal';
 import { db } from '../db';
+import { clampEmployeeAllowance, clampEmployeeBalance, getCustomerAfdelingDisplay } from '../utils/customerAccess';
+
+/**
+ * Melengkapi data transaksi dengan NIK, Afdeling, dan Sisa Saldo Member dari database lokal
+ * apabila transaksi lama / hasil sinkronisasi belum menyimpan snapshot member tersebut.
+ */
+export async function enrichTransactionMemberData(transaction: Transaction): Promise<Transaction> {
+  if (!transaction) return transaction;
+  const copy: Transaction = { ...transaction };
+  const rawName = (copy.customer_name || '').replace(/^Member #/i, '').trim();
+  const hasLookupKey = Boolean(copy.member_id || (rawName && rawName.toUpperCase() !== 'PELANGGAN UMUM'));
+  if (!hasLookupKey) return copy;
+
+  const needsLookup =
+    copy.member_remaining_balance === undefined ||
+    !copy.member_afdeling ||
+    !copy.member_code ||
+    !copy.customer_name ||
+    copy.customer_name.startsWith('Member #');
+  if (!needsLookup) return copy;
+
+  try {
+    let cust: Customer | undefined;
+    if (copy.member_id) {
+      cust =
+        (await db.customers.get(copy.member_id)) ||
+        (await db.customers.where('code').equalsIgnoreCase(copy.member_id).first());
+    }
+    if (!cust && rawName && rawName.toUpperCase() !== 'PELANGGAN UMUM') {
+      cust =
+        (await db.customers.where('code').equalsIgnoreCase(rawName).first()) ||
+        (await db.customers.where('name').equalsIgnoreCase(rawName).first());
+    }
+    if (cust) {
+      if (!copy.customer_name || copy.customer_name.startsWith('Member #')) {
+        copy.customer_name = cust.name;
+      }
+      if (!copy.member_code && cust.code) {
+        copy.member_code = cust.code;
+      }
+      const afdInfo = getCustomerAfdelingDisplay(cust);
+      if (!copy.member_afdeling && afdInfo) {
+        copy.member_afdeling = afdInfo.fullLabel;
+        copy.member_unit = afdInfo.unit;
+      }
+      if (
+        copy.member_remaining_balance === undefined &&
+        (cust.type === 'KARYAWAN' || cust.type === 'MEMBER' || cust.deposit_balance !== undefined)
+      ) {
+        const maxQuota =
+          cust.type === 'KARYAWAN'
+            ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit)
+            : Infinity;
+        copy.member_remaining_balance =
+          cust.type === 'KARYAWAN'
+            ? clampEmployeeBalance(cust.deposit_balance, maxQuota)
+            : Number(cust.deposit_balance) || 0;
+      }
+    }
+  } catch {}
+
+  return copy;
+}
 
 // Standard ESC/POS Constants from Technical Spec
 const ESC = 0x1B;
@@ -151,38 +214,51 @@ export class ESCPOSBuilder {
     // 1. Header Area
     this.alignCenter();
 
-    // Store Name & Header Text
+    // Store Name & Header Text (dibungkus rapi sesuai lebar kolom kertas 58mm/80mm)
     const headerLines = (config.headerText || 'KETOKO MODERN POS\nJl. Pahlawan No. 45 Samarinda').split('\n');
     if (headerLines.length > 0) {
       this.bold(true)
-        .textSize(style === 'modern' || style === 'detailed' ? 'double_h' : 'normal')
-        .addLine(headerLines[0])
-        .textSize('normal')
-        .bold(false);
+        .textSize(style === 'modern' || style === 'detailed' ? 'double_h' : 'normal');
+      for (const wrappedTitle of wrapTextToWidth(headerLines[0], width)) {
+        this.addLine(wrappedTitle);
+      }
+      this.textSize('normal').bold(false);
       for (let i = 1; i < headerLines.length; i++) {
-        this.addLine(headerLines[i]);
+        for (const subLine of wrapTextToWidth(headerLines[i], width)) {
+          this.addLine(subLine);
+        }
       }
     }
 
     if (config.showQueueNumber) {
       this.bold(true)
-        .addLine(`*** NO. ANTRIAN: #${transaction.receipt_number.slice(-3)} ***`)
+        .addLine(`** ANTRIAN: #${transaction.receipt_number.slice(-3)} **`)
         .bold(false);
     }
+
+    const timeStr = new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = new Date(transaction.created_at).toLocaleDateString('id-ID');
 
     // 2. Metadata
     this.addLine('='.repeat(width))
       .alignLeft()
-      .addLine(formatRow(`No : ${transaction.receipt_number}`, new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }), width))
-      .addLine(`Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}`);
+      .addLine(formatRow(`No : ${transaction.receipt_number}`, timeStr, width))
+      .addLine(`Tgl: ${dateStr}`);
 
     if (config.showCashier) {
-      this.addLine(`Ksr: ${transaction.cashier_name || 'Kasir'} (BR-01)`);
+      this.addLine(`Ksr: ${(transaction.cashier_name || 'Kasir').slice(0, width - 5)}`);
     }
 
     if (transaction.customer_name || transaction.member_id) {
       const cleanCust = (transaction.customer_name || '').replace(/^Member #/i, '').trim();
-      this.addLine(`Plg: ${cleanCust || `Member ${transaction.member_id}`}`);
+      const custDisplay = cleanCust || `Member ${transaction.member_id}`;
+      this.addLine(`Plg: ${custDisplay.slice(0, width - 5)}`);
+      if (transaction.member_code) {
+        this.addLine(`NIK: ${transaction.member_code}`.slice(0, width));
+      }
+      if (transaction.member_afdeling) {
+        this.addLine(`Afd: ${transaction.member_afdeling.replace(/•/g, '-')}`.slice(0, width));
+      }
     }
 
     this.addLine('-'.repeat(width));
@@ -191,12 +267,15 @@ export class ESCPOSBuilder {
     for (let i = 0; i < transaction.items.length; i++) {
       const item = transaction.items[i];
       if (style === 'compact') {
-        const shortName = item.product_name.slice(0, width - 14);
-        const qtyRow = `${item.qty}x ${shortName}`;
-        this.addLine(formatRow(qtyRow, formatRupiah(item.subtotal_item), width));
+        const amtStr = formatRupiah(item.subtotal_item);
+        const maxName = Math.max(6, width - amtStr.length - `${item.qty}x `.length - 1);
+        const qtyRow = `${item.qty}x ${item.product_name.slice(0, maxName)}`;
+        this.addLine(formatRow(qtyRow, amtStr, width));
       } else {
-        this.addLine(`${i + 1}. ${item.product_name.slice(0, width)}`);
-        const qtyPrice = `   ${item.qty} x ${formatRupiah(item.price_applied)}` + (item.is_wholesale ? ' [GROSIR]' : '');
+        for (const prodLine of wrapTextToWidth(`${i + 1}. ${item.product_name}`, width)) {
+          this.addLine(prodLine);
+        }
+        const qtyPrice = `  ${item.qty} x ${formatRupiah(item.price_applied)}` + (item.is_wholesale ? ' [G]' : '');
         this.addLine(formatRow(qtyPrice, formatRupiah(item.subtotal_item), width));
       }
     }
@@ -207,7 +286,7 @@ export class ESCPOSBuilder {
     this.addLine(formatRow('Subtotal', formatRupiah(transaction.subtotal), width));
 
     if (config.showDiscountSaving && transaction.discount_amount > 0) {
-      this.addLine(formatRow('Diskon Promo', '-' + formatRupiah(transaction.discount_amount), width));
+      this.addLine(formatRow('Diskon', '-' + formatRupiah(transaction.discount_amount), width));
     }
 
     if (transaction.tax_amount > 0) {
@@ -223,12 +302,32 @@ export class ESCPOSBuilder {
       .bold(false);
 
     this.addLine(formatRow(`Bayar (${transaction.payment_method})`, formatRupiah(transaction.cash_given), width))
-      .addLine(formatRow('Kembalian', formatRupiah(transaction.change_returned), width));
+      .addLine(
+        formatRow(
+          transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian',
+          formatRupiah(
+            transaction.payment_method === 'TEMPO'
+              ? Math.max(0, transaction.grand_total - (transaction.cash_given || 0))
+              : transaction.change_returned
+          ),
+          width
+        )
+      );
+
+    if (transaction.member_remaining_balance !== undefined) {
+      this.addLine('-'.repeat(width));
+      if (transaction.payment_method === 'SALDO' && transaction.member_balance_before !== undefined) {
+        this.addLine(formatRow('Saldo Awal', formatRupiah(transaction.member_balance_before), width));
+      }
+      this.bold(true)
+        .addLine(formatRow('Sisa Saldo', formatRupiah(transaction.member_remaining_balance), width))
+        .bold(false);
+    }
 
     if (config.showDiscountSaving && transaction.discount_amount > 0) {
       this.alignCenter()
         .bold(true)
-        .addLine(`*** ANDA HEMAT: ${formatRupiah(transaction.discount_amount)} ***`)
+        .addLine(`* HEMAT: ${formatRupiah(transaction.discount_amount)} *`.slice(0, width))
         .bold(false)
         .alignLeft();
     }
@@ -239,11 +338,13 @@ export class ESCPOSBuilder {
     this.alignCenter();
     const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n');
     for (const fl of footerLines) {
-      this.addLine(fl);
+      for (const wrappedFl of wrapTextToWidth(fl, width)) {
+        this.addLine(wrappedFl);
+      }
     }
 
     if (config.showBarcodeFooter) {
-      this.addLine(`[ ${transaction.receipt_number} ]`);
+      this.addLine(`[ ${transaction.receipt_number} ]`.slice(0, width));
     }
 
     this.cut(config.autoCut);
@@ -256,12 +357,37 @@ export class ESCPOSBuilder {
   }
 }
 
-// Formatter helper for receipt printing (32 characters wide for 58mm printer, 48 for 80mm)
+// Helper word-wrap agar teks header/nama barang/footer tidak terpotong tengah kata pada kertas 58mm (32 kolom)
+function wrapTextToWidth(text: string, width = 32): string[] {
+  const clean = String(text || '').trim();
+  if (!clean) return [''];
+  if (clean.length <= width) return [clean];
+  const words = clean.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      current = word.length > width ? word.slice(0, width) : word;
+    } else if (current.length + 1 + word.length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word.length > width ? word.slice(0, width) : word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+// Formatter helper for receipt printing (strictly <= 32 chars for 58mm printer, <= 48 for 80mm, never wraps nominal Rp)
 export function formatRow(left: string, right: string, width = 32): string {
-  const leftLen = left.length;
-  const rightLen = right.length;
-  const spaces = Math.max(1, width - leftLen - rightLen);
-  return left + ' '.repeat(spaces) + right;
+  const cleanRight = String(right || '');
+  const maxLeftLen = Math.max(1, width - cleanRight.length - 1);
+  const cleanLeft = String(left || '').length > maxLeftLen
+    ? String(left || '').slice(0, maxLeftLen)
+    : String(left || '');
+  const spaces = Math.max(1, width - cleanLeft.length - cleanRight.length);
+  return cleanLeft + ' '.repeat(spaces) + cleanRight;
 }
 
 export function formatRupiah(num: number): string {
@@ -273,12 +399,20 @@ let cachedUsbDevice: any = null;
 /**
  * Direct WebUSB Printer Driver (Windows WinUSB / Linux / Chromium / Edge)
  * Supports Xprinter, Epson, POS-58, POS-80, Panda, Sunmi, VSC, Eppos, Iware
- * Otomatis fallback ke Windows Thermal Spooler jika port USB dikunci oleh driver Windows (usbprint.sys)
+ * Otomatis fallback ke Windows Thermal Spooler full-width jika port USB dikunci oleh driver Windows (usbprint.sys)
  */
-export async function printToWebUSB(data: Uint8Array, forceNewDevice = false): Promise<{ success: boolean; message: string }> {
+export async function printToWebUSB(
+  data: Uint8Array,
+  forceNewDevice = false,
+  fallbackTransaction?: Transaction,
+  fallbackConfig?: PrinterConfig
+): Promise<{ success: boolean; message: string }> {
   try {
     if (!('usb' in navigator)) {
-      return await printRawBufferViaSpooler(data);
+      if (fallbackTransaction && fallbackConfig) {
+        return await printThermalReceiptSpooler(fallbackTransaction, fallbackConfig);
+      }
+      return await printRawBufferViaSpooler(data, fallbackConfig?.paperWidth || '58mm');
     }
 
     let device: any = !forceNewDevice ? cachedUsbDevice : null;
@@ -337,7 +471,7 @@ export async function printToWebUSB(data: Uint8Array, forceNewDevice = false): P
     }
     const msg = String(err.message || '').toLowerCase();
     // Di Windows 10/11, driver bawaan Windows (POS-58 / POS-80 / usbprint.sys) mengunci interface USB.
-    // Otomatis alihkan ke Windows Thermal Spooler (58mm/80mm) agar struk tetap langsung tercetak!
+    // Otomatis alihkan ke Windows Thermal Spooler Full-Width (58mm/80mm) agar struk tercetak rapi tanpa terpotong!
     if (
       err.name === 'NetworkError' ||
       err.name === 'SecurityError' ||
@@ -345,7 +479,10 @@ export async function printToWebUSB(data: Uint8Array, forceNewDevice = false): P
       msg.includes('access denied') ||
       msg.includes('unable to claim')
     ) {
-      return await printRawBufferViaSpooler(data);
+      if (fallbackTransaction && fallbackConfig) {
+        return await printThermalReceiptSpooler(fallbackTransaction, fallbackConfig);
+      }
+      return await printRawBufferViaSpooler(data, fallbackConfig?.paperWidth || '58mm');
     }
     return { 
       success: false, 
@@ -717,25 +854,29 @@ export async function printRawBufferViaSpooler(
   <style>
     @page {
       size: ${is80 ? '80mm' : '58mm'} auto;
-      margin: 0mm;
+      margin: 0mm !important;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      width: ${is80 ? '72mm' : '48mm'};
-      margin: 0 auto;
-      padding: 2mm 1mm 6mm 1mm;
-      font-family: 'Courier New', Consolas, monospace;
-      font-size: ${is80 ? '11.5px' : '10px'};
-      line-height: 1.28;
+    html, body {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '0.8mm 0.3mm 4mm 0.3mm'} !important;
+      font-family: Consolas, 'Liberation Mono', 'Courier New', monospace;
+      font-size: ${is80 ? '10.5px' : '8.6px'};
+      line-height: 1.25;
       color: #000;
       background: #fff;
-      font-weight: 600;
+      font-weight: 700;
+      -webkit-print-color-adjust: exact;
     }
     pre {
+      width: 100%;
       font-family: inherit;
       font-size: inherit;
+      letter-spacing: ${is80 ? '0px' : '-0.2px'};
       white-space: pre-wrap;
-      word-break: break-word;
+      overflow-wrap: break-word;
     }
   </style>
 </head>
@@ -760,13 +901,15 @@ export async function printRawBufferViaSpooler(
 }
 
 /**
- * Cetak Struk Kasir Thermal 58mm/80mm terformat penuh via Driver Printer Windows (POS-58 / POS-80 / Epson / Xprinter)
+ * Cetak Struk Kasir Thermal 58mm/80mm Full-Width via Driver Printer Windows (POS-58 / POS-80 / Epson / Xprinter)
+ * Menggunakan 100% lebar area cetak driver tanpa margin samping berlebih & nominal Rp anti-terpotong.
  */
 export async function printThermalReceiptSpooler(
-  transaction: Transaction,
+  rawTransaction: Transaction,
   config: PrinterConfig
 ): Promise<{ success: boolean; message: string }> {
   try {
+    const transaction = await enrichTransactionMemberData(rawTransaction);
     const is80 = config.paperWidth === '80mm';
     const headerLines = (config.headerText || 'KETOKO POS').split('\n');
     const storeTitle = headerLines[0] || 'KETOKO POS';
@@ -774,6 +917,7 @@ export async function printThermalReceiptSpooler(
     const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n');
     const cashGiven = transaction.cash_given || transaction.grand_total;
     const changeDue = Math.max(0, cashGiven - transaction.grand_total);
+    const cleanCustomer = (transaction.customer_name || '').replace(/^Member #/i, '').trim() || (transaction.member_id ? `Member #${transaction.member_id}` : '');
 
     const html = `<!DOCTYPE html>
 <html lang="id">
@@ -783,32 +927,60 @@ export async function printThermalReceiptSpooler(
   <style>
     @page {
       size: ${is80 ? '80mm' : '58mm'} auto;
-      margin: 0mm;
+      margin: 0mm !important;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      width: ${is80 ? '72mm' : '48mm'};
-      margin: 0 auto;
-      padding: 2mm 1mm 6mm 1mm;
-      font-family: 'Courier New', Consolas, 'Lucida Console', monospace;
+    html, body {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '0.8mm 0.3mm 4mm 0.3mm'} !important;
+      font-family: Consolas, 'Segoe UI Mono', 'Liberation Mono', 'Courier New', monospace;
       font-size: ${is80 ? '11.5px' : '10px'};
-      line-height: 1.25;
+      line-height: 1.28;
       color: #000000;
       background: #ffffff;
+      font-weight: 600;
       -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
-    .center { text-align: center; }
+    .center { text-align: center; width: 100%; }
     .right { text-align: right; }
     .bold { font-weight: 800; }
-    .title { font-size: ${is80 ? '14px' : '12px'}; font-weight: 900; margin-bottom: 2px; }
-    .sub { font-size: ${is80 ? '10.5px' : '9px'}; line-height: 1.2; }
-    .divider { border-top: 1px dashed #000; margin: 4px 0; }
-    .divider-double { border-top: 2px solid #000; margin: 4px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; margin: 1.5px 0; }
-    .item-title { font-weight: 700; margin-top: 2px; word-break: break-word; }
+    .title { font-size: ${is80 ? '14px' : '11.5px'}; font-weight: 900; line-height: 1.2; margin-bottom: 2px; word-break: break-word; }
+    .sub { font-size: ${is80 ? '10.5px' : '9.2px'}; line-height: 1.22; word-break: break-word; }
+    .divider { width: 100%; border-top: 1px dashed #000; margin: 3.5px 0; }
+    .divider-double { width: 100%; border-top: 2px solid #000; margin: 3.5px 0; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      width: 100%;
+      gap: 4px;
+      margin: 1.5px 0;
+    }
+    .lbl {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow-wrap: anywhere;
+    }
+    .amt {
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      text-align: right;
+      font-weight: 700;
+    }
+    .amt-bold {
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      text-align: right;
+      font-weight: 900;
+    }
+    .item-block { width: 100%; margin: 2px 0; }
+    .item-title { font-weight: 800; line-height: 1.22; word-break: break-word; }
     .total-row { font-size: ${is80 ? '13px' : '11.5px'}; font-weight: 900; padding: 2px 0; }
     .logo { max-width: ${is80 ? '36mm' : '26mm'}; max-height: 18mm; object-fit: contain; margin: 0 auto 3px auto; display: block; filter: grayscale(100%) contrast(150%); }
-    .badge { border: 1px solid #000; padding: 1px 4px; font-weight: 800; display: inline-block; margin: 2px 0; font-size: ${is80 ? '10.5px' : '9px'}; }
+    .badge { border: 1px solid #000; padding: 1px 5px; font-weight: 800; display: inline-block; margin: 2px 0; font-size: ${is80 ? '10.5px' : '9px'}; }
   </style>
 </head>
 <body>
@@ -822,23 +994,25 @@ export async function printThermalReceiptSpooler(
   <div class="divider-double"></div>
 
   <div class="row">
-    <span>No: <b>${transaction.receipt_number}</b></span>
-    <span>${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+    <span class="lbl">No: <b>${transaction.receipt_number}</b></span>
+    <span class="amt">${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
   </div>
   <div class="row">
-    <span>Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}</span>
-    ${config.showCashier ? `<span>Ksr: ${transaction.cashier_name || 'Kasir'}</span>` : ''}
+    <span class="lbl">Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}</span>
   </div>
-  ${transaction.customer_name || transaction.member_id ? `<div class="row"><span>Plg: <b>${(transaction.customer_name || '').replace(/^Member #/i, '').trim() || `Member #${transaction.member_id}`}</b></span></div>` : ''}
+  ${config.showCashier ? `<div class="row"><span class="lbl">Ksr: ${transaction.cashier_name || 'Kasir'}</span></div>` : ''}
+  ${cleanCustomer ? `<div class="row"><span class="lbl">Plg: <b>${cleanCustomer}</b></span></div>` : ''}
+  ${transaction.member_code ? `<div class="row"><span class="lbl">NIK: ${transaction.member_code}</span></div>` : ''}
+  ${transaction.member_afdeling ? `<div class="row"><span class="lbl">Afd: <b>${transaction.member_afdeling}</b></span></div>` : ''}
 
   <div class="divider"></div>
 
   ${transaction.items.map((item, idx) => `
-    <div>
+    <div class="item-block">
       <div class="item-title">${idx + 1}. ${item.product_name}</div>
       <div class="row">
-        <span style="padding-left:8px;">${item.qty} x ${formatRupiah(item.price_applied)}</span>
-        <span class="bold">${formatRupiah(item.subtotal_item)}</span>
+        <span class="lbl" style="padding-left:6px;">${item.qty} x ${formatRupiah(item.price_applied)}${item.is_wholesale ? ' (Grosir)' : ''}</span>
+        <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
       </div>
     </div>
   `).join('')}
@@ -846,40 +1020,51 @@ export async function printThermalReceiptSpooler(
   <div class="divider"></div>
 
   <div class="row">
-    <span>Subtotal</span>
-    <span>${formatRupiah(transaction.subtotal)}</span>
+    <span class="lbl">Subtotal</span>
+    <span class="amt">${formatRupiah(transaction.subtotal)}</span>
   </div>
   ${transaction.discount_amount > 0 ? `
   <div class="row">
-    <span>Diskon</span>
-    <span>-${formatRupiah(transaction.discount_amount)}</span>
+    <span class="lbl">Diskon</span>
+    <span class="amt">-${formatRupiah(transaction.discount_amount)}</span>
   </div>` : ''}
   ${transaction.tax_amount > 0 ? `
   <div class="row">
-    <span>PPN</span>
-    <span>${formatRupiah(transaction.tax_amount)}</span>
+    <span class="lbl">PPN</span>
+    <span class="amt">${formatRupiah(transaction.tax_amount)}</span>
   </div>` : ''}
 
   <div class="divider-double"></div>
 
   <div class="row total-row">
-    <span>TOTAL</span>
-    <span>${formatRupiah(transaction.grand_total)}</span>
+    <span class="lbl">TOTAL</span>
+    <span class="amt-bold">${formatRupiah(transaction.grand_total)}</span>
   </div>
   <div class="row">
-    <span>Bayar (${transaction.payment_method})</span>
-    <span>${formatRupiah(cashGiven)}</span>
+    <span class="lbl">Bayar (${transaction.payment_method})</span>
+    <span class="amt">${formatRupiah(cashGiven)}</span>
   </div>
   <div class="row bold">
-    <span>${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span>
-    <span>${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
+    <span class="lbl">${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span>
+    <span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
   </div>
-
+  ${transaction.member_remaining_balance !== undefined ? `
   <div class="divider"></div>
+  ${transaction.payment_method === 'SALDO' && transaction.member_balance_before !== undefined ? `
+  <div class="row">
+    <span class="lbl">Saldo Awal</span>
+    <span class="amt">${formatRupiah(transaction.member_balance_before)}</span>
+  </div>` : ''}
+  <div class="row bold">
+    <span class="lbl">Sisa Saldo Member</span>
+    <span class="amt-bold">${formatRupiah(transaction.member_remaining_balance)}</span>
+  </div>` : ''}
 
-  <div class="center" style="margin-top:4px;">
+  <div class="divider-double"></div>
+
+  <div class="center" style="margin-top:3px;">
     ${footerLines.map((l) => `<div class="sub">${l}</div>`).join('')}
-    ${config.showBarcodeFooter ? `<div style="margin-top:4px;font-weight:800;letter-spacing:1px;">*${transaction.receipt_number}*</div>` : ''}
+    ${config.showBarcodeFooter ? `<div style="margin-top:3px;font-weight:800;font-size:${is80 ? '10px' : '8.5px'};">*${transaction.receipt_number}*</div>` : ''}
   </div>
 
   <script>
@@ -1416,15 +1601,17 @@ export function generateDotMatrixHTML(
 
     <div class="sep-line"></div>
 
-    <!-- Info Pelanggan & Pembayaran (Keterangan jenis kertas telah dihilangkan sesuai permintaan) -->
+    <!-- Info Pelanggan & Pembayaran -->
     <table class="info-table">
       <tr>
         <td style="width: 54%;">
-          <div>Kepada Yth : <b class="cust-highlight">${custDisplayName.toUpperCase()}</b></div>
+          <div>Kepada Yth : <b class="cust-highlight">${custDisplayName.toUpperCase()}</b>${transaction.member_code ? ` <span class="font-mono">(${transaction.member_code})</span>` : ''}</div>
+          ${transaction.member_afdeling ? `<div>Unit / Afd : <b>${transaction.member_afdeling}</b></div>` : ''}
           <div>Status     : <span class="status-box">${(transaction.payment_method as string) === 'TEMPO' || (transaction.payment_method as string) === 'DEBT' ? 'KREDIT / JATUH TEMPO' : 'LUNAS / TUNAI'}</span></div>
         </td>
-        <td style="width: 46%; text-align: right;">
+        <td style="width: 46%; text-align: right; vertical-align: top;">
           <div>Pembayaran : <b>${transaction.payment_method}</b></div>
+          ${transaction.member_remaining_balance !== undefined ? `<div>Sisa Saldo : <b class="font-mono">${formatRupiah(transaction.member_remaining_balance)}</b></div>` : ''}
         </td>
       </tr>
     </table>
@@ -1511,6 +1698,11 @@ export function generateDotMatrixHTML(
               <td style="width: 44%;">Kembalian:</td>
               <td style="width: 56%;" class="text-right font-mono font-bold">${formatRupiah(transaction.change_returned)}</td>
             </tr>
+            ${transaction.member_remaining_balance !== undefined ? `
+            <tr>
+              <td style="width: 44%; font-weight: 800;">Sisa Saldo Member:</td>
+              <td style="width: 56%; font-weight: 900;" class="text-right font-mono">${formatRupiah(transaction.member_remaining_balance)}</td>
+            </tr>` : ''}
           </table>
         </td>
       </tr>
@@ -1555,25 +1747,7 @@ export async function printEpsonLX310Invoice(
   storeProfile?: any
 ): Promise<{ success: boolean; message: string }> {
   try {
-    let resolvedTx = { ...transaction };
-    // Resolusi nama pelanggan asli dari database jika kosong atau berformat Member #...
-    if (!resolvedTx.customer_name || resolvedTx.customer_name.startsWith('Member #') || resolvedTx.customer_name.startsWith('MEMBER #')) {
-      const searchKey = resolvedTx.member_id || (resolvedTx.customer_name ? resolvedTx.customer_name.replace(/^Member #/i, '').trim() : '');
-      if (searchKey) {
-        try {
-          const cust = await db.customers.get(searchKey);
-          if (cust && cust.name) {
-            resolvedTx.customer_name = cust.name;
-          } else {
-            const byCode = await db.customers.where('code').equalsIgnoreCase(searchKey).first();
-            if (byCode && byCode.name) {
-              resolvedTx.customer_name = byCode.name;
-            }
-          }
-        } catch {}
-      }
-    }
-
+    const resolvedTx = await enrichTransactionMemberData(transaction);
     const html = generateDotMatrixHTML(resolvedTx, config, storeProfile);
     const printWindow = window.open('', '_blank', 'width=850,height=600');
     if (!printWindow) {

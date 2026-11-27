@@ -10,6 +10,7 @@ export interface EmployeeMonthTrx {
   created_at: string;
   grand_total: number;
   store_id: string;
+  payment_method?: string;
   items: string;
 }
 
@@ -35,6 +36,9 @@ export interface EmployeeAllowanceRecord {
   spent_this_month: number;
   spent: number;
   trx_count_this_month: number;
+  cash_spent_this_month: number;
+  cash_spent: number;
+  cash_trx_count_this_month: number;
   utilization_percent: number;
   status: 'ACTIVE' | 'EXHAUSTED';
   last_allowance_reset: string;
@@ -48,6 +52,7 @@ export interface AfdelingAllowanceSummary {
   totalEmployees: number;
   totalAllowance: number;
   totalSpent: number;
+  totalCashSpent: number;
   totalRemaining: number;
   utilizationRate: number;
 }
@@ -59,6 +64,7 @@ export interface EmployeeAllowanceReportSummary {
   totalEmployees: number;
   totalAllowance: number;
   totalSpent: number;
+  totalCashSpent: number;
   totalRemaining: number;
   overallUtilization: number;
   employees: EmployeeAllowanceRecord[];
@@ -68,6 +74,8 @@ export interface EmployeeAllowanceReportSummary {
     total_allowance: number;
     total_allowance_budget: number;
     total_spent: number;
+    total_cash_spent: number;
+    cash_shopper_count: number;
     total_remaining_balance: number;
     utilization_rate: number;
     active_count: number;
@@ -361,9 +369,13 @@ export class EmployeeAllowanceService {
     const isolatedCusts = filterCustomersForStore(customers, activeStoreId);
     const employees = isolatedCusts.filter((c) => c.type === 'KARYAWAN');
 
-    // Filter transaksi belanja yang dibayar menggunakan SALDO pada bulan terpilih
+    // Filter transaksi belanja yang dibayar menggunakan SALDO maupun CASH (Tunai/Non-Saldo) pada bulan terpilih
     const saldoTrx = transactions.filter((t) => t.payment_method === 'SALDO');
+    const cashDirectTrx = transactions.filter(
+      (t) => t.payment_method !== 'SALDO' && t.payment_method !== 'TEMPO' && (t.member_id || (t.customer_name && t.customer_name !== 'PELANGGAN UMUM'))
+    );
     const monthTrx = saldoTrx.filter((t) => (t.created_at || '').slice(0, 7) === monthKey);
+    const monthCashTrx = cashDirectTrx.filter((t) => (t.created_at || '').slice(0, 7) === monthKey);
     const isCurrentMonth = monthKey === this.getCurrentMonthKey();
 
     const matchesEmp = (t: Transaction, emp: Customer) => {
@@ -383,12 +395,14 @@ export class EmployeeAllowanceService {
 
     const records: EmployeeAllowanceRecord[] = employees.map((emp) => {
       const empSales = monthTrx.filter((t) => matchesEmp(t, emp));
-      const empAllSales = saldoTrx
+      const empCashSales = monthCashTrx.filter((t) => matchesEmp(t, emp));
+      const empAllSales = [...saldoTrx, ...cashDirectTrx]
         .filter((t) => matchesEmp(t, emp))
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       const lastTrx = empAllSales[0];
 
       const spent = empSales.reduce((sum, t) => sum + (Number(t.grand_total) || 0), 0);
+      const cashSpent = empCashSales.reduce((sum, t) => sum + (Number(t.grand_total) || 0), 0);
       const allowance = clampEmployeeAllowance(emp.monthly_allowance);
       // Bulan berjalan: pakai saldo aktual. Bulan lalu: kuota - pemakaian (histori potong gaji tetap utuh walau sudah reset Tgl 1)
       const currentBalance = isCurrentMonth
@@ -398,6 +412,9 @@ export class EmployeeAllowanceService {
       const status: 'ACTIVE' | 'EXHAUSTED' = currentBalance > 0 ? 'ACTIVE' : 'EXHAUSTED';
 
       const meta = parseEmployeeMeta(emp);
+      const combinedMonthTrx = [...empSales, ...empCashSales].sort((a, b) =>
+        String(b.created_at).localeCompare(String(a.created_at))
+      );
 
       return {
         id: emp.id,
@@ -417,6 +434,9 @@ export class EmployeeAllowanceService {
         spent_this_month: spent,
         spent,
         trx_count_this_month: empSales.length,
+        cash_spent_this_month: cashSpent,
+        cash_spent: cashSpent,
+        cash_trx_count_this_month: empCashSales.length,
         utilization_percent: Math.round(utilization * 10) / 10,
         status,
         last_allowance_reset: emp.last_allowance_reset || '-',
@@ -425,21 +445,28 @@ export class EmployeeAllowanceService {
         last_purchase_date: lastTrx?.created_at,
         last_purchase_total: lastTrx ? Number(lastTrx.grand_total) || 0 : 0,
         last_purchase_items: summarizeItems(lastTrx),
-        month_transactions: empSales.map((t) => ({
+        month_transactions: combinedMonthTrx.map((t) => ({
           receipt_number: t.receipt_number,
           created_at: t.created_at,
           grand_total: Number(t.grand_total) || 0,
           store_id: t.store_id || '',
+          payment_method: t.payment_method,
           items: summarizeItems(t)
         }))
       };
     });
 
-    // Urutkan berdasarkan pemakaian tertinggi atau nama
-    records.sort((a, b) => b.spent_this_month - a.spent_this_month || a.name.localeCompare(b.name));
+    // Urutkan berdasarkan pemakaian saldo/cash tertinggi atau nama
+    records.sort(
+      (a, b) =>
+        (b.spent_this_month + b.cash_spent_this_month) - (a.spent_this_month + a.cash_spent_this_month) ||
+        a.name.localeCompare(b.name)
+    );
 
     const totalAllowance = records.reduce((s, r) => s + r.monthly_allowance, 0);
     const totalSpent = records.reduce((s, r) => s + r.spent_this_month, 0);
+    const totalCashSpent = records.reduce((s, r) => s + r.cash_spent_this_month, 0);
+    const cashShopperCount = records.filter((r) => r.cash_spent_this_month > 0).length;
     const totalRemaining = records.reduce((s, r) => s + r.deposit_balance, 0);
     const overallUtilization = totalAllowance > 0 ? Math.round((totalSpent / totalAllowance) * 1000) / 10 : 0;
     const activeCount = records.filter(r => r.status === 'ACTIVE').length;
@@ -453,6 +480,7 @@ export class EmployeeAllowanceService {
       totalEmployees: records.length,
       totalAllowance,
       totalSpent,
+      totalCashSpent,
       totalRemaining,
       overallUtilization,
       employees: records,
@@ -462,6 +490,8 @@ export class EmployeeAllowanceService {
         total_allowance: totalAllowance,
         total_allowance_budget: totalAllowance,
         total_spent: totalSpent,
+        total_cash_spent: totalCashSpent,
+        cash_shopper_count: cashShopperCount,
         total_remaining_balance: totalRemaining,
         utilization_rate: overallUtilization,
         active_count: activeCount,
@@ -486,21 +516,19 @@ export class EmployeeAllowanceService {
   <style>
     @page { size: A4 landscape; margin: 12mm; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1f2937; margin: 0; padding: 10px; font-size: 11px; }
-    .header { text-align: center; border-bottom: 2px solid #96633b; padding-bottom: 12px; margin-bottom: 16px; }
-    .header h1 { margin: 0; font-size: 18px; color: #5c3c26; }
+    .header { text-align: center; border-bottom: 2px solid #047857; padding-bottom: 12px; margin-bottom: 16px; }
+    .header h1 { margin: 0; font-size: 18px; color: #064e3b; }
     .header h2 { margin: 4px 0 0 0; font-size: 13px; color: #4b5563; font-weight: normal; }
-    .kpi-container { display: flex; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
-    .kpi-card { flex: 1; background: #faf5f0; border: 1px solid #e7d8cb; border-radius: 8px; padding: 10px; text-align: center; }
-    .kpi-label { font-size: 10px; color: #7c5c43; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
-    .kpi-value { font-size: 15px; font-weight: bold; color: #3d2617; }
+    .kpi-container { display: flex; justify-content: space-between; margin-bottom: 16px; gap: 8px; }
+    .kpi-card { flex: 1; background: #f8faf9; border: 1px solid #d1fae5; border-radius: 8px; padding: 10px; text-align: center; }
+    .kpi-label { font-size: 9.5px; color: #065f46; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+    .kpi-value { font-size: 14px; font-weight: bold; color: #0f172a; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th { background: #5c3c26; color: #ffffff; padding: 8px 6px; font-size: 10.5px; text-align: left; }
+    th { background: #064e3b; color: #ffffff; padding: 8px 6px; font-size: 10px; text-align: left; }
     th.num, td.num { text-align: right; }
     th.center, td.center { text-align: center; }
-    td { padding: 6px; border-bottom: 1px solid #e5e7eb; font-size: 10.5px; }
-    tr:nth-child(even) { background-color: #fdfaf7; }
-    .progress-bar { background: #e5e7eb; border-radius: 4px; height: 6px; width: 60px; display: inline-block; overflow: hidden; vertical-align: middle; margin-right: 4px; }
-    .progress-fill { background: #10b981; height: 100%; }
+    td { padding: 6px; border-bottom: 1px solid #e5e7eb; font-size: 10px; }
+    tr:nth-child(even) { background-color: #f8fafc; }
     .footer { margin-top: 24px; display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; }
     .signature-box { text-align: center; width: 180px; margin-top: 30px; }
     .signature-line { border-bottom: 1px solid #000; margin-top: 50px; }
@@ -509,8 +537,8 @@ export class EmployeeAllowanceService {
 <body>
   <div class="header">
     <h1>${storeName}</h1>
-    <h2>LAPORAN REKAPITULASI SALDO &amp; POTONGAN BELANJA KARYAWAN</h2>
-    <div style="font-size: 11px; font-weight: bold; margin-top: 4px; color: #84532d;">Periode: ${report.monthFormatted}</div>
+    <h2>LAPORAN REKAPITULASI SALDO KUOTA &amp; PEMBELIAN CASH KARYAWAN</h2>
+    <div style="font-size: 11px; font-weight: bold; margin-top: 4px; color: #047857;">Periode: ${report.monthFormatted}</div>
   </div>
 
   <div class="kpi-container">
@@ -523,15 +551,19 @@ export class EmployeeAllowanceService {
       <div class="kpi-value">${formatRupiah(report.totalAllowance)}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Total Belanja Terpakai</div>
+      <div class="kpi-label">Potong Saldo / Gaji</div>
       <div class="kpi-value" style="color: #b91c1c;">${formatRupiah(report.totalSpent)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Belanja Cash (Tunai)</div>
+      <div class="kpi-value" style="color: #0369a1;">${formatRupiah(report.totalCashSpent || 0)}</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Sisa Saldo Kuota</div>
       <div class="kpi-value" style="color: #047857;">${formatRupiah(report.totalRemaining)}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Persentase Penyerapan</div>
+      <div class="kpi-label">Penyerapan Saldo</div>
       <div class="kpi-value">${report.overallUtilization}%</div>
     </div>
   </div>
@@ -539,13 +571,14 @@ export class EmployeeAllowanceService {
   <table>
     <thead>
       <tr>
-        <th class="center" style="width: 30px;">No</th>
+        <th class="center" style="width: 28px;">No</th>
         <th>NIK / Kode</th>
         <th>Nama Karyawan</th>
         <th>Unit / Afdeling</th>
         <th class="num">Plafon</th>
-        <th class="num">Potong Gaji</th>
-        <th class="num">Sisa</th>
+        <th class="num">Potong Saldo</th>
+        <th class="num">Beli Cash</th>
+        <th class="num">Sisa Saldo</th>
         <th>Barang Terakhir Dibeli</th>
         <th class="num">Nominal Terakhir</th>
       </tr>
@@ -559,6 +592,7 @@ export class EmployeeAllowanceService {
           <td>${e.unit || '-'} • Afd ${e.afdeling || '-'}</td>
           <td class="num">${formatRupiah(e.monthly_allowance)}</td>
           <td class="num" style="color: #b91c1c; font-weight: bold;">${formatRupiah(e.spent_this_month)}</td>
+          <td class="num" style="color: #0369a1; font-weight: bold;">${e.cash_spent_this_month ? formatRupiah(e.cash_spent_this_month) : '-'}</td>
           <td class="num" style="color: #047857; font-weight: bold;">${formatRupiah(e.deposit_balance)}</td>
           <td style="font-size: 9.5px;">${e.last_purchase_items || '-'}${e.last_purchase_date ? `<br/><span style="color:#6b7280">${new Date(e.last_purchase_date).toLocaleDateString('id-ID')}</span>` : ''}</td>
           <td class="num">${e.last_purchase_total ? formatRupiah(e.last_purchase_total) : '-'}</td>
@@ -566,10 +600,11 @@ export class EmployeeAllowanceService {
       `).join('')}
     </tbody>
     <tfoot>
-      <tr style="background: #f4ede6; font-weight: bold;">
+      <tr style="background: #ecfdf5; font-weight: bold;">
         <td colspan="4" class="num" style="padding: 8px;">TOTAL</td>
         <td class="num" style="padding: 8px;">${formatRupiah(report.totalAllowance)}</td>
         <td class="num" style="padding: 8px; color: #b91c1c;">${formatRupiah(report.totalSpent)}</td>
+        <td class="num" style="padding: 8px; color: #0369a1;">${formatRupiah(report.totalCashSpent || 0)}</td>
         <td class="num" style="padding: 8px; color: #047857;">${formatRupiah(report.totalRemaining)}</td>
         <td colspan="2"></td>
       </tr>
@@ -621,9 +656,11 @@ export class EmployeeAllowanceService {
       'Jabatan',
       'Plafon Bulanan (Rp)',
       'Terpakai / Potong Gaji (Rp)',
+      'Belanja Cash / Tunai (Rp)',
       'Sisa Saldo (Rp)',
       'Utilisasi (%)',
-      'Jumlah Nota',
+      'Nota Saldo',
+      'Nota Cash',
       'Tgl Belanja Terakhir',
       'Barang Terakhir Dibeli',
       'Nominal Belanja Terakhir (Rp)'
@@ -638,9 +675,11 @@ export class EmployeeAllowanceService {
       q(e.job_title),
       e.monthly_allowance,
       e.spent_this_month,
+      e.cash_spent_this_month || 0,
       e.deposit_balance,
       `${e.utilization_percent}%`,
       e.trx_count_this_month,
+      e.cash_trx_count_this_month || 0,
       q(e.last_purchase_date ? new Date(e.last_purchase_date).toLocaleString('id-ID') : '-'),
       q(e.last_purchase_items || '-'),
       e.last_purchase_total || 0
@@ -679,6 +718,7 @@ export class EmployeeAllowanceService {
           totalEmployees: 0,
           totalAllowance: 0,
           totalSpent: 0,
+          totalCashSpent: 0,
           totalRemaining: 0,
           utilizationRate: 0
         });
@@ -688,6 +728,7 @@ export class EmployeeAllowanceService {
       item.totalEmployees += 1;
       item.totalAllowance += emp.monthly_allowance;
       item.totalSpent += emp.spent_this_month;
+      item.totalCashSpent += emp.cash_spent_this_month || 0;
       item.totalRemaining += emp.deposit_balance;
     }
 
@@ -716,6 +757,7 @@ export class EmployeeAllowanceService {
     const totalEmps = summaries.reduce((s, a) => s + a.totalEmployees, 0);
     const totalAllow = summaries.reduce((s, a) => s + a.totalAllowance, 0);
     const totalSpent = summaries.reduce((s, a) => s + a.totalSpent, 0);
+    const totalCash = summaries.reduce((s, a) => s + (a.totalCashSpent || 0), 0);
     const totalRem = summaries.reduce((s, a) => s + a.totalRemaining, 0);
     const overallUtil = totalAllow > 0 ? (totalSpent / totalAllow * 100).toFixed(1) : '0';
 
@@ -745,7 +787,7 @@ export class EmployeeAllowanceService {
 <body>
   <div class="header">
     <h1>${storeName}</h1>
-    <h2>REKAPITULASI PEMAKAIAN SALDO BELANJA KARYAWAN PER AFDELING</h2>
+    <h2>REKAPITULASI PEMAKAIAN SALDO &amp; BELANJA CASH KARYAWAN PER AFDELING</h2>
     <div class="period">Periode Potongan: ${monthFormatted}</div>
   </div>
 
@@ -755,9 +797,10 @@ export class EmployeeAllowanceService {
         <th class="center" style="width: 35px;">No</th>
         <th>Unit Kerja</th>
         <th>Afdeling / Divisi</th>
-        <th class="center" style="width: 70px;">Jumlah Org</th>
+        <th class="center" style="width: 65px;">Jml Org</th>
         <th class="num">Total Plafon</th>
-        <th class="num" style="color: #fecdd3;">Total Terpakai (Potong Gaji)</th>
+        <th class="num" style="color: #fecdd3;">Potong Gaji (Saldo)</th>
+        <th class="num" style="color: #bae6fd;">Beli Cash (Tunai)</th>
         <th class="num">Sisa Saldo</th>
         <th class="center" style="width: 60px;">Penyerapan</th>
       </tr>
@@ -771,6 +814,7 @@ export class EmployeeAllowanceService {
           <td class="center font-mono">${s.totalEmployees}</td>
           <td class="num">${formatRupiah(s.totalAllowance)}</td>
           <td class="num" style="font-weight: bold; color: #b91c1c;">${formatRupiah(s.totalSpent)}</td>
+          <td class="num" style="font-weight: bold; color: #0369a1;">${s.totalCashSpent ? formatRupiah(s.totalCashSpent) : '-'}</td>
           <td class="num" style="color: #047857;">${formatRupiah(s.totalRemaining)}</td>
           <td class="center font-mono">${s.utilizationRate}%</td>
         </tr>
@@ -782,6 +826,7 @@ export class EmployeeAllowanceService {
         <td class="center" style="padding: 10px;">${totalEmps}</td>
         <td class="num" style="padding: 10px;">${formatRupiah(totalAllow)}</td>
         <td class="num" style="padding: 10px; color: #b91c1c;">${formatRupiah(totalSpent)}</td>
+        <td class="num" style="padding: 10px; color: #0369a1;">${formatRupiah(totalCash)}</td>
         <td class="num" style="padding: 10px; color: #047857;">${formatRupiah(totalRem)}</td>
         <td class="center" style="padding: 10px;">${overallUtil}%</td>
       </tr>

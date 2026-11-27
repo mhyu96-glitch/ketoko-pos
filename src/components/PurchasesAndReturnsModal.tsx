@@ -45,11 +45,21 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
   const [poSupplierId, setPoSupplierId] = useState('');
   const [poPaymentType, setPoPaymentType] = useState<'CASH' | 'TEMPO'>('CASH');
   const [poDueDate, setPoDueDate] = useState('');
-  const [poItems, setPoItems] = useState<{ product: Product; qty: number; buy_price: number; subtotal: number }[]>([]);
+  const [poItems, setPoItems] = useState<{
+    product: Product;
+    qty: number;
+    old_buy_price: number;
+    buy_price: number;
+    old_retail_price: number;
+    retail_price: number;
+    subtotal: number;
+  }[]>([]);
   const [poSelectedProdId, setPoSelectedProdId] = useState('');
   const [poProductSearch, setPoProductSearch] = useState('');
   const [isPoSearching, setIsPoSearching] = useState(false);
   const [poQty, setPoQty] = useState<number>(1);
+  const [poBuyPrice, setPoBuyPrice] = useState<string>('');
+  const [poRetailPrice, setPoRetailPrice] = useState<string>('');
 
   // State: Add Purchase Return
   const [isAddingPurchaseReturn, setIsAddingPurchaseReturn] = useState(false);
@@ -205,7 +215,7 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     }
   };
 
-  // Add Item to Draft Purchase
+  // Add Item to Draft Purchase (Mendukung Edit Harga Modal & Harga Jual ketika harga naik)
   const handleAddItemToPo = () => {
     let targetProd = products.find((p) => p.id === poSelectedProdId);
     if (!targetProd && poSearchResults.length > 0) {
@@ -221,11 +231,15 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     }
 
     const prod = targetProd;
+    const parsedBuy = poBuyPrice !== '' ? Math.max(0, Number(poBuyPrice) || 0) : prod.buy_price;
+    const parsedRetail = poRetailPrice !== '' ? Math.max(0, Number(poRetailPrice) || 0) : prod.retail_price;
     const existingIndex = poItems.findIndex((it) => it.product.id === prod.id);
     if (existingIndex >= 0) {
       const updated = [...poItems];
       updated[existingIndex].qty += poQty;
-      updated[existingIndex].subtotal = updated[existingIndex].qty * updated[existingIndex].buy_price;
+      updated[existingIndex].buy_price = parsedBuy;
+      updated[existingIndex].retail_price = parsedRetail;
+      updated[existingIndex].subtotal = updated[existingIndex].qty * parsedBuy;
       setPoItems(updated);
     } else {
       setPoItems([
@@ -233,8 +247,11 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
         {
           product: prod,
           qty: poQty,
-          buy_price: prod.buy_price,
-          subtotal: poQty * prod.buy_price
+          old_buy_price: prod.buy_price,
+          buy_price: parsedBuy,
+          old_retail_price: prod.retail_price,
+          retail_price: parsedRetail,
+          subtotal: poQty * parsedBuy
         }
       ]);
     }
@@ -243,6 +260,8 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     setPoProductSearch('');
     setIsPoSearching(false);
     setPoQty(1);
+    setPoBuyPrice('');
+    setPoRetailPrice('');
   };
 
   // Handle Save Purchase (Tambah Stok Otomatis & Sinkron)
@@ -294,14 +313,23 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     // 1. Simpan Pembelian ke Dexie Lokal
     await db.purchases.put(newPurchase);
 
-    // 2. Tambah Stok Fisik untuk Setiap Barang & Sinkronkan ke Semua Komputer
+    // 2. Tambah Stok Fisik & Update Harga Modal / Harga Jual Baru ke Master Produk di Semua Terminal & Cloud
     for (const it of poItems) {
       const p = await db.products.get(it.product.id);
       if (p) {
+        const nextBuy = it.buy_price >= 0 ? it.buy_price : p.buy_price;
+        const nextRetail = it.retail_price > 0 ? it.retail_price : p.retail_price;
+        const nextWholesale =
+          p.wholesale_price === p.retail_price || (p.wholesale_price > 0 && nextRetail !== p.retail_price && p.min_wholesale_qty <= 1)
+            ? nextRetail
+            : p.wholesale_price;
         await syncService.syncProductChange({
           ...p,
           stock: (p.stock || 0) + it.qty,
-          buy_price: it.buy_price || p.buy_price
+          buy_price: nextBuy,
+          retail_price: nextRetail,
+          wholesale_price: nextWholesale,
+          updated_at: new Date().toISOString()
         });
       }
     }
@@ -662,9 +690,16 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
 
                   {/* Add Product Items into Purchase */}
                   <div className="p-3.5 bg-white rounded-2xl border border-[#eed7c4] space-y-3">
-                    <span className="text-xs font-bold text-[#543c2e] block">Tambah Item Barang ke Faktur:</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-start">
-                      <div className="sm:col-span-2 relative">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-[#543c2e]">Tambah Item Barang ke Faktur:</span>
+                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                        💡 Harga Beli (Modal) & Harga Jual otomatis terupdate di Master Barang jika diubah saat harga naik
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      <div className="sm:col-span-4 relative">
+                        <label className="text-[10px] font-bold text-[#856b59] uppercase block mb-1">Cari Barang / Barcode</label>
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 text-[#8a6b53] absolute left-2.5 top-2.5" />
                           <input
@@ -679,7 +714,16 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                handleAddItemToPo();
+                                if (poSearchResults.length === 1 && !poSelectedProdId) {
+                                  const p = poSearchResults[0];
+                                  setPoSelectedProdId(p.id);
+                                  setPoProductSearch(p.name);
+                                  setPoBuyPrice(String(p.buy_price || 0));
+                                  setPoRetailPrice(String(p.retail_price || 0));
+                                  setIsPoSearching(false);
+                                } else {
+                                  handleAddItemToPo();
+                                }
                               }
                             }}
                             className="w-full pl-8 pr-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-medium focus:border-[#96633b]"
@@ -688,30 +732,39 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
 
                         {/* Dropdown Suggestions */}
                         {isPoSearching && poSearchResults.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#eed7c4] rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto p-1 space-y-1">
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#eed7c4] rounded-xl shadow-lg z-20 max-h-52 overflow-y-auto p-1 space-y-1">
                             {poSearchResults.map((p) => (
                               <div
                                 key={p.id}
                                 onClick={() => {
                                   setPoSelectedProdId(p.id);
-                                  setPoProductSearch(`${p.name} (${formatRupiah(p.buy_price)})`);
+                                  setPoProductSearch(p.name);
+                                  setPoBuyPrice(String(p.buy_price || 0));
+                                  setPoRetailPrice(String(p.retail_price || 0));
                                   setIsPoSearching(false);
                                 }}
                                 className="p-2 rounded-lg hover:bg-[#fcf5ed] cursor-pointer flex items-center justify-between transition-colors text-xs border border-transparent hover:border-[#eed7c4]"
                               >
                                 <div>
                                   <div className="font-bold text-[#3d2617]">{p.name}</div>
-                                  <div className="text-[10px] text-[#8a6b53] font-mono">{p.barcode || p.id} • Rak: {p.rack_location}</div>
+                                  <div className="text-[10px] text-[#8a6b53] font-mono">{p.barcode || p.id} • Stok: {p.stock} {p.unit}</div>
                                 </div>
-                                <span className="font-mono font-bold text-[#7c4e2f] text-[11px]">
-                                  {formatRupiah(p.buy_price)}
-                                </span>
+                                <div className="text-right shrink-0">
+                                  <div className="font-mono font-bold text-[#7c4e2f] text-[11px]">
+                                    Modal: {formatRupiah(p.buy_price)}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-emerald-700">
+                                    Jual: {formatRupiah(p.retail_price)}
+                                  </div>
+                                </div>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-                      <div>
+
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-bold text-[#856b59] uppercase block mb-1">Qty Masuk</label>
                         <input
                           type="number"
                           min="1"
@@ -727,57 +780,183 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                           className="w-full px-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
                         />
                       </div>
-                      <button
-                        onClick={handleAddItemToPo}
-                        disabled={!poSelectedProdId && poSearchResults.length === 0}
-                        className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        + Tambah Item
-                      </button>
+
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Harga Modal / Beli (Rp)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={poBuyPrice}
+                          onChange={(e) => setPoBuyPrice(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddItemToPo();
+                            }
+                          }}
+                          placeholder="Modal baru..."
+                          className="w-full px-3 py-2 text-xs border border-amber-300 rounded-xl bg-amber-50/40 font-mono font-bold text-stone-900 focus:bg-white focus:border-amber-600"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">Harga Jual (Opsional)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={poRetailPrice}
+                          onChange={(e) => setPoRetailPrice(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddItemToPo();
+                            }
+                          }}
+                          placeholder="Harga jual..."
+                          className="w-full px-3 py-2 text-xs border border-emerald-300 rounded-xl bg-emerald-50/30 font-mono font-bold text-emerald-900 focus:bg-white focus:border-emerald-600"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <button
+                          type="button"
+                          onClick={handleAddItemToPo}
+                          disabled={!poSelectedProdId && poSearchResults.length === 0}
+                          className="w-full px-3 py-2 bg-[#96633b] hover:bg-[#83532e] disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          + Tambah Item
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Table Draft Items */}
+                    {/* Table Draft Items (Bisa Edit Langsung Qty, Harga Modal Naik, & Harga Jual) */}
                     {poItems.length > 0 && (
-                      <table className="w-full text-left text-xs divide-y divide-[#f0e4d7] mt-2">
-                        <thead>
-                          <tr className="text-[#856b59] text-[10px] uppercase font-black">
-                            <th className="py-2">Produk</th>
-                            <th className="py-2 text-right">Qty</th>
-                            <th className="py-2 text-right">Harga Beli</th>
-                            <th className="py-2 text-right">Subtotal</th>
-                            <th className="py-2 text-center w-8">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#f0e4d7] font-medium">
-                          {poItems.map((it, idx) => (
-                            <tr key={idx}>
-                              <td className="py-2 font-bold text-[#332219]">{it.product.name}</td>
-                              <td className="py-2 text-right font-mono">{it.qty}</td>
-                              <td className="py-2 text-right font-mono">{formatRupiah(it.buy_price)}</td>
-                              <td className="py-2 text-right font-mono font-bold text-[#7c4e2f]">{formatRupiah(it.subtotal)}</td>
-                              <td className="py-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))}
-                                  title="Hapus item ini dari faktur"
-                                  className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors inline-flex items-center justify-center"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs divide-y divide-[#f0e4d7] mt-2">
+                          <thead>
+                            <tr className="text-[#856b59] text-[10px] uppercase font-black">
+                              <th className="py-2 pr-2">Produk</th>
+                              <th className="py-2 px-2 text-right w-24">Qty</th>
+                              <th className="py-2 px-2 text-right w-44">Harga Beli / Modal (Edit)</th>
+                              <th className="py-2 px-2 text-right w-40">Harga Jual Eceran</th>
+                              <th className="py-2 px-2 text-right w-36">Subtotal Beli</th>
+                              <th className="py-2 text-center w-10">Aksi</th>
                             </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-[#dfcebe] font-black">
-                            <td colSpan={3} className="py-2 text-right text-[#332219]">TOTAL FAKTUR BELI:</td>
-                            <td className="py-2 text-right font-mono text-[#7c4e2f] text-sm">
-                              {formatRupiah(poItems.reduce((acc, it) => acc + it.subtotal, 0))}
-                            </td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-[#f0e4d7] font-medium">
+                            {poItems.map((it, idx) => {
+                              const diffModal = it.buy_price - it.old_buy_price;
+                              const isLoss = it.retail_price > 0 && it.buy_price > it.retail_price;
+                              return (
+                                <tr key={idx} className="hover:bg-stone-50/70">
+                                  <td className="py-2.5 pr-2">
+                                    <div className="font-bold text-[#332219]">{it.product.name}</div>
+                                    <div className="text-[10px] text-stone-500 font-mono">
+                                      Modal Lama: {formatRupiah(it.old_buy_price)} • Jual Lama: {formatRupiah(it.old_retail_price)}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right align-top">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={it.qty}
+                                      onChange={(e) => {
+                                        const nextQty = Math.max(1, Number(e.target.value) || 1);
+                                        const copy = [...poItems];
+                                        copy[idx] = { ...copy[idx], qty: nextQty, subtotal: nextQty * copy[idx].buy_price };
+                                        setPoItems(copy);
+                                      }}
+                                      className="w-20 px-2 py-1 text-right font-mono font-bold text-xs border border-[#dfcebe] rounded-lg bg-white"
+                                    />
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right align-top">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={it.buy_price}
+                                      onChange={(e) => {
+                                        const nextBuy = Math.max(0, Number(e.target.value) || 0);
+                                        const copy = [...poItems];
+                                        copy[idx] = { ...copy[idx], buy_price: nextBuy, subtotal: copy[idx].qty * nextBuy };
+                                        setPoItems(copy);
+                                      }}
+                                      className={`w-36 px-2.5 py-1 text-right font-mono font-black text-xs border rounded-lg ${
+                                        diffModal > 0
+                                          ? 'border-amber-400 bg-amber-50 text-amber-950'
+                                          : diffModal < 0
+                                            ? 'border-emerald-400 bg-emerald-50 text-emerald-950'
+                                            : 'border-[#dfcebe] bg-white text-stone-900'
+                                      }`}
+                                    />
+                                    {diffModal > 0 && (
+                                      <div className="text-[10px] font-extrabold text-amber-700 mt-0.5">
+                                        ⬆ Naik +{formatRupiah(diffModal)}
+                                      </div>
+                                    )}
+                                    {diffModal < 0 && (
+                                      <div className="text-[10px] font-extrabold text-emerald-700 mt-0.5">
+                                        ⬇ Turun -{formatRupiah(Math.abs(diffModal))}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right align-top">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={it.retail_price}
+                                      onChange={(e) => {
+                                        const nextRetail = Math.max(0, Number(e.target.value) || 0);
+                                        const copy = [...poItems];
+                                        copy[idx] = { ...copy[idx], retail_price: nextRetail };
+                                        setPoItems(copy);
+                                      }}
+                                      className={`w-32 px-2.5 py-1 text-right font-mono font-bold text-xs border rounded-lg ${
+                                        isLoss
+                                          ? 'border-rose-400 bg-rose-50 text-rose-800'
+                                          : it.retail_price !== it.old_retail_price
+                                            ? 'border-emerald-400 bg-emerald-50 text-emerald-900'
+                                            : 'border-[#dfcebe] bg-white text-emerald-800'
+                                      }`}
+                                    />
+                                    {isLoss && (
+                                      <div className="text-[10px] font-extrabold text-rose-600 mt-0.5">
+                                        ⚠️ Modal &gt; Jual!
+                                      </div>
+                                    )}
+                                    {!isLoss && it.retail_price !== it.old_retail_price && (
+                                      <div className="text-[10px] font-bold text-emerald-700 mt-0.5">
+                                        ✓ Harga jual ikut diupdate
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-mono font-bold text-[#7c4e2f] align-top pt-3.5">
+                                    {formatRupiah(it.subtotal)}
+                                  </td>
+                                  <td className="py-2.5 text-center align-top pt-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPoItems(poItems.filter((_, i) => i !== idx))}
+                                      title="Hapus item ini dari faktur"
+                                      className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors inline-flex items-center justify-center"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-[#dfcebe] font-black">
+                              <td colSpan={4} className="py-2.5 text-right text-[#332219] pr-2">TOTAL FAKTUR BELI:</td>
+                              <td className="py-2.5 px-2 text-right font-mono text-[#7c4e2f] text-sm">
+                                {formatRupiah(poItems.reduce((acc, it) => acc + it.subtotal, 0))}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     )}
                   </div>
 

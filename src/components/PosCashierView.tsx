@@ -23,7 +23,8 @@ import {
   ShoppingBag,
   Users,
   Lock,
-  Calendar
+  Calendar,
+  FileText
 } from 'lucide-react';
 import type { CartItem, Product, Customer } from '../types';
 import { db } from '../db';
@@ -31,8 +32,10 @@ import { formatRupiah } from '../services/escposService';
 import { BarcodeScanner } from './BarcodeScanner';
 import {
   checkCustomerBranchAccess,
+  clampEmployeeBalance,
   filterCustomersForStore,
   getCurrentActiveStoreId,
+  getCustomerAfdelingDisplay,
   isCustomerBelongsToStoreOrCluster,
   isCustomerCardBlocked,
 } from '../utils/customerAccess';
@@ -86,6 +89,7 @@ interface PosCashierViewProps {
   isTouchscreenMode?: boolean;
   isPaymentProcessing?: boolean;
   onOpenMemberModal?: () => void;
+  onOpenDirectInvoice?: () => void;
 }
 
 // Isolated Self-Updating Live Digital Clock (Prevents whole page re-render every second)
@@ -237,7 +241,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   isCatalogSeeding = false,
   isTouchscreenMode = false,
   isPaymentProcessing = false,
-  onOpenMemberModal
+  onOpenMemberModal,
+  onOpenDirectInvoice
 }) => {
   const lastQuickClickRef = useRef<number>(0);
   // Quick cash tender input state
@@ -319,6 +324,22 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
       (customerName && c.name.toLowerCase() === customerName.toLowerCase())
     ) || null;
   }, [customersList, memberId, customerName]);
+
+  const activeAfdelingInfo = useMemo(
+    () => getCustomerAfdelingDisplay(activeCustomer),
+    [activeCustomer]
+  );
+
+  // Saat member dipilih, otomatis arahkan default ke Potong Saldo (kecuali kasir klik Beli Cash); saat member dihapus kembali ke Tunai
+  const prevMemberRef = useRef<string>('');
+  useEffect(() => {
+    if (memberId && memberId !== prevMemberRef.current) {
+      setSelectedPaymentMethod('SALDO');
+    } else if (!memberId && prevMemberRef.current && selectedPaymentMethod === 'SALDO') {
+      setSelectedPaymentMethod('CASH');
+    }
+    prevMemberRef.current = memberId;
+  }, [memberId]);
 
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -429,10 +450,14 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     return isolated.filter(c => {
       const cName = (c.name || '').toLowerCase();
       const cCode = (c.code || '').toLowerCase();
+      const cAddr = (c.address || '').toLowerCase();
+      const cAfd = (c.afdeling || '').toLowerCase();
       const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
       return (
         cName.includes(q) ||
         cCode.includes(q) ||
+        cAddr.includes(q) ||
+        cAfd.includes(q) ||
         (cleanDigits.length >= 3 && cPhone.includes(cleanDigits))
       );
     }).slice(0, 10);
@@ -566,9 +591,15 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         alert('Silakan pilih Anggota / Konsumen terlebih dahulu untuk pembayaran menggunakan Saldo Member.');
         return;
       }
-      const balance = Number(activeCustomer?.deposit_balance) || 0;
+      if (isCustomerCardBlocked(activeCustomer)) {
+        alert(`🚫 TRANSAKSI DITOLAK!\n\nKartu "${activeCustomer?.name || customerName || memberId}" sedang diblokir karena dilaporkan hilang.`);
+        return;
+      }
+      const balance = activeCustomer?.type === 'KARYAWAN'
+        ? clampEmployeeBalance(activeCustomer.deposit_balance, activeCustomer.monthly_allowance ?? activeCustomer.credit_limit)
+        : (Number(activeCustomer?.deposit_balance) || 0);
       if (balance < grandTotal) {
-        alert(`Saldo member tidak mencukupi!\nSaldo Tersedia: ${formatRupiah(balance)}\nTotal Belanja: ${formatRupiah(grandTotal)}\nKekurangan: ${formatRupiah(grandTotal - balance)}\n\nSilakan klik tombol Top Up untuk mengisi saldo.`);
+        alert(`Saldo member tidak mencukupi!\nSaldo Tersedia: ${formatRupiah(balance)}\nTotal Belanja: ${formatRupiah(grandTotal)}\nKekurangan: ${formatRupiah(grandTotal - balance)}\n\nSilakan klik tombol Beli Cash atau Top Up untuk mengisi saldo.`);
         return;
       }
     }
@@ -1065,6 +1096,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dfcebe] rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-[#f5ece3]">
                     {filteredCustomers.slice(0, 8).map((c) => {
                       const access = checkCustomerBranchAccess(c, currentBranchId);
+                      const cAfd = getCustomerAfdelingDisplay(c);
                       return (
                         <div
                           key={c.id}
@@ -1085,6 +1117,11 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                             </p>
                             <div className="flex items-center flex-wrap gap-1 text-[10px] text-[#8a6b53]">
                               <span className="font-mono bg-[#f0e4d7] text-[#543c2e] px-1 rounded">{c.code}</span>
+                              {cAfd && (
+                                <span className="font-bold text-teal-800 bg-teal-50 px-1.5 rounded border border-teal-200">
+                                  📍 {cAfd.fullLabel}
+                                </span>
+                              )}
                               {c.phone && c.phone !== '-' && <span>📞 {c.phone}</span>}
                               <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1 rounded border border-emerald-200">
                                 Saldo: {formatRupiah(Number(c.deposit_balance) || 0)}
@@ -1150,53 +1187,115 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
             </div>
 
-            {/* Selected Member Saldo Indicator (Clean Single-Row Card) */}
+            {/* Selected Member Saldo & Quick Cash/Saldo Switcher Card */}
             {activeMemberDisplayName && (
-              <div className={`px-3 py-2.5 rounded-xl border text-xs transition-all animate-fadeIn shadow-2xs flex items-center justify-between gap-2.5 ${
+              <div className={`px-3 py-2.5 rounded-xl border text-xs transition-all animate-fadeIn shadow-2xs space-y-2 ${
                 isCustomerCardBlocked(activeCustomer)
                   ? 'bg-rose-50 text-rose-950 border-rose-300'
-                  : 'bg-emerald-50/90 text-emerald-950 border-emerald-300'
+                  : selectedPaymentMethod === 'CASH'
+                    ? 'bg-sky-50/90 text-sky-950 border-sky-300'
+                    : 'bg-emerald-50/90 text-emerald-950 border-emerald-300'
               }`}>
-                <div className="min-w-0 flex-1">
-                  <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${
-                    isCustomerCardBlocked(activeCustomer) ? 'text-rose-700' : 'text-emerald-700'
-                  }`}>
-                    <Coins className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">
-                      {activeCustomer?.code ? `NIK / Kode: ${activeCustomer.code}` : 'Saldo Simpanan Anggota'}
-                    </span>
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className={`flex items-center flex-wrap gap-1.5 text-[10px] font-semibold ${
+                      isCustomerCardBlocked(activeCustomer)
+                        ? 'text-rose-700'
+                        : selectedPaymentMethod === 'CASH'
+                          ? 'text-sky-700'
+                          : 'text-emerald-700'
+                    }`}>
+                      <Coins className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">
+                        {activeCustomer?.code ? `NIK / Kode: ${activeCustomer.code}` : 'Saldo Simpanan Anggota'}
+                      </span>
+                      {activeAfdelingInfo && (
+                        <span className={`px-1.5 py-0.5 rounded-md font-extrabold text-[9.5px] border ${
+                          isCustomerCardBlocked(activeCustomer)
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : selectedPaymentMethod === 'CASH'
+                              ? 'bg-sky-100 text-sky-900 border-sky-300'
+                              : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        }`}>
+                          📍 {activeAfdelingInfo.fullLabel}
+                        </span>
+                      )}
+                    </div>
+                    {activeAfdelingInfo?.job && (
+                      <div className="text-[9.5px] font-medium opacity-75 truncate mt-0.5">
+                        Jabatan: {activeAfdelingInfo.job}
+                      </div>
+                    )}
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className={`font-black text-sm sm:text-base tabular-nums tracking-tight ${
+                        isCustomerCardBlocked(activeCustomer)
+                          ? 'text-rose-900'
+                          : selectedPaymentMethod === 'CASH'
+                            ? 'text-sky-950'
+                            : 'text-emerald-900'
+                      }`}>
+                        {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
+                      </span>
+                      <span className={`text-[10px] font-semibold whitespace-nowrap ${
+                        isCustomerCardBlocked(activeCustomer)
+                          ? 'text-rose-700/80'
+                          : selectedPaymentMethod === 'CASH'
+                            ? 'text-sky-700'
+                            : 'text-emerald-700/80'
+                      }`}>
+                        {selectedPaymentMethod === 'CASH' ? 'Saldo Utuh (Beli Cash)' : 'Sisa Saldo'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1.5 mt-0.5">
-                    <span className={`font-black text-sm sm:text-base tabular-nums tracking-tight ${
-                      isCustomerCardBlocked(activeCustomer) ? 'text-rose-900' : 'text-emerald-900'
-                    }`}>
-                      {formatRupiah(Number(activeCustomer?.deposit_balance) || 0)}
-                    </span>
-                    <span className={`text-[10px] font-semibold whitespace-nowrap ${
-                      isCustomerCardBlocked(activeCustomer) ? 'text-rose-700/80' : 'text-emerald-700/80'
-                    }`}>
-                      Sisa Saldo
-                    </span>
+
+                  <div className="flex items-center shrink-0">
+                    {isCustomerCardBlocked(activeCustomer) ? (
+                      <span className="px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[10px] font-extrabold whitespace-nowrap shadow-2xs">
+                        🚫 Kartu Diblokir
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsTopUpModalOpen(true)}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-extrabold flex items-center gap-1 whitespace-nowrap shrink-0 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                        title="Isi Ulang Saldo Anggota"
+                      >
+                        <Wallet className="w-3.5 h-3.5 shrink-0" />
+                        <span>+ Top Up</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center shrink-0">
-                  {isCustomerCardBlocked(activeCustomer) ? (
-                    <span className="px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[10px] font-extrabold whitespace-nowrap shadow-2xs">
-                      🚫 Kartu Diblokir
-                    </span>
-                  ) : (
+                {/* Pilihan Cepat Member: Potong Saldo vs Beli Cash */}
+                {!isCustomerCardBlocked(activeCustomer) && (
+                  <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-emerald-200/70">
                     <button
                       type="button"
-                      onClick={() => setIsTopUpModalOpen(true)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all shadow-2xs active:scale-95 cursor-pointer"
-                      title="Isi Ulang Saldo Anggota"
+                      onClick={() => setSelectedPaymentMethod('SALDO')}
+                      className={`py-1.5 px-2 rounded-lg text-[10.5px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        selectedPaymentMethod === 'SALDO'
+                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                          : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
+                      }`}
                     >
                       <Wallet className="w-3.5 h-3.5 shrink-0" />
-                      <span>+ Top Up</span>
+                      <span>Potong Saldo</span>
                     </button>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPaymentMethod('CASH')}
+                      className={`py-1.5 px-2 rounded-lg text-[10.5px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        selectedPaymentMethod === 'CASH'
+                          ? 'bg-sky-700 text-white border-sky-800 shadow-2xs'
+                          : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'
+                      }`}
+                    >
+                      <Coins className="w-3.5 h-3.5 shrink-0" />
+                      <span>Beli Cash</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1276,18 +1375,19 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
           {/* CARD 2: METODE BAYAR & CASH/NON-CASH (Fills Remaining Space Ergonomically) */}
           <div className="bg-white rounded-2xl border border-[#e4d5c7] p-3 shadow-xs flex flex-col justify-between space-y-2 lg:flex-1 lg:min-h-0">
             
-            {/* 1. Payment Method 4-Grid */}
+            {/* 1. Payment Method 6-Grid (Termasuk Pilihan Input Invoice Langsung) */}
             <div className="space-y-1 shrink-0">
               <label className="text-[10px] font-extrabold text-[#8a6b53] uppercase tracking-wider block">
-                Metode Pembayaran
+                Metode Pembayaran / Invoice
               </label>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
                 {[
                   { id: 'CASH', label: 'Tunai', icon: Coins },
                   { id: 'SALDO', label: 'Saldo', icon: Wallet },
                   { id: 'QRIS', label: 'QRIS', icon: QrCode },
                   { id: 'DEBIT', label: 'Debit', icon: CreditCard },
-                  { id: 'TRANSFER', label: 'Transfer', icon: Smartphone }
+                  { id: 'TRANSFER', label: 'Transfer', icon: Smartphone },
+                  { id: 'INVOICE', label: 'Invoice', icon: FileText }
                 ].map((m) => {
                   const Icon = m.icon;
                   const isSelected = selectedPaymentMethod === m.id;
@@ -1295,8 +1395,14 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => setSelectedPaymentMethod(m.id as any)}
-                      className={`py-1.5 px-0.5 rounded-xl border flex flex-col items-center justify-center space-y-1 text-center transition-all ${
+                      onClick={() => {
+                        if (m.id === 'INVOICE') {
+                          onOpenDirectInvoice?.();
+                        } else {
+                          setSelectedPaymentMethod(m.id as any);
+                        }
+                      }}
+                      className={`py-1.5 px-0.5 rounded-xl border flex flex-col items-center justify-center space-y-1 text-center transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-[#7c4e2f] border-[#5c3c26] text-white font-bold shadow-xs'
                           : 'bg-[#fcf8f4] border-[#ebdccf] text-[#5c3c26] hover:bg-[#faebd7] hover:border-[#dfcebe]'
@@ -1617,14 +1723,23 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </button>
 
               {/* Secondary Buttons */}
-              <div className="grid grid-cols-1 gap-1.5 text-xs">
+              <div className="grid grid-cols-2 gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={onOpenDirectInvoice}
+                  className="py-1.5 px-2 bg-[#fcf8f4] hover:bg-[#faebd7] text-[#5c3c26] border border-[#ebdccf] rounded-lg font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-2xs cursor-pointer"
+                  title="Buat & Input Invoice Penjualan Langsung (Tempo / Lunas)"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#7c4e2f]" />
+                  <span>Input Invoice</span>
+                </button>
                 <button
                   type="button"
                   onClick={onOpenRecentTrx}
-                  className="py-1.5 px-2 bg-[#fcf8f4] hover:bg-[#faebd7] text-[#5c3c26] border border-[#ebdccf] rounded-lg font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-2xs"
+                  className="py-1.5 px-2 bg-[#fcf8f4] hover:bg-[#faebd7] text-[#5c3c26] border border-[#ebdccf] rounded-lg font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-2xs cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5 text-[#7c4e2f]" />
-                  <span>Cetak Ulang Nota Terakhir</span>
+                  <span>Cetak Ulang Nota</span>
                 </button>
               </div>
             </div>

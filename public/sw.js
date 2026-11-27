@@ -1,5 +1,5 @@
 // Ketoko POS & Portal Karyawan - Offline-First Service Worker
-const CACHE_NAME = 'ketoko-pos-pwa-v22';
+const CACHE_NAME = 'ketoko-pos-pwa-v25';
 
 const STATIC_PRECACHE = [
   '/',

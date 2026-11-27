@@ -56,6 +56,11 @@ export interface Transaction {
   store_id?: string;
   branch_id?: string;
   member_id?: string;
+  member_code?: string;
+  member_afdeling?: string;
+  member_unit?: string;
+  member_balance_before?: number;
+  member_remaining_balance?: number;
   items: TransactionItem[];
   subtotal: number;
   discount_amount: number;

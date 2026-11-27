@@ -226,6 +226,41 @@ export function parseEmployeeMeta(customer?: Partial<Customer> | null): ParsedEm
 }
 
 /**
+ * Menghasilkan label Afdeling & Unit rapi khusus untuk Member / Karyawan yang memiliki data Afdeling.
+ * Mengembalikan null untuk pelanggan retail biasa agar tidak menampilkan label semu.
+ */
+export function getCustomerAfdelingDisplay(customer?: Partial<Customer> | null): {
+  afdeling: string;
+  unit: string;
+  job: string;
+  shortLabel: string;
+  fullLabel: string;
+} | null {
+  if (!customer) return null;
+  const hasAfdelingData =
+    customer.type === 'KARYAWAN' ||
+    Boolean(customer.afdeling && customer.afdeling.trim()) ||
+    Boolean(customer.unit_profile && customer.unit_profile.trim()) ||
+    /\bAfd\b/i.test(String(customer.address || ''));
+  if (!hasAfdelingData) return null;
+
+  const meta = parseEmployeeMeta(customer);
+  const afd = (meta.afdeling || 'UMUM').trim();
+  const unit = (meta.unit_profile || '').trim();
+  const job = meta.job_code && meta.job_code !== '-' ? meta.job_code : '';
+  const shortLabel = /^afd\b/i.test(afd) ? afd : `Afd ${afd}`;
+  const fullLabel = unit && unit.toUpperCase() !== 'UMUM' ? `${unit} • ${shortLabel}` : shortLabel;
+
+  return {
+    afdeling: afd,
+    unit,
+    job,
+    shortLabel,
+    fullLabel
+  };
+}
+
+/**
  * Menyusun string address dengan tag [RST:YYYY-MM] serta menjaga tag keamanan [PIN:...] & [STATUS:BLOCKED]
  * agar tidak pernah hilang saat sinkronisasi ke kolom standar Supabase maupun LAN Server.
  */

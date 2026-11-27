@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { Transaction, Customer, StoreProfile } from '../types';
 import { formatRupiah, numberToWordsID } from '../services/escposService';
-import { formatCustomerAddressDisplay } from '../utils/customerAccess';
+import { formatCustomerAddressDisplay, getCustomerAfdelingDisplay, clampEmployeeAllowance, clampEmployeeBalance } from '../utils/customerAccess';
 import { db } from '../db';
 
 interface InvoiceModalProps {
@@ -133,7 +133,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const custName = customer?.name || transaction.customer_name || 'Pelanggan Umum';
   const custPhone = customer?.phone || '-';
   const custAddress = formatCustomerAddressDisplay(customer?.address);
-  const custCode = customer?.code || transaction.member_id || '-';
+  const custCode = customer?.code || transaction.member_code || transaction.member_id || '-';
+  const custAfdeling =
+    transaction.member_afdeling || getCustomerAfdelingDisplay(customer)?.fullLabel || null;
+  const memberRemainingBalance =
+    transaction.member_remaining_balance !== undefined
+      ? transaction.member_remaining_balance
+      : customer && (customer.type === 'KARYAWAN' || customer.type === 'MEMBER')
+        ? customer.type === 'KARYAWAN'
+          ? clampEmployeeBalance(customer.deposit_balance, clampEmployeeAllowance(customer.monthly_allowance ?? customer.credit_limit))
+          : Number(customer.deposit_balance) || 0
+        : undefined;
 
   // Handle Print via Window Print (A4 Format)
   const handlePrint = () => {
@@ -224,6 +234,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     text += `*No. Faktur :* ${transaction.receipt_number}\n`;
     text += `*Tanggal    :* ${formattedDate} (${formattedTime})\n`;
     text += `*Pelanggan  :* ${custName}\n`;
+    if (custAfdeling) text += `*Unit / Afd :* ${custAfdeling}\n`;
     if (custPhone !== '-') text += `*No. HP     :* ${custPhone}\n`;
     text += `*Status     :* ${isLunas ? 'LUNAS' : 'TEMPO / BELUM LUNAS'}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -239,6 +250,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     text += `*GRAND TOTAL:* *${formatRupiah(grandTotal)}*\n`;
     text += `*Terbilang  :* _${terbilangText}_\n`;
     text += `*Metode Bayar:* ${transaction.payment_method}\n`;
+    if (memberRemainingBalance !== undefined) {
+      text += `*Sisa Saldo :* *${formatRupiah(memberRemainingBalance)}*\n`;
+    }
     if (transaction.payment_method === 'CASH') {
       text += `*Uang Tunai :* ${formatRupiah(cashGiven)}\n`;
       text += `*Kembalian  :* ${formatRupiah(changeReturned)}\n`;
@@ -442,6 +456,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                       ID / No. Member: <b>{custCode}</b>
                     </div>
                   )}
+                  {custAfdeling && (
+                    <div className="text-[11px] text-emerald-800 font-bold">
+                      Unit / Afdeling: {custAfdeling}
+                    </div>
+                  )}
                 </div>
 
                 {/* Kolom Kanan: Rincian Faktur & Pembayaran */}
@@ -584,6 +603,13 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                         <span>Sisa Piutang:</span>
                         <span className="font-mono">{formatRupiah(Math.max(0, grandTotal - cashGiven))}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {memberRemainingBalance !== undefined && (
+                    <div className="flex justify-between pt-1.5 border-t border-dashed border-stone-300 text-[11px] font-extrabold text-emerald-800">
+                      <span>Sisa Saldo Member:</span>
+                      <span className="font-mono">{formatRupiah(memberRemainingBalance)}</span>
                     </div>
                   )}
                 </div>

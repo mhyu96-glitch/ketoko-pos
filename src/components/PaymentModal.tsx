@@ -13,9 +13,7 @@ import {
   AlertCircle,
   Wallet,
   ShieldAlert,
-  KeyRound,
-  Eye,
-  EyeOff
+  FileText
 } from 'lucide-react';
 import { formatRupiah } from '../services/escposService';
 import { db } from '../db';
@@ -27,11 +25,7 @@ import {
   MAX_EMPLOYEE_ALLOWANCE,
   clampEmployeeBalance,
   parseEmployeeMeta,
-  hasEmployeePin,
-  extractEmployeePinHash,
-  hashEmployeePin,
-  isCustomerCardBlocked,
-  setEmployeePinInAddress
+  isCustomerCardBlocked
 } from '../utils/customerAccess';
 
 interface PaymentModalProps {
@@ -52,6 +46,7 @@ interface PaymentModalProps {
   }) => Promise<void>;
   isTouchscreenMode?: boolean;
   onToggleTouchscreen?: () => void;
+  onOpenDirectInvoice?: () => void;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -63,7 +58,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   customDate,
   onProcessPayment,
   isTouchscreenMode = false,
-  onToggleTouchscreen
+  onToggleTouchscreen,
+  onOpenDirectInvoice
 }) => {
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER' | 'TEMPO' | 'SALDO'>('CASH');
   const [cashGiven, setCashGiven] = useState<number>(0);
@@ -76,11 +72,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [dpGiven, setDpGiven] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [customerList, setCustomerList] = useState<Customer[]>([]);
-
-  // States for Employee PIN & Security
-  const [employeePin, setEmployeePin] = useState('');
-  const [showPin, setShowPin] = useState(false);
-  const [pinError, setPinError] = useState('');
 
   // Quick preset nominal uang pas & pecahan umum
   const quickCashPresets = [
@@ -113,9 +104,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         ? clampEmployeeBalance(selectedSaldoCustomer.deposit_balance, selectedSaldoCustomer.monthly_allowance ?? MAX_EMPLOYEE_ALLOWANCE)
         : (Number(selectedSaldoCustomer.deposit_balance) || 0);
       if (availableBalance < grandTotal) return false;
-      if (selectedSaldoCustomer.type === 'KARYAWAN') {
-        if (!/^\d{6}$/.test(employeePin.trim())) return false;
-      }
       return true;
     }
     return true;
@@ -128,9 +116,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setDpGiven(0);
       setNotes('');
       setCustomerName(initialCustomerName || '');
-      setEmployeePin('');
-      setPinError('');
-      setShowPin(false);
 
       // Default jatuh tempo 14 hari dari sekarang
       const d = new Date();
@@ -176,54 +161,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
     if (paymentMethod === 'SALDO' && selectedSaldoCustomer) {
       if (isCustomerCardBlocked(selectedSaldoCustomer)) {
-        alert('🚫 TRANSAKSI DITOLAK!\n\nKartu karyawan ini dilaporkan hilang dan sedang diblokir.');
+        alert('🚫 TRANSAKSI DITOLAK!\n\nKartu anggota/karyawan ini dilaporkan hilang dan sedang diblokir.');
         return;
-      }
-
-      if (selectedSaldoCustomer.type === 'KARYAWAN') {
-        const cleanPin = employeePin.trim();
-        if (!/^\d{6}$/.test(cleanPin)) {
-          setPinError('PIN harus 6 digit angka.');
-          return;
-        }
-
-        const salt = (selectedSaldoCustomer.code || selectedSaldoCustomer.id).toLowerCase();
-        let latestCust = selectedSaldoCustomer;
-        let existingHash = extractEmployeePinHash(latestCust);
-
-        // Jika belum disegarkan saat modal dibuka, cek cepat (maks 500ms) agar tombol bayar tetap instan
-        if (!existingHash && navigator.onLine && !syncService.wasCustomerRecentlyRefreshed(latestCust.id || latestCust.code, 20000)) {
-          const refreshed = await Promise.race([
-            syncService.refreshSingleCustomerFromCloud(latestCust.id || latestCust.code),
-            new Promise<null>((r) => setTimeout(() => r(null), 500))
-          ]).catch(() => null);
-          if (refreshed) {
-            latestCust = refreshed;
-            existingHash = extractEmployeePinHash(refreshed);
-            if (isCustomerCardBlocked(refreshed)) {
-              alert('🚫 TRANSAKSI DITOLAK!\n\nKartu karyawan ini baru saja dikunci/diblokir melalui Portal Karyawan.');
-              return;
-            }
-          }
-        }
-
-        const inputHash = await hashEmployeePin(cleanPin, salt);
-
-        if (existingHash) {
-          if (inputHash.toLowerCase() !== existingHash.toLowerCase()) {
-            setPinError('❌ PIN SALAH! Transaksi saldo ditolak demi keamanan.');
-            return;
-          }
-        } else {
-          // Karyawan benar-benar belum punya PIN baik di lokal maupun di Cloud: daftarkan PIN pertama ini
-          try {
-            const updatedCustomer = setEmployeePinInAddress(latestCust, inputHash);
-            await db.customers.put(updatedCustomer);
-            await syncService.syncCustomerChange(updatedCustomer);
-          } catch (pinErr) {
-            console.warn('Gagal menyimpan PIN baru karyawan:', pinErr);
-          }
-        }
       }
     }
 
@@ -244,7 +183,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           payment_method: paymentMethod,
           cash_given: paymentMethod === 'CASH' ? cashGiven : grandTotal,
           change_returned: paymentMethod === 'CASH' ? changeReturned : 0,
-          customer_name: paymentMethod === 'SALDO' ? (selectedSaldoCustomer?.name || customerName.trim()) : undefined,
+          customer_name: selectedSaldoCustomer?.name || customerName.trim() || undefined,
           custom_created_at: customDate || undefined
         });
       }
@@ -333,13 +272,28 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
-          >
-            <X className="w-4 h-4" />
-            <span>Tutup</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenDirectInvoice && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenDirectInvoice();
+                }}
+                className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-amber-200" />
+                <span>Buat Invoice Langsung</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-3.5 py-2 rounded-xl bg-[#83532e] hover:bg-[#6f4021] text-white border border-[#a6744c] text-xs font-bold flex items-center gap-1.5 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              <span>Tutup</span>
+            </button>
+          </div>
         </div>
 
         {/* Content Form */}
@@ -616,7 +570,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       </div>
                     )}
 
-                    {/* STATUS BLOKIR KARTU HILANG (OPSI 4) */}
+                    {/* STATUS BLOKIR KARTU HILANG */}
                     {isCustomerCardBlocked(selectedSaldoCustomer) ? (
                       <div className="p-3 bg-rose-100 border-2 border-rose-500 rounded-xl text-rose-950 space-y-1">
                         <div className="flex items-center space-x-2 font-black text-xs text-rose-700 uppercase">
@@ -630,61 +584,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           * Karyawan asli dapat melapor ke kasir / admin untuk verifikasi identitas dan membuka blokir kartu di menu Member/Pelanggan.
                         </p>
                       </div>
-                    ) : selectedSaldoCustomer.type === 'KARYAWAN' && (
-                      /* OTORISASI PIN KARYAWAN (OPSI 1) */
-                      <div className="bg-emerald-50/90 p-3 rounded-xl border border-emerald-300 space-y-2 mt-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                            <KeyRound className="w-4 h-4 text-emerald-700 shrink-0" />
-                            <span>Otorisasi 6-Digit PIN Karyawan <span className="text-rose-500">*</span></span>
-                          </label>
-                          <span className={`text-[9.5px] font-black px-2 py-0.5 rounded-full border ${
-                            hasEmployeePin(selectedSaldoCustomer)
-                              ? 'bg-emerald-200 text-emerald-900 border-emerald-400'
-                              : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }`}>
-                            {hasEmployeePin(selectedSaldoCustomer) ? '🔑 PIN Terdaftar' : '✨ Belum Ada PIN (Daftar Baru)'}
-                          </span>
-                        </div>
-
-                        <div className="relative">
-                          <input
-                            type={showPin ? 'text' : 'password'}
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            maxLength={6}
-                            value={employeePin}
-                            onChange={(e) => {
-                              setEmployeePin(e.target.value.replace(/\D/g, '').slice(0, 6));
-                              setPinError('');
-                            }}
-                            placeholder={hasEmployeePin(selectedSaldoCustomer) ? 'Ketik 6 digit PIN karyawan...' : 'Buat 6 digit PIN kartu ini...'}
-                            className={`w-full pl-3 pr-10 py-2.5 bg-white text-stone-900 font-mono font-black text-lg tracking-widest text-center rounded-xl border-2 transition-all shadow-inner ${
-                              pinError ? 'border-rose-500 bg-rose-50' : 'border-emerald-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200'
-                            }`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPin(!showPin)}
-                            className="absolute right-2.5 top-2.5 p-1 text-stone-400 hover:text-stone-700"
-                            title={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
-                          >
-                            {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-
-                        {pinError && (
-                          <div className="p-1.5 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-[11px] font-bold flex items-center gap-1.5 animate-fadeIn">
-                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                            <span>{pinError}</span>
-                          </div>
-                        )}
-
-                        <p className="text-[10px] text-stone-600 leading-tight">
-                          {hasEmployeePin(selectedSaldoCustomer)
-                            ? 'Minta karyawan mengetikkan 6 digit PIN rahasianya untuk memvalidasi kepemilikan kartu belanja.'
-                            : 'Karyawan ini belum mendaftarkan PIN. 6 digit yang diketik di atas akan otomatis disimpan sebagai PIN keamanannya.'}
-                        </p>
+                    ) : !isInsufficient && (
+                      <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center justify-between gap-2">
+                        <span>✓ Transaksi Member Langsung (Tanpa PIN Kasir)</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod('CASH');
+                            setCashGiven(grandTotal);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 text-[10px] font-extrabold transition-colors cursor-pointer"
+                        >
+                          💵 Ganti ke Beli Cash
+                        </button>
                       </div>
                     )}
                   </div>

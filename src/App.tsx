@@ -7,7 +7,7 @@ import { api } from './api/client';
 import { syncService } from './services/syncService';
 import type { Product, Transaction, User, DebtItem, ReceivableItem, Customer, MemberDepositMutation, CartItem } from './types';
 import { formatRupiah } from './services/escposService';
-import { getStoreDisplayName, clampEmployeeAllowance, clampEmployeeBalance, isCustomerCardBlocked } from './utils/customerAccess';
+import { getStoreDisplayName, clampEmployeeAllowance, clampEmployeeBalance, isCustomerCardBlocked, getCustomerAfdelingDisplay } from './utils/customerAccess';
 
 import { Navbar } from './components/Navbar';
 import { TopMenuBar, type NavView } from './components/TopMenuBar';
@@ -35,6 +35,7 @@ import { StockAdjustmentsModal } from './components/StockAdjustmentsModal';
 import { StoreSettingsModal } from './components/StoreSettingsModal';
 import { BarcodeLabelModal } from './components/BarcodeLabelModal';
 import { InvoiceModal } from './components/InvoiceModal';
+import { DirectSalesInvoiceModal, type DirectInvoiceCreatePayload } from './components/DirectSalesInvoiceModal';
 import { LicenseModal } from './components/LicenseModal';
 import { licenseService } from './services/licenseService';
 import { AppUpdateNotifierModal } from './components/AppUpdateNotifierModal';
@@ -105,9 +106,15 @@ async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
   } catch {}
 
   try {
-    const localProds = (await db.products.toArray()).filter((p: any) => p.store_id === storeId);
-    if (localProds.length === 0) {
-      const res = await fetch('/data/koperasi_msl_products.json');
+    const MSL_CATALOG_SEED_VERSION = '2026-11-27-v2';
+    const seedVerKey = `ketoko_msl_catalog_seed_${storeId}`;
+    const allExisting = await db.products.toArray();
+    const localProds = allExisting.filter((p: any) => p.store_id === storeId);
+    const needsCatalogRefresh =
+      localProds.length === 0 || localStorage.getItem(seedVerKey) !== MSL_CATALOG_SEED_VERSION;
+
+    if (needsCatalogRefresh) {
+      const res = await fetch(`/data/koperasi_msl_products.json?v=${MSL_CATALOG_SEED_VERSION}`);
       if (res.ok) {
         const all = (await res.json()) as any[];
         let mine = all.filter((p) => p.store_id === storeId);
@@ -116,13 +123,32 @@ async function seedKoperasiMslIfNeeded(storeId: string): Promise<void> {
           mine = all
             .filter((p) => p.store_id === 'store-koperasimsl-cabang' || p.store_id === 'store-koperasimsl')
             .slice(0, 308)
-            .map((p) => ({
-              ...p,
-              id: `${storeId}-${p.barcode || p.id}`,
-              store_id: storeId
-            }));
+            .map((p) => {
+              const rawCode = String(p.id || '').replace(/^(?:msl-(?:mill-)?prd-|prod-msl-)/i, '') || p.barcode || p.id;
+              return {
+                ...p,
+                id: `${storeId}-${rawCode}`,
+                store_id: storeId
+              };
+            });
+        }
+        // Pertahankan foto produk (image_url) lokal bila sudah pernah diunggah
+        const existingImgMap = new Map<string, string>();
+        for (const lp of localProds) {
+          if (lp.image_url) existingImgMap.set(String(lp.id), lp.image_url);
+        }
+        mine = mine.map((p) => ({
+          ...p,
+          image_url: p.image_url || existingImgMap.get(String(p.id)) || ''
+        }));
+
+        const validIds = new Set(mine.map((p) => String(p.id)));
+        const staleIds = localProds.filter((lp) => !validIds.has(String(lp.id))).map((lp) => String(lp.id));
+        if (staleIds.length > 0) {
+          await db.products.bulkDelete(staleIds).catch(() => {});
         }
         for (let i = 0; i < mine.length; i += 500) await db.products.bulkPut(mine.slice(i, i + 500));
+        localStorage.setItem(seedVerKey, MSL_CATALOG_SEED_VERSION);
       }
     }
   } catch (e) {
@@ -234,6 +260,7 @@ export const App: React.FC = () => {
 
   // Cashier Help & Bug Report Chat State
   const [isHelpChatOpen, setIsHelpChatOpen] = useState(false);
+  const [isDirectInvoiceOpen, setIsDirectInvoiceOpen] = useState(false);
 
   // Global Developer Shortcut: Ctrl + Shift + S (Superadmin), Ctrl + Shift + E (Error Monitoring)
   useEffect(() => {
@@ -1353,8 +1380,23 @@ export const App: React.FC = () => {
     const len = products.length;
     for (let i = 0; i < len; i++) {
       const p = products[i];
-      if (p.barcode) bMap.set(p.barcode.trim(), p);
-      if (p.id) iMap.set(p.id.trim().toLowerCase(), p);
+      if (p.barcode) {
+        const bc = p.barcode.trim();
+        bMap.set(bc, p);
+        if (/^\d{8,14}$/.test(bc)) {
+          const noZero = bc.replace(/^0+/, '');
+          if (noZero && !bMap.has(noZero)) bMap.set(noZero, p);
+          if (bc.length === 12 && !bMap.has('0' + bc)) bMap.set('0' + bc, p);
+        }
+      }
+      if (p.id) {
+        const cleanId = p.id.trim().toLowerCase();
+        iMap.set(cleanId, p);
+        const strippedCode = cleanId.replace(/^(?:msl-(?:mill-)?prd-|prod-msl-)/i, '');
+        if (strippedCode && !iMap.has(strippedCode)) {
+          iMap.set(strippedCode, p);
+        }
+      }
     }
     return { barcodeIndex: bMap, idIndex: iMap };
   }, [products]);
@@ -1366,6 +1408,19 @@ export const App: React.FC = () => {
       const raw = query.trim();
       const clean = raw.toLowerCase();
       if (!clean) return { found: false, latencyMs: 0 };
+
+      // Prioritas 0: Jika barcode produk / kode item cocok persis (dan bukan format NIK / QR member), langsung masukkan keranjang!
+      const isExplicitMemberScan = /^ketoko:member:/i.test(raw) || raw.includes('/');
+      if (!isExplicitMemberScan) {
+        const directProduct =
+          barcodeIndex.get(raw) ||
+          (/^\d{8,14}$/.test(raw) ? barcodeIndex.get(raw.replace(/^0+/, '')) : undefined) ||
+          idIndex.get(clean);
+        if (directProduct) {
+          addToCart(directProduct, 1);
+          return { found: true, product: directProduct, latencyMs: performance.now() - start };
+        }
+      }
 
       // 0. Auto-Detect Member / Customer QR or Barcode Scan
       try {
@@ -1505,19 +1560,58 @@ export const App: React.FC = () => {
     const activeStoreId = localStorage.getItem('ketoko_active_store_id') || currentHost.id;
     const receiptNumber = `TRX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Resolve clean customer name (real name, not ID/Member #)
+    // Resolve clean customer & member snapshot (Nama, NIK, Afdeling, dan Sisa Saldo Member untuk struk cetak)
+    let resolvedMemberCust: Customer | undefined;
     let finalCustName = (paymentData.customer_name || '').trim() || (customerName || '').trim();
-    if (!finalCustName && memberId) {
-      try {
-        const cust = await db.customers.get(memberId);
-        if (cust?.name) {
-          finalCustName = cust.name;
-        } else {
-          const byCode = await db.customers.where('code').equalsIgnoreCase(memberId).first();
-          if (byCode?.name) finalCustName = byCode.name;
+    try {
+      if (memberId) {
+        resolvedMemberCust =
+          (await db.customers.get(memberId)) ||
+          (await db.customers.where('code').equalsIgnoreCase(memberId).first());
+      } else if (finalCustName && finalCustName.toUpperCase() !== 'PELANGGAN UMUM') {
+        resolvedMemberCust = await db.customers.where('name').equalsIgnoreCase(finalCustName).first();
+      }
+      if (
+        paymentData.payment_method === 'SALDO' &&
+        resolvedMemberCust &&
+        navigator.onLine &&
+        !syncService.wasCustomerRecentlyRefreshed(resolvedMemberCust.id || memberId, 20000)
+      ) {
+        const freshFromCloud = await Promise.race([
+          syncService.refreshSingleCustomerFromCloud(resolvedMemberCust.id || memberId),
+          new Promise<null>((r) => setTimeout(() => r(null), 450))
+        ]).catch(() => null);
+        if (freshFromCloud) {
+          resolvedMemberCust = freshFromCloud;
         }
-      } catch {}
-    }
+      }
+      if (!finalCustName && resolvedMemberCust?.name) {
+        finalCustName = resolvedMemberCust.name;
+      }
+    } catch {}
+
+    const memberAfdInfo = getCustomerAfdelingDisplay(resolvedMemberCust);
+    const hasMemberWallet = Boolean(
+      resolvedMemberCust &&
+        (resolvedMemberCust.type === 'KARYAWAN' ||
+          resolvedMemberCust.type === 'MEMBER' ||
+          resolvedMemberCust.deposit_balance !== undefined)
+    );
+    const memberMaxQuota =
+      resolvedMemberCust?.type === 'KARYAWAN'
+        ? clampEmployeeAllowance(resolvedMemberCust.monthly_allowance ?? resolvedMemberCust.credit_limit)
+        : Infinity;
+    const memberBalanceBefore = hasMemberWallet
+      ? resolvedMemberCust?.type === 'KARYAWAN'
+        ? clampEmployeeBalance(resolvedMemberCust.deposit_balance, memberMaxQuota)
+        : Number(resolvedMemberCust?.deposit_balance) || 0
+      : undefined;
+    const memberRemainingBalance =
+      memberBalanceBefore !== undefined
+        ? paymentData.payment_method === 'SALDO'
+          ? Math.max(0, memberBalanceBefore - grandTotal)
+          : memberBalanceBefore
+        : undefined;
 
       // Consolidate duplicate items in cart to guarantee 100% strictly 1 row per product
       const consolidatedItemsMap = new Map<string, CartItem>();
@@ -1548,7 +1642,12 @@ export const App: React.FC = () => {
         cashier_id: currentUser?.id || 'USR-001',
         cashier_name: currentUser?.name || 'Kasir',
         branch_id: currentUser?.branch_id || 'BR-01',
-        member_id: memberId || undefined,
+        member_id: memberId || resolvedMemberCust?.id || undefined,
+        member_code: resolvedMemberCust?.code || undefined,
+        member_afdeling: memberAfdInfo?.fullLabel || undefined,
+        member_unit: memberAfdInfo?.unit || undefined,
+        member_balance_before: memberBalanceBefore,
+        member_remaining_balance: memberRemainingBalance,
         customer_name: finalCustName || (memberId ? undefined : 'PELANGGAN UMUM'),
         items: finalCartItems,
       subtotal,
@@ -1634,26 +1733,24 @@ export const App: React.FC = () => {
     }
 
     // 1.c Potong Saldo Simpanan Anggota secara instan (< 5ms) & sinkron lintas cabang jika transaksi dibayar dengan SALDO
-    if (paymentData.payment_method === 'SALDO' && memberId) {
+    if (paymentData.payment_method === 'SALDO' && (memberId || resolvedMemberCust)) {
       try {
-        let cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
-        // Hanya tarik dari Cloud jika belum disegarkan dalam 20 detik terakhir (batas cepat 450ms agar UI struk 0 lag!)
-        if (navigator.onLine && !syncService.wasCustomerRecentlyRefreshed(cust?.id || memberId, 20000)) {
-          const freshFromCloud = await Promise.race([
-            syncService.refreshSingleCustomerFromCloud(cust?.id || memberId),
-            new Promise<null>((r) => setTimeout(() => r(null), 450))
-          ]).catch(() => null);
-          if (freshFromCloud) {
-            cust = freshFromCloud;
-          }
-        }
+        const cust =
+          resolvedMemberCust ||
+          (memberId
+            ? (await db.customers.get(memberId)) ||
+              (await db.customers.where('code').equalsIgnoreCase(memberId).first())
+            : undefined);
         if (cust) {
           const maxQuota = cust.type === 'KARYAWAN'
             ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit)
             : Infinity;
-          const oldBalance = cust.type === 'KARYAWAN'
-            ? clampEmployeeBalance(cust.deposit_balance, maxQuota)
-            : (Number(cust.deposit_balance) || 0);
+          const oldBalance =
+            memberBalanceBefore !== undefined
+              ? memberBalanceBefore
+              : cust.type === 'KARYAWAN'
+                ? clampEmployeeBalance(cust.deposit_balance, maxQuota)
+                : (Number(cust.deposit_balance) || 0);
           const newBalance = Math.max(0, oldBalance - grandTotal);
           const updatedCust: Customer = {
             ...cust,
@@ -1808,13 +1905,8 @@ export const App: React.FC = () => {
         ? clampEmployeeBalance(cust.deposit_balance, cust.monthly_allowance ?? cust.credit_limit)
         : (Number(cust?.deposit_balance) || 0);
       if (currentBalance < grandTotal) {
-        setSyncToastMessage(`⚠️ Saldo Anggota tidak mencukupi (Saldo: ${formatRupiah(currentBalance)} | Belanja: ${formatRupiah(grandTotal)}). Silakan Top Up terlebih dahulu.`);
+        setSyncToastMessage(`⚠️ Saldo Anggota tidak mencukupi (Saldo: ${formatRupiah(currentBalance)} | Belanja: ${formatRupiah(grandTotal)}). Silakan Top Up atau pilih Beli Cash.`);
         setTimeout(() => setSyncToastMessage(null), 5000);
-        return;
-      }
-      // Untuk karyawan koperasi, wajib buka PaymentModal agar verifikasi 6-digit PIN dijalankan
-      if (cust?.type === 'KARYAWAN') {
-        setIsPaymentOpen(true);
         return;
       }
     }
@@ -1827,6 +1919,186 @@ export const App: React.FC = () => {
       change_returned: change,
       custom_created_at: customDate
     });
+  };
+
+  // Handle Direct Sales Invoice Creation from Penjualan
+  const handleCreateDirectInvoice = async (payload: DirectInvoiceCreatePayload) => {
+    if (payload.items.length === 0 || isPaymentProcessingRef.current) return;
+    isPaymentProcessingRef.current = true;
+    setIsPaymentProcessing(true);
+
+    try {
+      const now = payload.invoice_date
+        ? new Date(`${payload.invoice_date}T${new Date().toTimeString().slice(0, 8)}`)
+        : new Date();
+      const currentHost = resolveStoreFromCurrentHost();
+      const storeId = localStorage.getItem('ketoko_active_store_id') || currentHost.id || 'store-01';
+      const invSubtotal = payload.items.reduce((s, it) => s + (Number(it.subtotal_item) || 0), 0);
+      const invDiscount = Math.min(invSubtotal, Math.max(0, Number(payload.discount_amount) || 0));
+      const invNet = Math.max(0, invSubtotal - invDiscount);
+      const invTax = payload.tax_enabled ? Math.round((invNet * (Number(payload.tax_rate) || 0)) / 100) : 0;
+      const invGrandTotal = invNet + invTax;
+
+      let invMemberCust: Customer | undefined;
+      try {
+        if (payload.customer_id) {
+          invMemberCust =
+            (await db.customers.get(payload.customer_id)) ||
+            (await db.customers.where('code').equalsIgnoreCase(payload.customer_id).first());
+        } else if (payload.customer_name && payload.customer_name.toUpperCase() !== 'PELANGGAN UMUM') {
+          invMemberCust = await db.customers.where('name').equalsIgnoreCase(payload.customer_name).first();
+        }
+      } catch {}
+
+      const invAfd = getCustomerAfdelingDisplay(invMemberCust);
+      const invHasWallet = Boolean(
+        invMemberCust &&
+          (invMemberCust.type === 'KARYAWAN' ||
+            invMemberCust.type === 'MEMBER' ||
+            invMemberCust.deposit_balance !== undefined)
+      );
+      const invMaxQuota =
+        invMemberCust?.type === 'KARYAWAN'
+          ? clampEmployeeAllowance(invMemberCust.monthly_allowance ?? invMemberCust.credit_limit)
+          : Infinity;
+      const invBalBefore = invHasWallet
+        ? invMemberCust?.type === 'KARYAWAN'
+          ? clampEmployeeBalance(invMemberCust.deposit_balance, invMaxQuota)
+          : Number(invMemberCust?.deposit_balance) || 0
+        : undefined;
+      const invBalAfter =
+        invBalBefore !== undefined
+          ? payload.payment_method === 'SALDO'
+            ? Math.max(0, invBalBefore - invGrandTotal)
+            : invBalBefore
+          : undefined;
+
+      const newTrx: Transaction = {
+        id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        store_id: storeId,
+        receipt_number: payload.invoice_number,
+        cashier_id: currentUser?.id || 'USR-001',
+        cashier_name: currentUser?.name || 'Kasir',
+        branch_id: currentUser?.branch_id || 'BR-01',
+        member_id: payload.customer_id || invMemberCust?.id || undefined,
+        member_code: invMemberCust?.code || undefined,
+        member_afdeling: invAfd?.fullLabel || undefined,
+        member_unit: invAfd?.unit || undefined,
+        member_balance_before: invBalBefore,
+        member_remaining_balance: invBalAfter,
+        customer_name: payload.customer_name || 'PELANGGAN UMUM',
+        items: payload.items,
+        subtotal: invSubtotal,
+        discount_amount: invDiscount,
+        tax_amount: invTax,
+        grand_total: invGrandTotal,
+        payment_method: payload.payment_method,
+        cash_given: payload.payment_method === 'TEMPO' ? payload.dp_given : invGrandTotal,
+        change_returned: 0,
+        due_date: payload.due_date,
+        notes: payload.notes,
+        synced: false,
+        created_at: now.toISOString()
+      };
+
+      let lanUpdatedStocks: Array<{ id: string; stock: number }> | undefined;
+      if (lanService.isLanActive()) {
+        try {
+          const lanRes = await lanService.submitTransaction(newTrx);
+          if (lanRes && lanRes.success) {
+            newTrx.synced = true;
+            if (lanRes.updatedStocks && lanRes.updatedStocks.length > 0) {
+              lanUpdatedStocks = lanRes.updatedStocks;
+              const stockMap = new Map(lanRes.updatedStocks.map((s) => [s.id, s.stock]));
+              setProducts((prev) =>
+                prev.map((p) => {
+                  const updatedStock = stockMap.get(p.id);
+                  return updatedStock !== undefined ? { ...p, stock: updatedStock } : p;
+                })
+              );
+            }
+          }
+        } catch {}
+      }
+
+      await syncService.saveTransactionOffline(newTrx, lanUpdatedStocks);
+
+      if (payload.payment_method === 'TEMPO') {
+        const dp = Number(payload.dp_given) || 0;
+        const remaining = Math.max(0, invGrandTotal - dp);
+        const dueDateVal = payload.due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+        const newRec: ReceivableItem = {
+          id: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          store_id: storeId,
+          customer_id: payload.customer_id || `PLG-${Date.now()}`,
+          customer_name: payload.customer_name || 'Pelanggan Umum',
+          receipt_number: payload.invoice_number,
+          transaction_id: newTrx.id,
+          invoice_date: now.toISOString().split('T')[0],
+          total_amount: invGrandTotal,
+          paid_amount: dp,
+          remaining_amount: remaining,
+          due_date: dueDateVal,
+          status: remaining === 0 ? 'PAID' : dp > 0 ? 'PARTIAL' : 'UNPAID',
+          notes: payload.notes || `Invoice Penjualan ${payload.invoice_number}`,
+          created_at: now.toISOString()
+        };
+        await db.receivables.put(newRec);
+        syncService.broadcastCloudEvent('receivable_created', newRec);
+        if (navigator.onLine) {
+          syncService.syncDebtsAndReceivables().catch(() => {});
+        }
+      } else if (payload.payment_method === 'SALDO' && payload.customer_id) {
+        const cust =
+          (await db.customers.get(payload.customer_id)) ||
+          (await db.customers.where('code').equalsIgnoreCase(payload.customer_id).first());
+        if (cust) {
+          const maxQuota = cust.type === 'KARYAWAN' ? clampEmployeeAllowance(cust.monthly_allowance ?? cust.credit_limit) : Infinity;
+          const oldBal = cust.type === 'KARYAWAN' ? clampEmployeeBalance(cust.deposit_balance, maxQuota) : Number(cust.deposit_balance) || 0;
+          const newBal = Math.max(0, oldBal - invGrandTotal);
+          const updatedCust: Customer = {
+            ...cust,
+            deposit_balance: newBal,
+            current_debt: cust.type === 'KARYAWAN' ? Math.max(0, maxQuota - newBal) : cust.current_debt,
+            updated_at: now.toISOString()
+          };
+          await db.customers.put(updatedCust);
+          syncService.syncCustomerChange(updatedCust).catch(() => {});
+          window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: updatedCust }));
+        }
+      }
+
+      if (!lanUpdatedStocks) {
+        setProducts((prev) => {
+          const soldMap = new Map<string, number>();
+          for (const item of newTrx.items) {
+            const pId = String(item.product_id).trim();
+            soldMap.set(pId, (soldMap.get(pId) || 0) + (Number(item.qty) || 0));
+          }
+          return prev.map((p) => {
+            const qtySold = soldMap.get(String(p.id).trim());
+            return qtySold ? { ...p, stock: Math.max(0, p.stock - qtySold) } : p;
+          });
+        });
+      }
+
+      if (filterTrxForActiveStore([newTrx], activeStoreId).length > 0) {
+        setTransactions((prev) => [newTrx, ...prev]);
+      }
+
+      window.dispatchEvent(new CustomEvent('ketoko_transaction_created', { detail: { transaction: newTrx } }));
+      window.dispatchEvent(new CustomEvent('ketoko_transactions_refreshed'));
+
+      if (payload.used_pos_cart) {
+        clearCart();
+      }
+      setIsDirectInvoiceOpen(false);
+      setSelectedInvoiceTrx(newTrx);
+      syncService.getPendingCount().then(setPendingSyncCount).catch(() => {});
+    } finally {
+      isPaymentProcessingRef.current = false;
+      setIsPaymentProcessing(false);
+    }
   };
 
   const handleLoginSuccess = (user: User) => {
@@ -2352,6 +2624,7 @@ export const App: React.FC = () => {
           onOpenPWAInstall={() => setIsPWAInstallOpen(true)}
           onOpenErrorMonitoring={() => setIsErrorMonitoringOpen(true)}
           onOpenHelpChat={() => setIsHelpChatOpen(true)}
+          onOpenDirectInvoice={() => setIsDirectInvoiceOpen(true)}
           pendingSyncCount={pendingSyncCount}
           lowStockCount={lowStockCount}
           overdueCount={overdueCount}
@@ -2433,6 +2706,7 @@ export const App: React.FC = () => {
           isTouchscreenMode={isTouchscreenMode}
           isPaymentProcessing={isPaymentProcessing}
           onOpenMemberModal={() => setIsMemberModalOpen(true)}
+          onOpenDirectInvoice={() => setIsDirectInvoiceOpen(true)}
         />
       )}
 
@@ -2447,6 +2721,21 @@ export const App: React.FC = () => {
           onProcessPayment={handleProcessPayment}
           isTouchscreenMode={isTouchscreenMode}
           onToggleTouchscreen={handleToggleTouchscreen}
+          onOpenDirectInvoice={() => setIsDirectInvoiceOpen(true)}
+        />
+      )}
+
+      {isDirectInvoiceOpen && (
+        <DirectSalesInvoiceModal
+          isOpen={isDirectInvoiceOpen}
+          onClose={() => setIsDirectInvoiceOpen(false)}
+          products={products}
+          cartItems={cartItems}
+          memberId={memberId}
+          customerName={customerName || ''}
+          taxEnabled={taxEnabled}
+          taxRate={taxRate}
+          onSubmitInvoice={handleCreateDirectInvoice}
         />
       )}
 
