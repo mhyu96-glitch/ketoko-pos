@@ -1477,7 +1477,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                 <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
+                    <thead className="sticky top-0 bg-[#f5ece3] z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                         <th className="py-3 px-4">Waktu</th>
                         <th className="py-3 px-4">No. Struk</th>
@@ -1652,7 +1652,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                 <div className="overflow-x-auto max-h-[400px] border border-[#f0e4d7] rounded-2xl">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
+                    <thead className="sticky top-0 bg-[#f5ece3] z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                         <th className="py-3 px-4">Peringkat</th>
                         <th className="py-3 px-4">Nama Produk & Barcode</th>
@@ -1793,7 +1793,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                 <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
+                    <thead className="sticky top-0 bg-[#f5ece3] z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                         <th className="py-3 px-4">Produk & Lokasi Rak</th>
                         <th className="py-3 px-4">Kategori</th>
@@ -1961,7 +1961,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                 <div className="overflow-x-auto max-h-[65vh] border border-[#f0e4d7] rounded-2xl custom-scroll">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-[#f5ece3] backdrop-blur-xs z-10">
+                    <thead className="sticky top-0 bg-[#f5ece3] z-10">
                       <tr className="border-b border-[#dfcebe] text-[#543c2e] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                         <th className="py-3 px-4">Waktu</th>
                         <th className="py-3 px-4">No. Invoice</th>

@@ -24,7 +24,8 @@ import {
   RefreshCw,
   Cloud,
   CloudUpload,
-  CloudDownload
+  CloudDownload,
+  Barcode
 } from 'lucide-react';
 import { db } from '../db';
 import type { Product } from '../types';
@@ -574,80 +575,101 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
         </div>
       </div>
 
-      {/* Search & Filter Toolbar */}
-      <div className="bg-white p-4 rounded-3xl border border-[#e5d0be] shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Search & Filter Toolbar (Structured 2-Row Layout) */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e5d0be] shadow-xs space-y-3.5">
         
-        {/* Search Bar */}
-        <div className="relative w-full sm:w-96">
-          <Search className="w-4 h-4 text-[#8a6b53] absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari nama barang, barcode, SKU, rak..."
-            className="w-full pl-10 pr-4 py-2 bg-[#fcf9f5] text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#96633b] placeholder:text-[#8a6b53] font-medium"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-2.5 text-[#8a6b53] hover:text-[#3d2617]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        {/* Row 1: Wide Search Bar + Stock Status Segmented Filter */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          {/* Search Bar */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-[#8a6b53] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari nama barang, barcode, SKU, kategori, atau lokasi rak..."
+              className="w-full pl-10 pr-9 py-2.5 bg-[#fcf9f5] text-[#3d2617] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#96633b] focus:outline-none placeholder:text-[#8a6b53] font-medium transition-colors"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a6b53] hover:text-[#3d2617] p-0.5 rounded-md"
+                title="Hapus pencarian"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
-        {/* Filter Controls (Stock & Category) */}
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {/* Stock Filter Pills */}
-          <div className="flex items-center space-x-1 bg-[#f5ebe0] p-1 rounded-xl border border-[#ddc3aa]">
+          {/* Stock Filter Segmented Control */}
+          <div className="flex items-center bg-[#f5ebe0] p-1 rounded-xl border border-[#ddc3aa] shrink-0 self-start lg:self-auto">
             <button
+              type="button"
               onClick={() => setStockFilter('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 stockFilter === 'ALL'
                   ? 'bg-[#96633b] text-white shadow-xs'
                   : 'text-[#5c3c26] hover:bg-[#ebd7c5]'
               }`}
             >
-              Semua ({products.length})
+              Semua ({products.length.toLocaleString('id-ID')})
             </button>
             <button
+              type="button"
               onClick={() => setStockFilter('IN_STOCK')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 stockFilter === 'IN_STOCK'
                   ? 'bg-[#166534] text-white shadow-xs'
                   : 'text-[#166534] hover:bg-[#dcf0df]'
               }`}
             >
-              Ada Stok ({products.filter((p) => (p.stock || 0) > 0).length})
+              <span className={`w-1.5 h-1.5 rounded-full ${stockFilter === 'IN_STOCK' ? 'bg-emerald-200' : 'bg-emerald-600'}`} />
+              <span>Ada Stok ({products.filter((p) => (p.stock || 0) > 0).length.toLocaleString('id-ID')})</span>
             </button>
             <button
+              type="button"
               onClick={() => setStockFilter('OUT_OF_STOCK')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 stockFilter === 'OUT_OF_STOCK'
                   ? 'bg-[#dc2626] text-white shadow-xs'
                   : 'text-[#dc2626] hover:bg-[#fee2e2]'
               }`}
             >
-              Stok 0 ({products.filter((p) => !p.stock || p.stock === 0).length})
+              <span className={`w-1.5 h-1.5 rounded-full ${stockFilter === 'OUT_OF_STOCK' ? 'bg-rose-200' : 'bg-rose-600'}`} />
+              <span>Stok Habis ({products.filter((p) => !p.stock || p.stock <= 0).length.toLocaleString('id-ID')})</span>
             </button>
           </div>
+        </div>
 
-          {/* Category Pills Filter */}
-          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        {/* Row 2: Clean Full-Width Category Filter Pills */}
+        <div className="pt-3 border-t border-[#f2e5d8] flex flex-col sm:flex-row sm:items-center gap-2">
+          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#8a6b53] shrink-0">
+            Kategori:
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
             {categories.map((cat) => {
               const isSelected = selectedCategory === cat;
+              const catCount = cat === 'ALL'
+                ? products.length
+                : products.filter((p) => (p.category || 'Umum') === cat).length;
               return (
                 <button
                   key={cat}
+                  type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
                     isSelected
                       ? 'bg-[#96633b] text-white border-[#96633b] shadow-xs'
-                      : 'bg-[#f5ebe0] text-[#5c3c26] hover:bg-[#ebd7c5] border-[#ddc3aa]'
+                      : 'bg-[#fcf9f5] text-[#5c3c26] hover:bg-[#faebd7] border-[#e5d0be]'
                   }`}
                 >
-                  {cat === 'ALL' ? 'Semua Kategori' : cat}
+                  <span>{cat === 'ALL' ? 'Semua Kategori' : cat}</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-[#f5ebe0] text-[#8a6b53]'
+                  }`}>
+                    {catCount}
+                  </span>
                 </button>
               );
             })}
@@ -742,11 +764,22 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
       {/* Products Master Table */}
       <div className="bg-white rounded-3xl border border-[#e5d0be] shadow-xs overflow-hidden">
-        <div className="overflow-x-auto max-h-[580px]">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 bg-[#f5ebe0] text-[#5c3c26] font-bold text-[11px] uppercase tracking-wider border-b border-[#e5d0be] z-10">
+        <div className="overflow-auto max-h-[calc(100vh-285px)] min-h-[420px]">
+          <table className="w-full min-w-[960px] text-left text-xs border-separate border-spacing-0">
+            <colgroup>
+              <col className="w-11" />
+              <col className="min-w-[240px]" />
+              <col className="w-48" />
+              <col className="w-40" />
+              <col className="w-44" />
+              <col className="w-36" />
+              <col className="w-28" />
+              <col className="w-32" />
+              <col className="w-28" />
+            </colgroup>
+            <thead className="sticky top-0 z-20 bg-[#f5ebe0] text-[#5c3c26] font-extrabold text-[11px] uppercase tracking-wider">
               <tr>
-                <th className="px-3 py-3.5 w-10 text-center">
+                <th className="px-3 py-3.5 text-center bg-[#f5ebe0] border-b border-[#e5d0be]">
                   <input
                     type="checkbox"
                     className="w-4 h-4 rounded border-[#ddc3aa] text-[#96633b] focus:ring-[#96633b] cursor-pointer accent-[#96633b]"
@@ -763,20 +796,20 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                     title="Pilih semua di halaman ini"
                   />
                 </th>
-                <th className="px-4 py-3.5">Produk & Barcode</th>
-                <th className="px-3 py-3.5">Kategori & Rak</th>
-                <th className="px-3 py-3.5 text-right">Harga Beli (Modal)</th>
-                <th className="px-3 py-3.5 text-right">Harga Eceran (Retail)</th>
-                <th className="px-3 py-3.5 text-right">Harga Grosir</th>
-                <th className="px-3 py-3.5 text-center">Margin %</th>
-                <th className="px-3 py-3.5 text-center">Sisa Stok</th>
-                <th className="px-4 py-3.5 text-center">Aksi</th>
+                <th className="px-4 py-3.5 bg-[#f5ebe0] border-b border-[#e5d0be]">Produk &amp; Kode</th>
+                <th className="px-3 py-3.5 bg-[#f5ebe0] border-b border-[#e5d0be]">Kategori &amp; Rak</th>
+                <th className="px-3 py-3.5 text-right bg-[#f5ebe0] border-b border-[#e5d0be]">Harga Beli (Modal)</th>
+                <th className="px-3 py-3.5 text-right bg-[#f5ebe0] border-b border-[#e5d0be]">Harga Eceran (Retail)</th>
+                <th className="px-3 py-3.5 text-right bg-[#f5ebe0] border-b border-[#e5d0be]">Harga Grosir</th>
+                <th className="px-3 py-3.5 text-center bg-[#f5ebe0] border-b border-[#e5d0be]">Margin %</th>
+                <th className="px-3 py-3.5 text-center bg-[#f5ebe0] border-b border-[#e5d0be]">Sisa Stok</th>
+                <th className="px-4 py-3.5 text-center bg-[#f5ebe0] border-b border-[#e5d0be]">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#f2e5d8] font-sans">
+            <tbody className="font-sans">
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-[#8a6b53]">
+                  <td colSpan={9} className="py-14 text-center text-[#8a6b53]">
                     <Package className="w-10 h-10 mx-auto mb-2 opacity-30 text-[#96633b]" />
                     <p className="text-sm font-semibold text-[#3d2617]">Tidak ada data produk yang cocok.</p>
                     <p className="text-xs text-[#8a6b53] mt-0.5">Coba cari dengan kata kunci lain atau tambah item baru.</p>
@@ -786,15 +819,36 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                 pageItems.map((prod) => {
                   const marginPercent = prod.retail_price > 0
                     ? (((prod.retail_price - prod.buy_price) / prod.retail_price) * 100).toFixed(1)
-                    : '0';
+                    : '0.0';
 
-                  const hasWholesale = prod.wholesale_price < prod.retail_price;
+                  const hasWholesale = prod.wholesale_price > 0 && prod.wholesale_price < prod.retail_price;
+                  const unitLabel = (prod.unit || 'PCS').toUpperCase();
+                  const cleanBarcode = (prod.barcode || '').trim();
+                  const primaryCode = cleanBarcode || prod.id;
+                  const showSecondaryId =
+                    Boolean(cleanBarcode) &&
+                    prod.id !== cleanBarcode &&
+                    !prod.id.toLowerCase().endsWith('-' + cleanBarcode.toLowerCase());
+
+                  const categoryLabel = (prod.category || 'Umum').trim() || 'Umum';
+                  const cleanRack = (prod.rack_location || '').trim();
+                  const showRack =
+                    Boolean(cleanRack) &&
+                    cleanRack !== '-' &&
+                    cleanRack.toLowerCase() !== categoryLabel.toLowerCase();
+
+                  const stockQty = Number(prod.stock) || 0;
+                  const isOutOfStock = stockQty <= 0;
+                  const isLowStock = !isOutOfStock && stockQty <= (prod.min_stock_alert || 0);
 
                   return (
-                    <tr key={prod.id} className={`hover:bg-[#fcf9f5] transition-colors ${selectedIds.has(prod.id) ? 'bg-[#fff7ed]' : ''}`}>
+                    <tr
+                      key={prod.id}
+                      className={`hover:bg-[#fcf9f5] transition-colors ${selectedIds.has(prod.id) ? 'bg-[#fff7ed]' : 'bg-white'}`}
+                    >
                       
                       {/* Row Checkbox */}
-                      <td className="px-3 py-3 text-center">
+                      <td className="px-3 py-3 text-center align-middle border-b border-[#f2e5d8]">
                         <input
                           type="checkbox"
                           className="w-4 h-4 rounded border-[#ddc3aa] text-[#96633b] focus:ring-[#96633b] cursor-pointer accent-[#96633b]"
@@ -809,71 +863,116 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                       </td>
 
                       {/* Product Name, SKU & Barcode */}
-                      <td className="px-4 py-3">
-                        <div>
-                          <div className="font-bold text-[#3d2617] leading-tight text-xs">{prod.name}</div>
-                          <div className="font-mono text-[11px] text-[#8a6b53] mt-1 flex items-center gap-1.5">
-                            <span className="font-semibold text-[#96633b] bg-[#faebd7] px-1.5 py-0.2 rounded border border-[#eed7c4]">
-                              {prod.id}
-                            </span>
-                            <span>{prod.barcode}</span>
+                      <td className="px-4 py-3 align-middle border-b border-[#f2e5d8]">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {prod.image_url ? (
+                            <img
+                              src={prod.image_url}
+                              alt={prod.name}
+                              className="w-9 h-9 rounded-xl object-cover border border-[#e5d0be] shrink-0 bg-[#fcf9f5]"
+                            />
+                          ) : null}
+                          <div className="min-w-0">
+                            <div className="font-bold text-[#3d2617] leading-snug text-xs sm:text-[13px] truncate">
+                              {prod.name}
+                            </div>
+                            <div className="font-mono text-[11px] text-[#8a6b53] mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 font-semibold text-[#96633b] bg-[#faebd7] px-2 py-0.5 rounded-md border border-[#eed7c4]">
+                                <Barcode className="w-3 h-3 opacity-80" />
+                                <span>{primaryCode}</span>
+                              </span>
+                              {showSecondaryId && (
+                                <span className="text-[10px] text-[#8a6b53]">SKU: {prod.id}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
 
                       {/* Category & Location */}
-                      <td className="px-3 py-3">
-                        <div className="font-medium text-[#3d2617]">{prod.category}</div>
-                        <div className="text-[11px] font-mono text-[#8a6b53]">{prod.rack_location}</div>
+                      <td className="px-3 py-3 align-middle border-b border-[#f2e5d8]">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#fcf9f5] text-[#3d2617] border border-[#e5d0be] font-semibold text-[11px] leading-tight">
+                          {categoryLabel}
+                        </span>
+                        {showRack && (
+                          <div className="text-[10px] font-mono text-[#8a6b53] mt-1">
+                            Rak: {cleanRack}
+                          </div>
+                        )}
                       </td>
 
                       {/* Buy Price */}
-                      <td className="px-3 py-3 text-right font-mono text-[#8a6b53] font-medium">
-                        {formatRupiah(prod.buy_price)}
-                        <span className="text-[10px] text-[#8a6b53] block font-sans">/{prod.unit}</span>
+                      <td className="px-3 py-3 text-right align-middle border-b border-[#f2e5d8] whitespace-nowrap tabular-nums">
+                        <span className="font-mono text-[#5c3c26] font-semibold text-xs">
+                          {formatRupiah(prod.buy_price)}
+                        </span>
+                        <span className="text-[10px] text-[#8a6b53] font-sans font-medium ml-1">
+                          /{unitLabel}
+                        </span>
                       </td>
 
                       {/* Retail Price */}
-                      <td className="px-3 py-3 text-right font-mono font-bold text-[#166534] text-sm">
-                        {formatRupiah(prod.retail_price)}
-                        <span className="text-[10px] font-normal text-[#8a6b53] block font-sans">/{prod.unit}</span>
+                      <td className="px-3 py-3 text-right align-middle border-b border-[#f2e5d8] whitespace-nowrap tabular-nums">
+                        <span className="font-mono font-extrabold text-[#166534] text-xs sm:text-sm">
+                          {formatRupiah(prod.retail_price)}
+                        </span>
+                        <span className="text-[10px] font-medium text-[#8a6b53] font-sans ml-1">
+                          /{unitLabel}
+                        </span>
                       </td>
 
                       {/* Wholesale Price */}
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-3 py-3 text-right align-middle border-b border-[#f2e5d8] whitespace-nowrap tabular-nums">
                         {hasWholesale ? (
                           <div>
-                            <div className="font-mono font-bold text-[#96633b]">
+                            <div className="font-mono font-bold text-[#96633b] text-xs">
                               {formatRupiah(prod.wholesale_price)}
                             </div>
-                            <span className="text-[10px] font-semibold text-[#96633b] bg-[#faebd7] px-1.5 py-0.5 rounded-full border border-[#eed7c4]">
-                              &ge; {prod.min_wholesale_qty} {prod.unit}
+                            <span className="inline-block mt-0.5 text-[10px] font-semibold text-[#96633b] bg-[#faebd7] px-1.5 py-0.5 rounded-full border border-[#eed7c4]">
+                              &ge; {prod.min_wholesale_qty} {unitLabel}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[#8a6b53] text-[11px]">-</span>
+                          <span className="text-[#8a6b53] text-xs font-mono">—</span>
                         )}
                       </td>
 
                       {/* Margin % */}
-                      <td className="px-3 py-3 text-center">
-                        <span className="font-mono font-bold text-xs text-[#166534] bg-[#edf5ee] px-2 py-0.5 rounded-full border border-[#cce2cf]">
+                      <td className="px-3 py-3 text-center align-middle border-b border-[#f2e5d8] whitespace-nowrap tabular-nums">
+                        <span className="inline-flex items-center font-mono font-bold text-[11px] text-[#166534] bg-[#edf5ee] px-2.5 py-0.5 rounded-full border border-[#cce2cf]">
                           +{marginPercent}%
                         </span>
                       </td>
 
                       {/* Stock */}
-                      <td className="px-3 py-3 text-center font-mono">
-                        <span className={`font-bold text-xs ${prod.stock <= prod.min_stock_alert ? 'text-rose-700' : 'text-[#3d2617]'}`}>
-                          {prod.stock} {prod.unit}
-                        </span>
-                        {prod.stock <= prod.min_stock_alert && (
-                          <div className="text-[9px] text-rose-700 font-bold uppercase">Stok Tipis</div>
+                      <td className="px-3 py-3 text-center align-middle border-b border-[#f2e5d8] whitespace-nowrap tabular-nums">
+                        {isOutOfStock ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-mono font-extrabold text-xs">
+                              0 {unitLabel}
+                            </span>
+                            <span className="text-[9px] text-rose-600 font-extrabold uppercase tracking-wider mt-0.5">
+                              Stok Habis
+                            </span>
+                          </div>
+                        ) : isLowStock ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-mono font-extrabold text-xs">
+                              {stockQty.toLocaleString('id-ID')} {unitLabel}
+                            </span>
+                            <span className="text-[9px] text-amber-700 font-extrabold uppercase tracking-wider mt-0.5">
+                              Stok Tipis
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#fcf9f5] text-[#3d2617] border border-[#e5d0be] font-mono font-bold text-xs">
+                            {stockQty.toLocaleString('id-ID')} {unitLabel}
+                          </span>
                         )}
                       </td>
 
                       {/* Actions */}
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center align-middle border-b border-[#f2e5d8] whitespace-nowrap">
                         {deleteConfirmId === prod.id ? (
                           <div className="flex items-center justify-center space-x-1 animate-fadeIn">
                             <button
@@ -975,7 +1074,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
       {/* Edit Product & Photo Modal Popup */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
           <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}
@@ -1109,32 +1208,42 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
                   label="Kategori"
                   value={editCategory}
                   onChange={setEditCategory}
-                  options={[
-                    'Sparepart AC',
-                    'Unit AC',
-                    'Freon & Refrigerant',
-                    'Pipa & Fitting',
-                    'Kompresor',
-                    'Elektronik & PCB',
-                    'Material & Aksesoris',
-                    'Alat Kerja & Pompa',
-                    'Umum'
-                  ]}
+                  options={Array.from(
+                    new Set([
+                      ...categories.filter((c) => c !== 'ALL'),
+                      ...(editCategory ? [editCategory] : []),
+                      'Sembako',
+                      'Minuman & Jajanan',
+                      'Kebutuhan Dapur',
+                      'Kebersihan & Rumah Tangga',
+                      'Perlengkapan & Lain-Lain',
+                      'Sparepart AC',
+                      'Unit AC',
+                      'Umum'
+                    ])
+                  )}
                 />
 
                 <CustomSelect
                   label="Satuan (Unit)"
                   value={editUnit}
                   onChange={setEditUnit}
-                  options={[
-                    'Pcs',
-                    'Pouch',
-                    'Sak',
-                    'Bks',
-                    'Kotak',
-                    'Renceng',
-                    'Botol'
-                  ]}
+                  options={Array.from(
+                    new Set([
+                      ...(editUnit ? [editUnit] : []),
+                      'PCS',
+                      'PAK',
+                      'DOS',
+                      'SAK',
+                      'TBG',
+                      'BKS',
+                      'BTL',
+                      'RTG',
+                      'KOTAK',
+                      'POUCH',
+                      'KG'
+                    ])
+                  )}
                 />
               </div>
 
@@ -1286,7 +1395,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
       {/* CSV Import Modal */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
           <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
             {/* Header */}
@@ -1436,7 +1545,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
       {/* Modal Sinkronisasi Katalog Cloud */}
       {isCloudSyncModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-950/40 backdrop-blur-xs animate-fadeIn">
           <div className="bg-[#fcf9f5] border border-[#e5d0be] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col select-text">
             
             {/* Header */}
@@ -1549,7 +1658,7 @@ export const ProductPriceListView: React.FC<ProductPriceListViewProps> = React.m
 
       {/* Modal Konfirmasi Hapus Masal */}
       {showBatchDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[70] p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl max-w-md w-full border border-[#e5d0be] shadow-2xl p-6 text-center space-y-4">
             <div className="w-14 h-14 mx-auto rounded-2xl bg-red-100 text-red-600 flex items-center justify-center">
               <Trash2 className="w-7 h-7" />

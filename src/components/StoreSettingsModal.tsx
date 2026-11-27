@@ -1458,7 +1458,7 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
 
                 <div className="overflow-x-auto max-h-[calc(100vh-280px)] custom-scroll">
                   <table className="w-full text-left text-xs">
-                    <thead className="sticky top-0 bg-[#f5ebe0] backdrop-blur-xs z-10">
+                    <thead className="sticky top-0 bg-[#f5ebe0] z-10">
                       <tr className="border-b border-[#ddc3aa] text-[#5c3c26] text-[11px] font-black uppercase tracking-wider">
                         <th className="py-3 px-4">Nama Petugas</th>
                         <th className="py-3 px-4">Username</th>

@@ -442,7 +442,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
           <div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2.5">
-                <div className="p-2.5 rounded-2xl bg-amber-100/80 text-amber-900 border border-amber-200/80 shadow-2xs group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-2xl bg-[#faebd7] text-[#7c4e2f] border border-[#eed7c4] shadow-2xs group-hover:scale-105 transition-transform">
                   <Coins className="w-5 h-5 text-[#7c4e2f]" />
                 </div>
                 <div>
@@ -493,8 +493,8 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
           <div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2.5">
-                <div className="p-2.5 rounded-2xl bg-orange-100/80 text-orange-900 border border-orange-200/80 shadow-2xs group-hover:scale-105 transition-transform">
-                  <Receipt className="w-5 h-5 text-[#96633b]" />
+                <div className="p-2.5 rounded-2xl bg-[#faebd7] text-[#7c4e2f] border border-[#eed7c4] shadow-2xs group-hover:scale-105 transition-transform">
+                  <Receipt className="w-5 h-5 text-[#7c4e2f]" />
                 </div>
                 <div>
                   <span className="text-xs font-bold text-[#8a6b53] block leading-tight">Total Nota Transaksi</span>
@@ -652,7 +652,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
                 <span className="text-[10px] text-[#166534] block font-medium">Total Fisik Terjual</span>
                 <span className="font-mono font-extrabold text-sm text-[#166534]">{todayItemsSold} <span className="text-[10px] font-normal text-[#166534]">Pcs</span></span>
               </div>
-              <div className="p-2.5 rounded-2xl bg-[#faebd7]/70 border border-[#eed7c4]">
+              <div className="p-2.5 rounded-2xl bg-[#faebd7] border border-[#eed7c4]">
                 <span className="text-[10px] text-[#7c4e2f] block font-medium">Omset Produk Hari Ini</span>
                 <span className="font-mono font-black text-sm text-[#7c4e2f] whitespace-nowrap">{formatRupiah(todayRevenue)}</span>
               </div>

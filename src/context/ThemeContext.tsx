@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useLayoutEffect } from 'react';
 
 export type ThemeCategory = 'soft' | 'bright' | 'dark';
 
@@ -693,10 +693,25 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+function resolveInitialThemeId(): string {
+  try {
+    const saved = localStorage.getItem('ketoko_theme_id');
+    if (saved && THEME_PRESETS.some((t) => t.id === saved)) {
+      return saved;
+    }
+    const activeStore = (localStorage.getItem('ketoko_active_store_id') || '').toLowerCase();
+    const hostname = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    if (activeStore.includes('koperasimsl') || hostname.includes('koperasimsl')) {
+      return 'sage_matcha';
+    }
+  } catch {
+    // ignore storage access issues
+  }
+  return 'coklat_susu';
+}
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [themeId, setThemeId] = useState<string>(() => {
-    return localStorage.getItem('ketoko_theme_id') || 'coklat_susu';
-  });
+  const [themeId, setThemeId] = useState<string>(resolveInitialThemeId);
 
   const currentTheme = THEME_PRESETS.find((t) => t.id === themeId) || THEME_PRESETS[0];
 
@@ -734,7 +749,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.setAttribute('data-theme-category', theme.category);
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyThemeToDOM(currentTheme);
   }, [currentTheme]);
 

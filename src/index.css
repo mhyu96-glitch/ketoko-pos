@@ -36,7 +36,8 @@
 
 /* =========================================================================
    DYNAMIC THEME ENGINE CSS BINDINGS
-   Seamlessly maps all Tailwind color classes to active theme CSS variables
+   Seamlessly maps all legacy Coklat Latte classes across every view & modal
+   to active theme CSS custom properties (--theme-*)
    ========================================================================= */
 
 /* 1. Header Gradients & Banners */
@@ -55,8 +56,14 @@
 [data-theme] .to-\[\#a6744c\],
 [data-theme] .to-\[\#af7c54\],
 [data-theme] .to-\[\#9b663b\],
+[data-theme] .to-\[\#96633b\],
 [data-theme] .to-\[\#85532f\],
-[data-theme] .to-\[\#683f23\] {
+[data-theme] .to-\[\#83532e\],
+[data-theme] .to-\[\#7c4e2f\],
+[data-theme] .to-\[\#7a4e2b\],
+[data-theme] .to-\[\#6f4021\],
+[data-theme] .to-\[\#683f23\],
+[data-theme] .to-\[\#633e26\] {
   --tw-gradient-to: var(--theme-header-to) var(--tw-gradient-to-position) !important;
 }
 
@@ -68,8 +75,32 @@
   --tw-gradient-stops: var(--theme-header-from), var(--theme-header-to), var(--theme-header-to) !important;
 }
 
-/* 2. Header Badges & Accents */
+/* Soft Surface Gradients (Cards, Onboarding, Receipt Status) */
+[data-theme] .from-\[\#fbf5ee\],
+[data-theme] .from-\[\#fbf6f0\],
+[data-theme] .from-\[\#fcf9f5\],
+[data-theme] .from-\[\#faebd7\],
+[data-theme] .from-\[\#faebd7\]\/70 {
+  --tw-gradient-from: var(--theme-surface-alt) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-from), var(--tw-gradient-to)) !important;
+}
+
+[data-theme] .via-\[\#fcf8f4\] {
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--theme-canvas-bg), var(--tw-gradient-to) !important;
+}
+
+[data-theme] .to-\[\#fcf9f5\],
+[data-theme] .to-\[\#f4e8dc\],
+[data-theme] .to-\[\#f4ebe1\] {
+  --tw-gradient-to: var(--theme-canvas-bg) var(--tw-gradient-to-position) !important;
+}
+
+/* 2. Header Badges & Dark Accents */
 [data-theme] .bg-\[\#83532e\],
+[data-theme] .bg-\[\#83532e\]\/80,
+[data-theme] .bg-\[\#8c5e3c\],
 [data-theme] .bg-\[\#543017\],
 [data-theme] .bg-\[\#5e3519\],
 [data-theme] .bg-\[\#5e3820\],
@@ -77,17 +108,26 @@
   background-color: var(--theme-header-badge) !important;
 }
 
-[data-theme] .hover\:bg-\[\#83532e\]:hover,
 [data-theme] .hover\:bg-\[\#543017\]:hover,
 [data-theme] .hover\:bg-\[\#5e3519\]:hover,
-[data-theme] .hover\:bg-\[\#5e3820\]:hover {
-  background-color: var(--theme-header-badge) !important;
+[data-theme] .hover\:bg-\[\#5e3820\]:hover,
+[data-theme] .hover\:bg-\[\#422511\]:hover,
+[data-theme] .hover\:bg-\[\#3d2210\]:hover,
+[data-theme] .hover\:bg-\[\#28180e\]:hover,
+[data-theme] .hover\:bg-\[\#5c3c26\]:hover {
+  background-color: var(--theme-primary-hover) !important;
 }
 
 [data-theme] .border-\[\#a6744c\],
 [data-theme] .border-\[\#85542f\],
+[data-theme] .border-\[\#83532e\],
+[data-theme] .border-\[\#83532e\]\/30,
 [data-theme] .border-\[\#734729\],
+[data-theme] .border-\[\#6b4226\],
+[data-theme] .border-\[\#633e26\],
 [data-theme] .border-\[\#5e3519\],
+[data-theme] .border-\[\#5c3c26\],
+[data-theme] .border-\[\#59351e\],
 [data-theme] .border-\[\#543017\],
 [data-theme] .border-\[\#9b663b\],
 [data-theme] .border-\[\#9b663b\]\/50,
@@ -95,74 +135,209 @@
   border-color: var(--theme-header-badge) !important;
 }
 
-/* 3. Primary Buttons & Active Elements */
+/* 3. Primary Buttons, Active Controls & Checkboxes */
 [data-theme] .bg-\[\#96633b\],
 [data-theme] .bg-\[\#7c4e2f\],
 [data-theme] .bg-\[\#4a3020\],
-[data-theme] .bg-\[\#af7c54\] {
+[data-theme] .bg-\[\#3d2617\],
+[data-theme] .bg-\[\#2a1a12\],
+[data-theme] .bg-\[\#af7c54\],
+[data-theme] .bg-\[\#a08573\] {
   background-color: var(--theme-primary) !important;
 }
 
+[data-theme] .hover\:bg-\[\#96633b\]:hover,
 [data-theme] .hover\:bg-\[\#83532e\]:hover,
-[data-theme] .hover\:bg-\[\#633e26\]:hover,
+[data-theme] .hover\:bg-\[\#6f4021\]:hover,
+[data-theme] .hover\:bg-\[\#683f24\]:hover,
 [data-theme] .hover\:bg-\[\#683f23\]:hover,
-[data-theme] .hover\:bg-\[\#382316\]:hover {
+[data-theme] .hover\:bg-\[\#633e26\]:hover,
+[data-theme] .hover\:bg-\[\#382316\]:hover,
+[data-theme] .group:hover .group-hover\:bg-\[\#96633b\],
+[data-theme] .group:hover .group-hover\:bg-\[\#83532e\],
+[data-theme] .group:hover .group-hover\:bg-\[\#683f24\] {
   background-color: var(--theme-primary-hover) !important;
 }
 
-/* 4. Canvas & Surfaces */
+[data-theme] .border-\[\#96633b\],
+[data-theme] .border-\[\#7c4e2f\],
+[data-theme] .hover\:border-\[\#96633b\]:hover,
+[data-theme] .hover\:border-\[\#7c4e2f\]:hover,
+[data-theme] .focus\:border-\[\#96633b\]:focus,
+[data-theme] .focus\:border-\[\#7c4e2f\]:focus {
+  border-color: var(--theme-primary) !important;
+}
+
+[data-theme] .accent-\[\#96633b\],
+[data-theme] .accent-\[\#7c4e2f\] {
+  accent-color: var(--theme-primary) !important;
+}
+
+[data-theme] .selection\:bg-\[\#faebd7\]::selection {
+  background-color: var(--theme-primary-light) !important;
+}
+
+[data-theme] .selection\:text-\[\#96633b\]::selection {
+  color: var(--theme-primary) !important;
+}
+
+/* 4. Canvas, Table Headers & Secondary Surfaces */
 [data-theme] .bg-\[\#fcf9f5\],
+[data-theme] .bg-\[\#f8f5f1\],
 [data-theme] .bg-\[\#f6f0ea\],
 [data-theme] .bg-\[\#fbf7f2\],
+[data-theme] .bg-\[\#fbf7f4\],
+[data-theme] .bg-\[\#fbf5ee\],
 [data-theme] .bg-\[\#fcf8f4\],
-[data-theme] .bg-\[\#fdfaf7\] {
+[data-theme] .bg-\[\#fcfaf7\],
+[data-theme] .bg-\[\#fdfaf7\],
+[data-theme] .bg-\[\#faf5f0\],
+[data-theme] .bg-\[\#F5EFE6\] {
   background-color: var(--theme-canvas-bg) !important;
 }
 
 [data-theme] .bg-\[\#f5ebe0\],
 [data-theme] .bg-\[\#f5ece3\],
+[data-theme] .bg-\[\#f5ede3\],
+[data-theme] .bg-\[\#f5ede4\],
+[data-theme] .bg-\[\#f5ede4\]\/60,
+[data-theme] .bg-\[\#f5ede4\]\/70,
 [data-theme] .bg-\[\#faebd7\],
-[data-theme] .bg-\[\#fcf5ed\] {
+[data-theme] .bg-\[\#faebd7\]\/20,
+[data-theme] .bg-\[\#faebd7\]\/60,
+[data-theme] .bg-\[\#faebd7\]\/70,
+[data-theme] .bg-\[\#fcf5ed\],
+[data-theme] .bg-\[\#fdf2e9\],
+[data-theme] .bg-\[\#fff7ed\],
+[data-theme] .bg-\[\#ffedd5\],
+[data-theme] .bg-\[\#f0e4d7\],
+[data-theme] .bg-\[\#f0e8e0\],
+[data-theme] .bg-\[\#ede0d2\],
+[data-theme] .bg-\[\#ede4da\],
+[data-theme] .bg-\[\#ebdccf\],
+[data-theme] .bg-\[\#e5d0be\],
+[data-theme] .bg-\[\#dfcebe\] {
   background-color: var(--theme-surface-alt) !important;
 }
 
+/* Table Headers across all views & modals */
+[data-theme] .bg-\[\#f1e5d8\],
+[data-theme] .bg-\[\#f7efe6\],
+[data-theme] thead.bg-\[\#f5ebe0\],
+[data-theme] thead.bg-\[\#f5ece3\],
+[data-theme] thead.bg-\[\#f1e5d8\],
+[data-theme] thead.bg-\[\#f7efe6\],
+[data-theme] thead th.bg-\[\#f5ebe0\],
+[data-theme] thead th.bg-\[\#f5ece3\],
+[data-theme] thead th.bg-\[\#f1e5d8\] {
+  background-color: var(--theme-table-header-bg) !important;
+  color: var(--theme-table-header-text) !important;
+}
+
+[data-theme] thead .text-\[\#634837\],
+[data-theme] thead .text-\[\#5c3c26\] {
+  color: var(--theme-table-header-text) !important;
+}
+
+/* Subtle Row Hovers */
+[data-theme] .hover\:bg-\[\#fcf9f5\]:hover,
+[data-theme] .hover\:bg-\[\#fcf8f4\]:hover,
+[data-theme] .hover\:bg-\[\#fcf6f0\]:hover,
+[data-theme] .hover\:bg-\[\#fcf5ed\]:hover,
+[data-theme] .hover\:bg-\[\#fbf7f2\]:hover,
+[data-theme] .hover\:bg-\[\#fbf7f4\]:hover {
+  background-color: var(--theme-card-bg-hover) !important;
+}
+
+/* Interactive Pill & Button Surface Hovers */
 [data-theme] .hover\:bg-\[\#f5ebe0\]:hover,
 [data-theme] .hover\:bg-\[\#f5ece3\]:hover,
+[data-theme] .hover\:bg-\[\#f6eee4\]:hover,
+[data-theme] .hover\:bg-\[\#f7ece0\]:hover,
 [data-theme] .hover\:bg-\[\#ebd7c5\]:hover,
 [data-theme] .hover\:bg-\[\#ebdccf\]:hover,
+[data-theme] .hover\:bg-\[\#ebdccf\]\/60:hover,
+[data-theme] .hover\:bg-\[\#eed7c4\]:hover,
+[data-theme] .hover\:bg-\[\#dfcebe\]:hover,
 [data-theme] .hover\:bg-\[\#faebd7\]:hover,
+[data-theme] .hover\:bg-\[\#faebd7\]\/40:hover,
+[data-theme] .hover\:bg-\[\#faebd7\]\/50:hover,
+[data-theme] .hover\:bg-\[\#faebd7\]\/60:hover,
+[data-theme] .hover\:bg-\[\#faebd7\]\/70:hover,
 [data-theme] .hover\:bg-\[\#f6dfc4\]:hover,
-[data-theme] .hover\:bg-\[\#fbf7f2\]:hover {
+[data-theme] .hover\:bg-\[\#ffedd5\]:hover,
+[data-theme] .group:hover .group-hover\:bg-\[\#faebd7\] {
   background-color: var(--theme-primary-light) !important;
 }
 
-/* 5. Borders */
+/* 5. Borders & Table Dividers */
 [data-theme] .border-\[\#e5d0be\],
+[data-theme] .border-\[\#e5d5c5\],
+[data-theme] .border-\[\#e8d7c7\],
+[data-theme] .border-\[\#ebdccf\],
+[data-theme] .border-\[\#ebdccf\]\/70,
 [data-theme] .border-\[\#ddc3aa\],
 [data-theme] .border-\[\#e4d5c7\],
 [data-theme] .border-\[\#dfcebe\],
+[data-theme] .border-\[\#d6c4b2\],
+[data-theme] .border-\[\#dfd5cb\],
 [data-theme] .border-\[\#eed7c4\],
+[data-theme] .border-\[\#eed7c4\]\/40,
 [data-theme] .border-\[\#ecdac5\],
 [data-theme] .border-\[\#e8d5c0\],
+[data-theme] .border-\[\#f0d0b7\],
+[data-theme] .border-\[\#fed7aa\],
 [data-theme] .border-\[\#caa992\],
 [data-theme] .border-\[\#eee2d5\] {
   border-color: var(--theme-border) !important;
 }
 
+[data-theme] .hover\:border-\[\#b8957c\]:hover,
+[data-theme] .hover\:border-\[\#c8a88f\]:hover,
+[data-theme] .hover\:border-\[\#ddc3aa\]:hover,
+[data-theme] .hover\:border-\[\#dfcebe\]:hover,
+[data-theme] .hover\:border-\[\#eed7c4\]:hover {
+  border-color: var(--theme-primary) !important;
+}
+
 [data-theme] .border-\[\#f2e5d8\],
-[data-theme] .border-\[\#f0e4d7\] {
+[data-theme] .border-\[\#f0e4d7\],
+[data-theme] .border-\[\#f0e4d7\]\/80 {
   border-color: var(--theme-border-subtle) !important;
 }
 
-/* 6. Typography */
+[data-theme] .divide-\[\#f0e4d7\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#f2e5d8\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#f5ece3\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#f7ede3\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#eed7c4\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#ddc3aa\] > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-\[\#ebdccf\]\/60 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--theme-border-subtle) !important;
+}
+
+/* 6. Typography & Placeholders */
 [data-theme] .text-\[\#96633b\],
 [data-theme] .text-\[\#7c4e2f\],
-[data-theme] .text-\[\#8c5e3c\] {
+[data-theme] .text-\[\#8c5e3c\],
+[data-theme] .text-\[\#6f4021\],
+[data-theme] .text-\[\#9a3412\],
+[data-theme] .text-\[\#7c2d12\],
+[data-theme] .hover\:text-\[\#7c4e2f\]:hover,
+[data-theme] .hover\:text-\[\#5c371e\]:hover,
+[data-theme] .hover\:text-\[\#5c3c26\]:hover,
+[data-theme] .hover\:text-\[\#54321c\]:hover,
+[data-theme] .group:hover .group-hover\:text-\[\#7c4e2f\] {
   color: var(--theme-primary) !important;
 }
 
 [data-theme] .text-\[\#3d2617\],
-[data-theme] .text-\[\#332219\] {
+[data-theme] .text-\[\#332219\],
+[data-theme] .text-\[\#2a1a12\],
+[data-theme] .text-\[\#3d271d\],
+[data-theme] .text-\[\#422919\],
+[data-theme] .hover\:text-\[\#332219\]:hover,
+[data-theme] .hover\:text-\[\#3d2617\]:hover {
   color: var(--theme-text-main) !important;
 }
 
@@ -170,34 +345,73 @@
 [data-theme] .text-\[\#856b59\],
 [data-theme] .text-\[\#5c3c26\],
 [data-theme] .text-\[\#543c2e\],
+[data-theme] .text-\[\#634837\],
+[data-theme] .text-\[\#6b4832\],
+[data-theme] .text-\[\#6c4830\],
 [data-theme] .text-\[\#6d4327\],
 [data-theme] .text-\[\#6b4226\],
 [data-theme] .text-\[\#a08573\],
+[data-theme] .text-\[\#a88a75\],
 [data-theme] .text-\[\#8c7766\] {
   color: var(--theme-text-muted) !important;
 }
 
+[data-theme] .text-\[\#dfcebe\],
+[data-theme] .text-\[\#ddc3aa\] {
+  color: var(--theme-border) !important;
+}
+
+[data-theme] .placeholder\:text-\[\#8a6b53\]::placeholder,
+[data-theme] .placeholder\:text-\[\#a08573\]::placeholder {
+  color: var(--theme-text-muted) !important;
+}
+
 [data-theme] .text-\[\#fcefe3\],
+[data-theme] .text-\[\#fcefe3\]\/70,
+[data-theme] .text-\[\#fcefe3\]\/80,
+[data-theme] .text-\[\#fcefe3\]\/90,
 [data-theme] .text-\[\#fdf7f2\],
 [data-theme] .text-\[\#d8c2b0\],
+[data-theme] .text-\[\#e8d5c4\],
+[data-theme] .text-\[\#fde68a\],
 [data-theme] .text-amber-200,
-[data-theme] .text-amber-100 {
+[data-theme] .text-amber-200\/80,
+[data-theme] .text-amber-100,
+[data-theme] .text-amber-100\/90 {
   color: var(--theme-header-subtext) !important;
 }
 
-/* 7. Rings & Focus */
+/* 7. Rings & Focus Shadows */
 [data-theme] .ring-\[\#96633b\]\/20,
 [data-theme] .ring-\[\#96633b\]\/30,
 [data-theme] .ring-\[\#7c4e2f\]\/20,
 [data-theme] .ring-\[\#7c4e2f\]\/25,
-[data-theme] .ring-\[\#8c5e3c\]\/30 {
-  --tw-ring-color: var(--theme-primary) !important;
+[data-theme] .ring-\[\#8c5e3c\]\/20,
+[data-theme] .ring-\[\#8c5e3c\]\/30,
+[data-theme] .ring-\[\#83532e\]\/30,
+[data-theme] .ring-\[\#eed7c4\],
+[data-theme] .focus\:ring-\[\#96633b\]:focus,
+[data-theme] .focus\:ring-\[\#96633b\]\/20:focus,
+[data-theme] .focus\:ring-\[\#7c4e2f\]:focus,
+[data-theme] .focus\:ring-\[\#7c4e2f\]\/20:focus {
+  --tw-ring-color: color-mix(in srgb, var(--theme-primary) 28%, transparent) !important;
+}
+
+[data-theme] .shadow-\[\#96633b\]\/20,
+[data-theme] .shadow-\[\#7c4e2f\]\/20 {
+  --tw-shadow-color: color-mix(in srgb, var(--theme-primary) 20%, transparent) !important;
 }
 
 /* 8. Dark Mode Overrides (when data-theme-category="dark") */
 [data-theme-category="dark"] .bg-white {
   background-color: var(--theme-card-bg) !important;
   color: var(--theme-text-main) !important;
+}
+
+[data-theme-category="dark"] .from-white {
+  --tw-gradient-from: var(--theme-card-bg) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(0 0 0 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-from), var(--tw-gradient-to)) !important;
 }
 
 [data-theme-category="dark"] input,
