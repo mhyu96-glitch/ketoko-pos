@@ -56,6 +56,7 @@ export interface PrinterConfig {
   dotMatrixPaperSize?: DotMatrixPaperSize;
   driverType: 'USB' | 'SERIAL' | 'BLUETOOTH' | 'BROWSER';
   paperWidth: '58mm' | '80mm';
+  printableWidthMm?: number;
   autoCut: boolean;
   headerText: string;
   footerText: string;
@@ -88,6 +89,7 @@ export const DEFAULT_CONFIG: PrinterConfig = {
   dotMatrixPaperSize: 'A4_HALF',
   driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
   paperWidth: '58mm',
+  printableWidthMm: 45,
   autoCut: true,
   headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
   footerText: 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli tidak dapat ditukar kembali.',
@@ -389,13 +391,16 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
         
         if (config.driverType === 'USB') {
           res = await printToWebUSB(raw);
+          if (res.success && res.message.includes('Driver Printer Windows')) {
+            res = await printThermalTestSpooler(config);
+          }
         } else if (config.driverType === 'SERIAL') {
           res = await printToWebSerial(raw, config.baudRate || 9600);
         } else if (config.driverType === 'BLUETOOTH') {
           res = await printToWebBluetooth(raw);
           setBtStatus(getBluetoothPrinterStatus());
         } else {
-          res = await printReceiptUniversal(raw, 'BROWSER');
+          res = await printThermalTestSpooler(config);
         }
       }
 
@@ -1211,7 +1216,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setConfig({ ...config, paperWidth: '58mm' })}
+                      onClick={() => setConfig({ ...config, paperWidth: '58mm', printableWidthMm: 45 })}
                       className={`py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all ${
                         config.paperWidth === '58mm'
                           ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs'
@@ -1222,7 +1227,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setConfig({ ...config, paperWidth: '80mm' })}
+                      onClick={() => setConfig({ ...config, paperWidth: '80mm', printableWidthMm: 72 })}
                       className={`py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all ${
                         config.paperWidth === '80mm'
                           ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs'
@@ -1248,6 +1253,55 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     <Scissors className="w-3.5 h-3.5" />
                     <span>{config.autoCut ? 'Auto-Cut Aktif (ON)' : 'Manual Tear (OFF)'}</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Kalibrasi Lebar Area Cetak Efektif (Mencegah Tepi Kanan Terpotong pada POS-58 / POS-80) */}
+              <div className="pt-3 border-t border-[#f0e4d7] space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#332219]">
+                    Lebar Area Cetak Efektif Printhead ({config.paperWidth === '80mm' ? 'Kertas 80mm' : 'Kertas 58mm'}):
+                  </span>
+                  <span className="font-mono font-extrabold text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    {config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 45)} mm
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-stone-500 leading-snug">
+                  Kertas 58mm memiliki lebar pemanas fisik <b>45–48mm</b>. Gunakan <b>45 mm (Standar POS-58)</b> agar teks & angka nominal kanan pas penuh dan tidak terpotong di tepi kanan.
+                </p>
+                <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                  {(config.paperWidth === '80mm'
+                    ? [
+                        { mm: 68, label: '68 mm', sub: 'Aman Rapat' },
+                        { mm: 72, label: '72 mm', sub: 'Standar 80mm' },
+                        { mm: 75, label: '75 mm', sub: 'Lebar' },
+                        { mm: 78, label: '78 mm', sub: 'Penuh Maks' }
+                      ]
+                    : [
+                        { mm: 43, label: '43 mm', sub: 'Aman Mini' },
+                        { mm: 45, label: '45 mm', sub: 'Standar POS-58' },
+                        { mm: 46.5, label: '46.5 mm', sub: 'Lebar' },
+                        { mm: 48, label: '48 mm', sub: 'Penuh 384-dot' }
+                      ]
+                  ).map((opt) => {
+                    const currentMm = config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 45);
+                    const active = Number(currentMm) === opt.mm;
+                    return (
+                      <button
+                        key={opt.mm}
+                        type="button"
+                        onClick={() => setConfig({ ...config, printableWidthMm: opt.mm })}
+                        className={`py-1.5 px-2 rounded-xl border text-center transition-all cursor-pointer ${
+                          active
+                            ? 'bg-[#7c4e2f] text-white border-[#5c3c26] font-bold shadow-2xs'
+                            : 'bg-[#fdfaf7] text-[#543c2e] border-[#e4d5c7] hover:bg-[#faebd7]'
+                        }`}
+                      >
+                        <div className="text-[11px] font-mono font-extrabold">{opt.label}</div>
+                        <div className={`text-[9px] ${active ? 'text-amber-200' : 'text-stone-500'}`}>{opt.sub}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1788,6 +1842,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     {config.showCashier && (
                       <div>KASIR: 01-SITI RAHMAH</div>
                     )}
+                    <div>PLG: ASMADI (52/5221/0109/97)</div>
+                    <div>AFD: MSL INTI-1 • AFD G</div>
                   </div>
 
                   <div className="text-center select-none font-bold">--------------------------------</div>
@@ -1839,6 +1895,11 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     <div className="flex justify-between font-bold">
                       <span>KEMBALIAN    :</span>
                       <span>{formatRupiah(sampleChange)}</span>
+                    </div>
+
+                    <div className="border-t border-dashed border-stone-400 pt-1 mt-1 flex justify-between font-black">
+                      <span>SISA SALDO   :</span>
+                      <span>{formatRupiah(2000000 - sampleGrandTotal)}</span>
                     </div>
                   </div>
 

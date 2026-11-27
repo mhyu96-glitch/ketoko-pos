@@ -841,6 +841,16 @@ export async function printRawBufferViaSpooler(
 
     const text = new TextDecoder().decode(new Uint8Array(cleanBytes)).trim();
     const is80 = savedWidth === '80mm';
+    let printWidthMm = is80 ? 72 : 45;
+    try {
+      const saved = localStorage.getItem('ketoko_printer_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.printableWidthMm && Number(parsed.printableWidthMm) >= 38) {
+          printWidthMm = Number(parsed.printableWidthMm);
+        }
+      }
+    } catch {}
     const escaped = text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -857,17 +867,23 @@ export async function printRawBufferViaSpooler(
       margin: 0mm !important;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100% !important;
-      max-width: 100% !important;
+    html {
       margin: 0 !important;
-      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '0.8mm 0.3mm 4mm 0.3mm'} !important;
+      padding: 0 !important;
+      background: #fff;
+    }
+    body {
+      width: ${printWidthMm}mm !important;
+      max-width: ${printWidthMm}mm !important;
+      margin: 0 !important;
+      padding: 1mm 0.5mm 4mm 0.5mm !important;
       font-family: Consolas, 'Liberation Mono', 'Courier New', monospace;
-      font-size: ${is80 ? '10.5px' : '8.6px'};
+      font-size: ${is80 ? '10.5px' : '8.8px'};
       line-height: 1.25;
       color: #000;
       background: #fff;
       font-weight: 700;
+      overflow: hidden;
       -webkit-print-color-adjust: exact;
     }
     pre {
@@ -900,9 +916,41 @@ export async function printRawBufferViaSpooler(
   }
 }
 
+function escapeReceiptHtml(val: any): string {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildReceiptBarcodeSvg(code: string, is80: boolean): string {
+  // Deterministic crisp 1D bar pattern visual for thermal receipt footer
+  const bars: number[] = [3, 1, 2, 2, 1, 3, 2, 1, 4, 1, 2, 3, 1, 2, 2, 3, 1, 2, 4, 1, 2, 1, 3, 2, 1, 3, 1, 2, 3];
+  const str = String(code || 'TRX');
+  for (let i = 0; i < Math.min(12, str.length); i++) {
+    bars.push((str.charCodeAt(i) % 3) + 1);
+    bars.push(((str.charCodeAt(i) >> 2) % 2) + 1);
+  }
+  let x = 0;
+  const rects: string[] = [];
+  for (let i = 0; i < bars.length; i++) {
+    const w = bars[i];
+    if (i % 2 === 0) {
+      rects.push(`<rect x="${x}" y="0" width="${w}" height="24" fill="#000" />`);
+    }
+    x += w;
+  }
+  const svgWidth = is80 ? '48mm' : '34mm';
+  return `<div class="center" style="margin-top:4px;">
+    <svg viewBox="0 0 ${x} 24" style="width:${svgWidth};height:22px;display:block;margin:0 auto;">${rects.join('')}</svg>
+    <div style="font-size:${is80 ? '9.5px' : '8px'};font-weight:800;letter-spacing:0.6px;margin-top:1px;">*${escapeReceiptHtml(code)}*</div>
+  </div>`;
+}
+
 /**
- * Cetak Struk Kasir Thermal 58mm/80mm Full-Width via Driver Printer Windows (POS-58 / POS-80 / Epson / Xprinter)
- * Menggunakan 100% lebar area cetak driver tanpa margin samping berlebih & nominal Rp anti-terpotong.
+ * Cetak Struk Kasir Thermal 58mm/80mm via Driver Printer Windows (POS-58 / POS-80 / Epson / Xprinter)
+ * Presisi sesuai lebar elemen pemanas printhead (default 45mm pada kertas 58mm, rata kiri margin 0 agar kanan tidak pernah terpotong)
+ * serta mendukung penuh 4 gaya desain di Pengaturan Printer: classic, modern, detailed, dan compact.
  */
 export async function printThermalReceiptSpooler(
   rawTransaction: Transaction,
@@ -911,57 +959,411 @@ export async function printThermalReceiptSpooler(
   try {
     const transaction = await enrichTransactionMemberData(rawTransaction);
     const is80 = config.paperWidth === '80mm';
-    const headerLines = (config.headerText || 'KETOKO POS').split('\n');
+    const defaultWidthMm = is80 ? 72 : 45;
+    const rawCfgWidth = Number(config.printableWidthMm);
+    const printWidthMm =
+      !isNaN(rawCfgWidth) && rawCfgWidth >= (is80 ? 60 : 38) && rawCfgWidth <= (is80 ? 80 : 54)
+        ? rawCfgWidth
+        : defaultWidthMm;
+
+    const style = config.receiptStyle || 'classic';
+    const headerLines = (config.headerText || 'KETOKO POS').split('\n').map((l) => l.trim()).filter(Boolean);
     const storeTitle = headerLines[0] || 'KETOKO POS';
     const storeSubLines = headerLines.slice(1);
-    const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n');
+    const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n').map((l) => l.trim()).filter(Boolean);
     const cashGiven = transaction.cash_given || transaction.grand_total;
     const changeDue = Math.max(0, cashGiven - transaction.grand_total);
-    const cleanCustomer = (transaction.customer_name || '').replace(/^Member #/i, '').trim() || (transaction.member_id ? `Member #${transaction.member_id}` : '');
+    const totalItemCount = transaction.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    const cleanCustomer =
+      (transaction.customer_name || '').replace(/^Member #/i, '').trim() ||
+      (transaction.member_id ? `Member #${transaction.member_id}` : '');
+    const showRealCustomer = Boolean(cleanCustomer && cleanCustomer.toUpperCase() !== 'PELANGGAN UMUM');
+
+    const dateObj = new Date(transaction.created_at);
+    const dateStr = dateObj.toLocaleDateString('id-ID');
+    const timeStr = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const eqLine = '<div class="eq-line">================================================================</div>';
+    const dashLine = '<div class="dash-line">----------------------------------------------------------------</div>';
+
+    const logoHtml =
+      config.showLogo && config.logoUrl
+        ? `<img src="${config.logoUrl}" class="logo" alt="Logo" />`
+        : '';
+
+    const memberSaldoHtml =
+      transaction.member_remaining_balance !== undefined
+        ? style === 'classic'
+          ? `
+            ${dashLine}
+            ${
+              transaction.payment_method === 'SALDO' && transaction.member_balance_before !== undefined
+                ? `<div class="row"><span class="lbl">SALDO AWAL :</span><span class="amt">${formatRupiah(transaction.member_balance_before)}</span></div>`
+                : ''
+            }
+            <div class="row bold"><span class="lbl">SISA SALDO :</span><span class="amt-bold">${formatRupiah(transaction.member_remaining_balance)}</span></div>
+          `
+          : `
+            <div class="divider"></div>
+            ${
+              transaction.payment_method === 'SALDO' && transaction.member_balance_before !== undefined
+                ? `<div class="row"><span class="lbl">Saldo Awal</span><span class="amt">${formatRupiah(transaction.member_balance_before)}</span></div>`
+                : ''
+            }
+            <div class="row bold"><span class="lbl">Sisa Saldo Member</span><span class="amt-bold">${formatRupiah(transaction.member_remaining_balance)}</span></div>
+          `
+        : '';
+
+    let bodyInnerHtml = '';
+
+    if (style === 'classic') {
+      bodyInnerHtml = `
+        <div class="classic-wrap">
+          ${logoHtml}
+          ${eqLine}
+          <div class="center">
+            <div class="title">${escapeReceiptHtml(storeTitle)}</div>
+            ${storeSubLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+          </div>
+          ${eqLine}
+          ${config.showQueueNumber ? `<div class="center bold" style="margin:2px 0;">*** NO. ANTRIAN: ${escapeReceiptHtml(transaction.receipt_number.slice(-3))} ***</div>${dashLine}` : ''}
+
+          <div class="row">
+            <span class="lbl">NO: ${escapeReceiptHtml(transaction.receipt_number)}</span>
+            <span class="amt">(${escapeReceiptHtml(transaction.payment_method)})</span>
+          </div>
+          <div class="row">
+            <span class="lbl">TGL: ${dateStr}</span>
+            <span class="amt">JAM: ${timeStr}</span>
+          </div>
+          ${config.showCashier ? `<div class="row"><span class="lbl">KASIR: ${escapeReceiptHtml(transaction.cashier_name || 'KASIR')}</span></div>` : ''}
+          ${showRealCustomer ? `<div class="row"><span class="lbl">PLG: <b>${escapeReceiptHtml(cleanCustomer)}</b></span></div>` : ''}
+          ${transaction.member_code ? `<div class="row"><span class="lbl">NIK: ${escapeReceiptHtml(transaction.member_code)}</span></div>` : ''}
+          ${transaction.member_afdeling ? `<div class="row"><span class="lbl">AFD: <b>${escapeReceiptHtml(transaction.member_afdeling)}</b></span></div>` : ''}
+
+          ${dashLine}
+          <div class="row bold">
+            <span class="lbl">ITEM BELANJA</span>
+            <span class="amt">TOTAL</span>
+          </div>
+          ${dashLine}
+
+          ${transaction.items
+            .map(
+              (item, idx) => `
+            <div class="item-block">
+              <div class="item-title">${idx + 1}. ${escapeReceiptHtml(item.product_name)}</div>
+              <div class="row">
+                <span class="lbl" style="padding-left:6px;">${item.qty} X ${formatRupiah(item.price_applied)}${item.is_wholesale ? ' [G]' : ''}</span>
+                <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+
+          ${dashLine}
+          <div class="row">
+            <span class="lbl">SUBTOTAL (${totalItemCount} ITEM):</span>
+            <span class="amt">${formatRupiah(transaction.subtotal)}</span>
+          </div>
+          ${
+            transaction.discount_amount > 0
+              ? `<div class="row"><span class="lbl">POTONGAN DISKON:</span><span class="amt">-${formatRupiah(transaction.discount_amount)}</span></div>`
+              : ''
+          }
+          ${
+            transaction.tax_amount > 0
+              ? `<div class="row"><span class="lbl">PPN:</span><span class="amt">${formatRupiah(transaction.tax_amount)}</span></div>`
+              : ''
+          }
+          ${dashLine}
+          <div class="row total-row">
+            <span class="lbl">TOTAL AKHIR :</span>
+            <span class="amt-bold">${formatRupiah(transaction.grand_total)}</span>
+          </div>
+          <div class="row">
+            <span class="lbl">BAYAR (${escapeReceiptHtml(transaction.payment_method)}) :</span>
+            <span class="amt">${formatRupiah(cashGiven)}</span>
+          </div>
+          <div class="row bold">
+            <span class="lbl">${transaction.payment_method === 'TEMPO' ? 'SISA PIUTANG :' : 'KEMBALIAN :'}</span>
+            <span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
+          </div>
+
+          ${memberSaldoHtml}
+
+          ${
+            config.showDiscountSaving && transaction.discount_amount > 0
+              ? `<div class="center bold" style="border:1px solid #000;padding:1.5px 3px;margin:3px 0;font-size:${is80 ? '9.5px' : '8.2px'};">*** ANDA HEMAT: ${formatRupiah(transaction.discount_amount)} ***</div>`
+              : ''
+          }
+
+          ${eqLine}
+          <div class="center" style="margin-top:2px;">
+            ${footerLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+          </div>
+          ${config.showBarcodeFooter ? buildReceiptBarcodeSvg(transaction.receipt_number, is80) : ''}
+        </div>
+      `;
+    } else if (style === 'compact') {
+      bodyInnerHtml = `
+        <div>
+          ${logoHtml}
+          <div class="center">
+            <div class="title">★ ${escapeReceiptHtml(storeTitle)} ★</div>
+            <div class="sub">${dateStr} ${timeStr}${config.showCashier ? ` • ${escapeReceiptHtml(transaction.cashier_name || 'Kasir')}` : ''}</div>
+            <div class="sub">#${escapeReceiptHtml(transaction.receipt_number)}</div>
+          </div>
+          ${config.showQueueNumber ? `<div class="center"><div class="badge">ANTRIAN #${escapeReceiptHtml(transaction.receipt_number.slice(-3))}</div></div>` : ''}
+          ${showRealCustomer ? `<div class="sub center"><b>${escapeReceiptHtml(cleanCustomer)}</b>${transaction.member_afdeling ? ` (${escapeReceiptHtml(transaction.member_afdeling)})` : ''}</div>` : ''}
+          <div class="divider"></div>
+          ${transaction.items
+            .map(
+              (item) => `
+            <div class="row">
+              <span class="lbl bold">${item.qty}x ${escapeReceiptHtml(item.product_name)}</span>
+              <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
+            </div>
+          `
+            )
+            .join('')}
+          <div class="divider"></div>
+          <div class="row total-row">
+            <span class="lbl">TOTAL (${totalItemCount}):</span>
+            <span class="amt-bold">${formatRupiah(transaction.grand_total)}</span>
+          </div>
+          <div class="row">
+            <span class="lbl">Bayar (${escapeReceiptHtml(transaction.payment_method)})</span>
+            <span class="amt">${formatRupiah(cashGiven)}</span>
+          </div>
+          <div class="row">
+            <span class="lbl">${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembali'}</span>
+            <span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
+          </div>
+          ${memberSaldoHtml}
+          <div class="divider"></div>
+          <div class="center">
+            ${footerLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+          </div>
+          ${config.showBarcodeFooter ? `<div class="center bold" style="font-size:8px;margin-top:2px;">*${escapeReceiptHtml(transaction.receipt_number)}*</div>` : ''}
+        </div>
+      `;
+    } else if (style === 'detailed') {
+      bodyInnerHtml = `
+        <div>
+          ${logoHtml}
+          <div class="center" style="border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:3px;">
+            <div class="title">${escapeReceiptHtml(storeTitle)}</div>
+            ${storeSubLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+            <div class="badge">FAKTUR &amp; NOTA RINCI</div>
+          </div>
+          <div style="border:1px solid #000;padding:3px;margin-bottom:3px;">
+            <div class="row"><span class="lbl">No: <b>${escapeReceiptHtml(transaction.receipt_number)}</b></span></div>
+            <div class="row"><span class="lbl">Waktu: ${dateStr} ${timeStr}</span></div>
+            ${config.showCashier ? `<div class="row"><span class="lbl">Kasir: ${escapeReceiptHtml(transaction.cashier_name || 'Kasir')}</span></div>` : ''}
+            ${showRealCustomer ? `<div class="row"><span class="lbl">Plg: <b>${escapeReceiptHtml(cleanCustomer)}</b></span></div>` : ''}
+            ${transaction.member_code ? `<div class="row"><span class="lbl">NIK: ${escapeReceiptHtml(transaction.member_code)}</span></div>` : ''}
+            ${transaction.member_afdeling ? `<div class="row"><span class="lbl">Afd: <b>${escapeReceiptHtml(transaction.member_afdeling)}</b></span></div>` : ''}
+          </div>
+          <div style="border:1px solid #000;padding:2px 3px;">
+            <div class="row bold" style="border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:2px;">
+              <span class="lbl">ITEM / HARGA</span>
+              <span class="amt">SUBTOTAL</span>
+            </div>
+            ${transaction.items
+              .map(
+                (item, idx) => `
+              <div class="item-block" style="border-bottom:1px dotted #999;padding-bottom:2px;">
+                <div class="item-title">${idx + 1}. ${escapeReceiptHtml(item.product_name)}</div>
+                <div class="row">
+                  <span class="lbl" style="padding-left:4px;">${item.qty} x ${formatRupiah(item.price_applied)}</span>
+                  <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
+                </div>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+          <div style="margin-top:3px;">
+            <div class="row"><span class="lbl">Subtotal (${totalItemCount} Item)</span><span class="amt">${formatRupiah(transaction.subtotal)}</span></div>
+            ${transaction.discount_amount > 0 ? `<div class="row"><span class="lbl">Diskon</span><span class="amt">-${formatRupiah(transaction.discount_amount)}</span></div>` : ''}
+            ${transaction.tax_amount > 0 ? `<div class="row"><span class="lbl">PPN</span><span class="amt">${formatRupiah(transaction.tax_amount)}</span></div>` : ''}
+            <div class="divider-double"></div>
+            <div class="row total-row"><span class="lbl">TOTAL FAKTUR</span><span class="amt-bold">${formatRupiah(transaction.grand_total)}</span></div>
+            <div class="row"><span class="lbl">Bayar (${escapeReceiptHtml(transaction.payment_method)})</span><span class="amt">${formatRupiah(cashGiven)}</span></div>
+            <div class="row bold"><span class="lbl">${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span><span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span></div>
+            ${memberSaldoHtml}
+          </div>
+          <div style="display:flex;justify-content:space-between;text-align:center;margin:6px 0 4px 0;font-size:8px;">
+            <div style="width:46%;">Kasir,<div style="height:18px;border-bottom:1px solid #000;margin-bottom:2px;"></div>(${escapeReceiptHtml((transaction.cashier_name || 'Kasir').slice(0, 14))})</div>
+            <div style="width:46%;">Penerima,<div style="height:18px;border-bottom:1px solid #000;margin-bottom:2px;"></div>(............)</div>
+          </div>
+          <div class="divider"></div>
+          <div class="center">
+            ${footerLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+          </div>
+          ${config.showBarcodeFooter ? buildReceiptBarcodeSvg(transaction.receipt_number, is80) : ''}
+        </div>
+      `;
+    } else {
+      // MODERN BERSIH
+      bodyInnerHtml = `
+        <div>
+          <div class="center">
+            ${logoHtml}
+            <div class="title">${escapeReceiptHtml(storeTitle)}</div>
+            ${storeSubLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+            ${config.showQueueNumber ? `<div class="badge">ANTRIAN #${escapeReceiptHtml(transaction.receipt_number.slice(-3))}</div>` : ''}
+          </div>
+
+          <div class="divider-double"></div>
+
+          <div class="row">
+            <span class="lbl">No: <b>${escapeReceiptHtml(transaction.receipt_number)}</b></span>
+            <span class="amt">${timeStr}</span>
+          </div>
+          <div class="row">
+            <span class="lbl">Tgl: ${dateStr}</span>
+            <span class="amt">${escapeReceiptHtml(transaction.payment_method)}</span>
+          </div>
+          ${config.showCashier ? `<div class="row"><span class="lbl">Kasir: ${escapeReceiptHtml(transaction.cashier_name || 'Kasir')}</span></div>` : ''}
+          ${showRealCustomer ? `<div class="row"><span class="lbl">Plg: <b>${escapeReceiptHtml(cleanCustomer)}</b></span></div>` : ''}
+          ${transaction.member_code ? `<div class="row"><span class="lbl">NIK: ${escapeReceiptHtml(transaction.member_code)}</span></div>` : ''}
+          ${transaction.member_afdeling ? `<div class="row"><span class="lbl">Afd: <b>${escapeReceiptHtml(transaction.member_afdeling)}</b></span></div>` : ''}
+
+          <div class="divider"></div>
+
+          ${transaction.items
+            .map(
+              (item, idx) => `
+            <div class="item-block">
+              <div class="item-title">${idx + 1}. ${escapeReceiptHtml(item.product_name)}</div>
+              <div class="row">
+                <span class="lbl" style="padding-left:6px;">${item.qty} x ${formatRupiah(item.price_applied)}${item.is_wholesale ? ' (Grosir)' : ''}</span>
+                <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+
+          <div class="divider"></div>
+
+          <div class="row">
+            <span class="lbl">Subtotal (${totalItemCount} Item)</span>
+            <span class="amt">${formatRupiah(transaction.subtotal)}</span>
+          </div>
+          ${
+            transaction.discount_amount > 0
+              ? `<div class="row"><span class="lbl">Diskon</span><span class="amt">-${formatRupiah(transaction.discount_amount)}</span></div>`
+              : ''
+          }
+          ${
+            transaction.tax_amount > 0
+              ? `<div class="row"><span class="lbl">PPN</span><span class="amt">${formatRupiah(transaction.tax_amount)}</span></div>`
+              : ''
+          }
+
+          <div style="border:1.5px solid #000;padding:3px 4px;margin:3px 0;">
+            <div class="row total-row" style="margin:0;padding:0;">
+              <span class="lbl">TOTAL BAYAR</span>
+              <span class="amt-bold">${formatRupiah(transaction.grand_total)}</span>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="lbl">Bayar (${escapeReceiptHtml(transaction.payment_method)})</span>
+            <span class="amt">${formatRupiah(cashGiven)}</span>
+          </div>
+          <div class="row bold">
+            <span class="lbl">${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span>
+            <span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
+          </div>
+
+          ${memberSaldoHtml}
+
+          <div class="divider-double"></div>
+
+          <div class="center" style="margin-top:2px;">
+            ${footerLines.map((l) => `<div class="sub">${escapeReceiptHtml(l)}</div>`).join('')}
+          </div>
+          ${config.showBarcodeFooter ? buildReceiptBarcodeSvg(transaction.receipt_number, is80) : ''}
+        </div>
+      `;
+    }
 
     const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>Struk ${transaction.receipt_number}</title>
+  <title>Struk ${escapeReceiptHtml(transaction.receipt_number)}</title>
   <style>
     @page {
       size: ${is80 ? '80mm' : '58mm'} auto;
       margin: 0mm !important;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100% !important;
-      max-width: 100% !important;
+    html {
       margin: 0 !important;
-      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '0.8mm 0.3mm 4mm 0.3mm'} !important;
-      font-family: Consolas, 'Segoe UI Mono', 'Liberation Mono', 'Courier New', monospace;
-      font-size: ${is80 ? '11.5px' : '10px'};
-      line-height: 1.28;
+      padding: 0 !important;
+      background: #ffffff;
+    }
+    body {
+      width: ${printWidthMm}mm !important;
+      max-width: ${printWidthMm}mm !important;
+      margin: 0 !important;
+      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '1mm 0.5mm 4mm 0.5mm'} !important;
+      font-family: Consolas, 'Liberation Mono', 'Courier New', monospace;
+      font-size: ${is80 ? '11px' : style === 'compact' ? '8.8px' : '9.2px'};
+      line-height: 1.25;
       color: #000000;
       background: #ffffff;
       font-weight: 600;
+      overflow: hidden;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    .classic-wrap { text-transform: uppercase; }
     .center { text-align: center; width: 100%; }
     .right { text-align: right; }
     .bold { font-weight: 800; }
-    .title { font-size: ${is80 ? '14px' : '11.5px'}; font-weight: 900; line-height: 1.2; margin-bottom: 2px; word-break: break-word; }
-    .sub { font-size: ${is80 ? '10.5px' : '9.2px'}; line-height: 1.22; word-break: break-word; }
-    .divider { width: 100%; border-top: 1px dashed #000; margin: 3.5px 0; }
-    .divider-double { width: 100%; border-top: 2px solid #000; margin: 3.5px 0; }
+    .title {
+      font-size: ${is80 ? '13px' : '10.5px'};
+      font-weight: 900;
+      line-height: 1.2;
+      margin-bottom: 1.5px;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    .sub {
+      font-size: ${is80 ? '10px' : '8.5px'};
+      line-height: 1.2;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    .eq-line, .dash-line {
+      width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      font-weight: 800;
+      line-height: 1.05;
+      margin: 2px 0;
+      letter-spacing: 0px;
+    }
+    .divider { width: 100%; border-top: 1px dashed #000; margin: 3px 0; }
+    .divider-double { width: 100%; border-top: 2px solid #000; margin: 3px 0; }
     .row {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
       width: 100%;
       gap: 4px;
-      margin: 1.5px 0;
+      margin: 1px 0;
     }
     .lbl {
       min-width: 0;
       flex: 1 1 auto;
+      word-break: break-word;
       overflow-wrap: anywhere;
     }
     .amt {
@@ -977,96 +1379,14 @@ export async function printThermalReceiptSpooler(
       font-weight: 900;
     }
     .item-block { width: 100%; margin: 2px 0; }
-    .item-title { font-weight: 800; line-height: 1.22; word-break: break-word; }
-    .total-row { font-size: ${is80 ? '13px' : '11.5px'}; font-weight: 900; padding: 2px 0; }
-    .logo { max-width: ${is80 ? '36mm' : '26mm'}; max-height: 18mm; object-fit: contain; margin: 0 auto 3px auto; display: block; filter: grayscale(100%) contrast(150%); }
-    .badge { border: 1px solid #000; padding: 1px 5px; font-weight: 800; display: inline-block; margin: 2px 0; font-size: ${is80 ? '10.5px' : '9px'}; }
+    .item-title { font-weight: 800; line-height: 1.2; word-break: break-word; overflow-wrap: break-word; }
+    .total-row { font-size: ${is80 ? '12.5px' : '10.5px'}; font-weight: 900; padding: 1.5px 0; }
+    .logo { max-width: ${is80 ? '34mm' : '24mm'}; max-height: 16mm; object-fit: contain; margin: 0 auto 2px auto; display: block; filter: grayscale(100%) contrast(150%); }
+    .badge { border: 1px solid #000; padding: 1px 4px; font-weight: 800; display: inline-block; margin: 2px 0; font-size: ${is80 ? '10px' : '8.5px'}; }
   </style>
 </head>
 <body>
-  <div class="center">
-    ${config.showLogo && config.logoUrl ? `<img src="${config.logoUrl}" class="logo" alt="Logo" />` : ''}
-    <div class="title">${storeTitle}</div>
-    ${storeSubLines.map((l) => `<div class="sub">${l}</div>`).join('')}
-    ${config.showQueueNumber ? `<div class="badge">ANTRIAN #${transaction.receipt_number.slice(-3)}</div>` : ''}
-  </div>
-
-  <div class="divider-double"></div>
-
-  <div class="row">
-    <span class="lbl">No: <b>${transaction.receipt_number}</b></span>
-    <span class="amt">${new Date(transaction.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
-  </div>
-  <div class="row">
-    <span class="lbl">Tgl: ${new Date(transaction.created_at).toLocaleDateString('id-ID')}</span>
-  </div>
-  ${config.showCashier ? `<div class="row"><span class="lbl">Ksr: ${transaction.cashier_name || 'Kasir'}</span></div>` : ''}
-  ${cleanCustomer ? `<div class="row"><span class="lbl">Plg: <b>${cleanCustomer}</b></span></div>` : ''}
-  ${transaction.member_code ? `<div class="row"><span class="lbl">NIK: ${transaction.member_code}</span></div>` : ''}
-  ${transaction.member_afdeling ? `<div class="row"><span class="lbl">Afd: <b>${transaction.member_afdeling}</b></span></div>` : ''}
-
-  <div class="divider"></div>
-
-  ${transaction.items.map((item, idx) => `
-    <div class="item-block">
-      <div class="item-title">${idx + 1}. ${item.product_name}</div>
-      <div class="row">
-        <span class="lbl" style="padding-left:6px;">${item.qty} x ${formatRupiah(item.price_applied)}${item.is_wholesale ? ' (Grosir)' : ''}</span>
-        <span class="amt-bold">${formatRupiah(item.subtotal_item)}</span>
-      </div>
-    </div>
-  `).join('')}
-
-  <div class="divider"></div>
-
-  <div class="row">
-    <span class="lbl">Subtotal</span>
-    <span class="amt">${formatRupiah(transaction.subtotal)}</span>
-  </div>
-  ${transaction.discount_amount > 0 ? `
-  <div class="row">
-    <span class="lbl">Diskon</span>
-    <span class="amt">-${formatRupiah(transaction.discount_amount)}</span>
-  </div>` : ''}
-  ${transaction.tax_amount > 0 ? `
-  <div class="row">
-    <span class="lbl">PPN</span>
-    <span class="amt">${formatRupiah(transaction.tax_amount)}</span>
-  </div>` : ''}
-
-  <div class="divider-double"></div>
-
-  <div class="row total-row">
-    <span class="lbl">TOTAL</span>
-    <span class="amt-bold">${formatRupiah(transaction.grand_total)}</span>
-  </div>
-  <div class="row">
-    <span class="lbl">Bayar (${transaction.payment_method})</span>
-    <span class="amt">${formatRupiah(cashGiven)}</span>
-  </div>
-  <div class="row bold">
-    <span class="lbl">${transaction.payment_method === 'TEMPO' ? 'Sisa Piutang' : 'Kembalian'}</span>
-    <span class="amt-bold">${formatRupiah(transaction.payment_method === 'TEMPO' ? Math.max(0, transaction.grand_total - cashGiven) : changeDue)}</span>
-  </div>
-  ${transaction.member_remaining_balance !== undefined ? `
-  <div class="divider"></div>
-  ${transaction.payment_method === 'SALDO' && transaction.member_balance_before !== undefined ? `
-  <div class="row">
-    <span class="lbl">Saldo Awal</span>
-    <span class="amt">${formatRupiah(transaction.member_balance_before)}</span>
-  </div>` : ''}
-  <div class="row bold">
-    <span class="lbl">Sisa Saldo Member</span>
-    <span class="amt-bold">${formatRupiah(transaction.member_remaining_balance)}</span>
-  </div>` : ''}
-
-  <div class="divider-double"></div>
-
-  <div class="center" style="margin-top:3px;">
-    ${footerLines.map((l) => `<div class="sub">${l}</div>`).join('')}
-    ${config.showBarcodeFooter ? `<div style="margin-top:3px;font-weight:800;font-size:${is80 ? '10px' : '8.5px'};">*${transaction.receipt_number}*</div>` : ''}
-  </div>
-
+  ${bodyInnerHtml}
   <script>
     window.onload = function() {
       setTimeout(function() { window.print(); }, 180);
@@ -1078,7 +1398,7 @@ export async function printThermalReceiptSpooler(
     printHtmlInIsolatedFrame(html);
     return {
       success: true,
-      message: `Struk thermal (${config.paperWidth}) berhasil dikirim ke Driver Printer Windows / OS!`
+      message: `Struk thermal ${config.paperWidth} (${printWidthMm}mm • ${style.toUpperCase()}) berhasil dikirim ke Printer!`
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal mencetak struk thermal Windows' };
@@ -1089,40 +1409,79 @@ export async function printThermalReceiptSpooler(
  * Uji Cetak (Test Print) untuk Driver Printer Thermal Windows (POS-58 / POS-80)
  */
 export async function printThermalTestSpooler(config: PrinterConfig): Promise<{ success: boolean; message: string }> {
+  const isKop = /koperasi/i.test(config.headerText || '');
   const sampleTrx: Transaction = {
     id: 'TEST-THERMAL-WIN',
-    receipt_number: 'TRX-TEST-001',
+    receipt_number: 'TRX-20261127-0154',
     cashier_id: 'USR-01',
-    cashier_name: 'Kasir Utama',
+    cashier_name: isKop ? 'SATRIA HARDIANSYAH' : 'Kasir Utama',
     branch_id: 'BR-01',
-    items: [
-      {
-        product_id: '101962',
-        product_name: 'PIPA AC EMERXON 1/4-3/8',
-        qty: 1,
-        unit: 'Roll',
-        buy_price: 2500000,
-        price_applied: 2750000,
-        is_wholesale: false,
-        subtotal_item: 2750000
-      },
-      {
-        product_id: '102855',
-        product_name: 'CAPASITOR IMA 15UF',
-        qty: 2,
-        unit: 'Pcs',
-        buy_price: 27500,
-        price_applied: 33000,
-        is_wholesale: false,
-        subtotal_item: 66000
-      }
-    ],
-    subtotal: 2816000,
-    discount_amount: 16000,
+    customer_name: isKop ? 'ASMADI' : 'Pelanggan Umum',
+    member_code: isKop ? '52/5221/0109/97' : undefined,
+    member_afdeling: isKop ? 'MSL INTI-1 • Afd G' : undefined,
+    member_balance_before: isKop ? 2000000 : undefined,
+    member_remaining_balance: isKop ? 1938000 : undefined,
+    items: isKop
+      ? [
+          {
+            product_id: '1001',
+            product_name: 'ENERGEN RTG 16 RTG/DOZ',
+            qty: 1,
+            unit: 'RTG',
+            buy_price: 19500,
+            price_applied: 22000,
+            is_wholesale: false,
+            subtotal_item: 22000
+          },
+          {
+            product_id: '1002',
+            product_name: 'TISU PASEO SMART 540 S',
+            qty: 1,
+            unit: 'PCS',
+            buy_price: 10000,
+            price_applied: 12000,
+            is_wholesale: false,
+            subtotal_item: 12000
+          },
+          {
+            product_id: '1003',
+            product_name: 'INDOMIE GORENG',
+            qty: 8,
+            unit: 'BKS',
+            buy_price: 3050,
+            price_applied: 3500,
+            is_wholesale: false,
+            subtotal_item: 28000
+          }
+        ]
+      : [
+          {
+            product_id: '101962',
+            product_name: 'PIPA AC EMERXON 1/4-3/8',
+            qty: 1,
+            unit: 'Roll',
+            buy_price: 2500000,
+            price_applied: 2750000,
+            is_wholesale: false,
+            subtotal_item: 2750000
+          },
+          {
+            product_id: '102855',
+            product_name: 'CAPASITOR IMA 15UF',
+            qty: 2,
+            unit: 'Pcs',
+            buy_price: 27500,
+            price_applied: 33000,
+            is_wholesale: false,
+            subtotal_item: 66000
+          }
+        ],
+    subtotal: isKop ? 62000 : 2816000,
+    discount_amount: isKop ? 0 : 16000,
     tax_amount: 0,
-    grand_total: 2800000,
-    payment_method: 'CASH',
-    cash_given: 2800000,
+    grand_total: isKop ? 62000 : 2800000,
+    payment_method: isKop ? 'SALDO' : 'CASH',
+    cash_given: isKop ? 62000 : 2800000,
     change_returned: 0,
     synced: true,
     created_at: new Date().toISOString()
