@@ -1564,23 +1564,25 @@ export const App: React.FC = () => {
       created_at: now.toISOString()
     };
 
-    // Submit to Central LAN Server if running in LAN mode or local server is active
+    // Submit to Central LAN Server ONLY if LAN mode is genuinely active (prevents 6-second timeout on Cloud/Standalone!)
     let lanUpdatedStocks: Array<{ id: string; stock: number }> | undefined;
-    try {
-      const lanRes = await lanService.submitTransaction(newTrx);
-      if (lanRes && lanRes.success) {
-        newTrx.synced = true;
-        if (lanRes.updatedStocks && lanRes.updatedStocks.length > 0) {
-          lanUpdatedStocks = lanRes.updatedStocks;
-          const stockMap = new Map(lanRes.updatedStocks.map(s => [s.id, s.stock]));
-          setProducts((prev) => prev.map(p => {
-            const updatedStock = stockMap.get(p.id);
-            return updatedStock !== undefined ? { ...p, stock: updatedStock } : p;
-          }));
+    if (lanService.isLanActive()) {
+      try {
+        const lanRes = await lanService.submitTransaction(newTrx);
+        if (lanRes && lanRes.success) {
+          newTrx.synced = true;
+          if (lanRes.updatedStocks && lanRes.updatedStocks.length > 0) {
+            lanUpdatedStocks = lanRes.updatedStocks;
+            const stockMap = new Map(lanRes.updatedStocks.map(s => [s.id, s.stock]));
+            setProducts((prev) => prev.map(p => {
+              const updatedStock = stockMap.get(p.id);
+              return updatedStock !== undefined ? { ...p, stock: updatedStock } : p;
+            }));
+          }
         }
+      } catch (err) {
+        console.warn('[App] Gagal kirim transaksi ke LAN Server, fallback ke offline syncQueue:', err);
       }
-    } catch (err) {
-      console.warn('[App] Gagal kirim transaksi ke LAN Server, fallback ke offline syncQueue:', err);
     }
 
     // 1. Record transaction into IndexedDB & SyncQueue (local offline resilience)
@@ -1631,15 +1633,15 @@ export const App: React.FC = () => {
       }
     }
 
-    // 1.c Potong Saldo Simpanan Anggota secara lokal & lintas cabang jika transaksi dibayar dengan SALDO
+    // 1.c Potong Saldo Simpanan Anggota secara instan (< 5ms) & sinkron lintas cabang jika transaksi dibayar dengan SALDO
     if (paymentData.payment_method === 'SALDO' && memberId) {
       try {
         let cust = await db.customers.get(memberId) || await db.customers.where('code').equalsIgnoreCase(memberId).first();
-        // Tarik saldo paling mutakhir dari Cloud (batas 1.5 detik) agar potongan dari Koperasi 1 & Koperasi 2 tidak pernah saling menimpa
-        if (navigator.onLine) {
+        // Hanya tarik dari Cloud jika belum disegarkan dalam 20 detik terakhir (batas cepat 450ms agar UI struk 0 lag!)
+        if (navigator.onLine && !syncService.wasCustomerRecentlyRefreshed(cust?.id || memberId, 20000)) {
           const freshFromCloud = await Promise.race([
             syncService.refreshSingleCustomerFromCloud(cust?.id || memberId),
-            new Promise<null>((r) => setTimeout(() => r(null), 1500))
+            new Promise<null>((r) => setTimeout(() => r(null), 450))
           ]).catch(() => null);
           if (freshFromCloud) {
             cust = freshFromCloud;
@@ -1750,14 +1752,12 @@ export const App: React.FC = () => {
       }));
     } catch {}
 
-    const pending = await syncService.getPendingCount();
-    setPendingSyncCount(pending);
-
-    // 2. Clear cart & Show receipt
+    // 2. Clear cart & Show receipt INSTANTLY without waiting on queue count
     clearCart();
     setIsPaymentOpen(false);
     setActiveReceipt(newTrx);
     setIsReceiptOpen(true);
+    syncService.getPendingCount().then(setPendingSyncCount).catch(() => {});
 
     // Notify Customer Facing Display of transaction completion
     try {

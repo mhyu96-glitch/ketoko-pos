@@ -216,6 +216,14 @@ export class SyncService {
   private coopLiveChannel: any = null;
   private channelReadyPromise: Promise<void> | null = null;
   private realtimeCallbacks: CloudRealtimeCallbacks = {};
+  private recentCustomerRefreshAt = new Map<string, number>();
+
+  public wasCustomerRecentlyRefreshed(idOrCode?: string | null, maxAgeMs = 20000): boolean {
+    const key = String(idOrCode || '').trim().toLowerCase();
+    if (!key) return false;
+    const ts = this.recentCustomerRefreshAt.get(key);
+    return Boolean(ts && Date.now() - ts <= maxAgeMs);
+  }
 
   public getActiveStoreId(): string {
     return localStorage.getItem('ketoko_active_store_id') || resolveStoreFromCurrentHost().id || 'store-01';
@@ -2056,6 +2064,11 @@ export class SyncService {
       }
 
       await db.customers.put(hydrated);
+      const nowRefreshTs = Date.now();
+      this.recentCustomerRefreshAt.set(String(hydrated.id).trim().toLowerCase(), nowRefreshTs);
+      if (hydrated.code) {
+        this.recentCustomerRefreshAt.set(String(hydrated.code).trim().toLowerCase(), nowRefreshTs);
+      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('ketoko_customer_updated', { detail: hydrated }));
       }

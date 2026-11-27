@@ -4,6 +4,21 @@
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
   <title>Kartu Member Digital — Koperasi Karyawan PT. Muaratoyu Subur Lestari</title>
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+  <title>Koperasi MSL — Kartu Member Digital</title>
+
+  <!-- PWA Manifest & Mobile App Capabilities -->
+  <link rel="manifest" href="/manifest-karyawan.json"/>
+  <link rel="icon" type="image/svg+xml" href="/icon-koperasi.svg"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-koperasi-192.png"/>
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-koperasi-512.png"/>
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-koperasi-192.png"/>
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-koperasi-512.png"/>
+  <meta name="theme-color" content="#064e3b"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Koperasi MSL"/>
 
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -54,11 +69,79 @@
       <span class="px-2 py-0.5 rounded-full text-[9.5px] font-extrabold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30 shrink-0">
         Reset Tgl 1
       </span>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          id="btnHeaderInstallPwa"
+          onclick="triggerPwaInstall()"
+          class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-400 hover:bg-amber-300 text-emerald-950 shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+        >
+          <span>📲</span>
+          <span>Install App</span>
+        </button>
+        <span class="hidden sm:inline-block px-2 py-0.5 rounded-full text-[9.5px] font-extrabold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30">
+          Reset Tgl 1
+        </span>
+      </div>
     </div>
   </header>
 
   <!-- Main Content -->
   <main class="max-w-md mx-auto w-full px-4 py-4 space-y-4 flex-1">
+
+    <!-- PWA Install Banner (Otomatis sembunyi jika sudah ter-install sebagai Aplikasi di HP) -->
+    <div id="pwaInstallBanner" class="bg-gradient-to-r from-[#064e3b] to-[#047857] text-white rounded-2xl p-3.5 shadow-md border border-emerald-500/40 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-300/50 flex items-center justify-center text-lg shrink-0">
+          📲
+        </div>
+        <div class="min-w-0">
+          <div class="text-xs font-extrabold text-amber-200 leading-tight">Pasang Aplikasi Koperasi di HP</div>
+          <p class="text-[10.5px] text-emerald-100/90 leading-snug mt-0.5">Cek sisa kuota & buka kartu belanja 1-klik langsung dari layar utama HP Anda.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onclick="triggerPwaInstall()"
+          class="px-3 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-[11px] font-black shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+        >
+          Instal
+        </button>
+        <button
+          type="button"
+          onclick="dismissPwaBanner()"
+          title="Tutup"
+          class="p-1.5 rounded-lg text-emerald-200 hover:text-white hover:bg-white/10 text-xs font-bold cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal Panduan Install Manual (iOS Safari / Browser tanpa prompt otomatis) -->
+    <div id="pwaGuideModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4">
+      <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-stone-200 space-y-3.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-lg font-bold">📲</div>
+            <div>
+              <h3 class="text-sm font-extrabold text-emerald-950">Pasang Aplikasi Koperasi MSL</h3>
+              <p class="text-[10.5px] text-stone-500">Tambahkan ikon resmi ke Layar Utama HP</p>
+            </div>
+          </div>
+          <button type="button" onclick="closePwaGuideModal()" class="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 font-bold text-xs cursor-pointer">✕</button>
+        </div>
+        <div id="pwaGuideSteps" class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 text-xs text-stone-700 space-y-2 leading-relaxed"></div>
+        <button
+          type="button"
+          onclick="closePwaGuideModal()"
+          class="w-full py-2.5 rounded-xl bg-[#065f46] hover:bg-[#064e3b] text-white text-xs font-extrabold cursor-pointer"
+        >
+          Mengerti
+        </button>
+      </div>
+    </div>
 
     <!-- Search Card -->
     <div id="searchCard" class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-[#e5d6c8] space-y-3">
@@ -1200,6 +1283,13 @@
       const resultSec = document.getElementById('resultSection');
       const codeStr = emp.code || emp.id;
 
+      // Simpan kode terakhir jika "Ingat saya" aktif agar saat buka ikon Aplikasi PWA langsung auto-login 1 klik
+      try {
+        if (localStorage.getItem('msl_pin_auth_' + String(codeStr).toLowerCase())) {
+          localStorage.setItem('msl_last_emp_code', codeStr);
+        }
+      } catch {}
+
       const allowance = Math.min(MAX_ALLOWANCE, Number(emp.monthly_allowance) || MAX_ALLOWANCE);
       const balance = Math.min(allowance, Math.max(0, Number(emp.deposit_balance) || 0));
       const spent = Math.max(Number(emp.spent_this_month) || 0, allowance - balance);
@@ -1400,6 +1490,7 @@
         const codeStr = (currentEmployeeData.employee.code || currentEmployeeData.employee.id).toLowerCase();
         localStorage.removeItem('msl_pin_auth_' + codeStr);
       }
+      localStorage.removeItem('msl_last_emp_code');
       currentEmployeeData = null;
       pendingEmployeeData = null;
       hideAllCards();
@@ -1529,12 +1620,109 @@
       }
     }
 
+    // ================= PWA INSTALL & SERVICE WORKER =================
+    let deferredPwaPrompt = null;
+
+    function isRunningStandalonePwa() {
+      return (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true
+      );
+    }
+
+    function syncPwaUiVisibility() {
+      const banner = document.getElementById('pwaInstallBanner');
+      const headerBtn = document.getElementById('btnHeaderInstallPwa');
+      if (isRunningStandalonePwa()) {
+        if (banner) banner.classList.add('hidden');
+        if (headerBtn) headerBtn.classList.add('hidden');
+        return;
+      }
+      if (sessionStorage.getItem('msl_pwa_banner_dismissed') === '1') {
+        if (banner) banner.classList.add('hidden');
+      }
+    }
+
+    function dismissPwaBanner() {
+      sessionStorage.setItem('msl_pwa_banner_dismissed', '1');
+      const banner = document.getElementById('pwaInstallBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    function closePwaGuideModal() {
+      const modal = document.getElementById('pwaGuideModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function triggerPwaInstall() {
+      if (deferredPwaPrompt) {
+        deferredPwaPrompt.prompt();
+        const choice = await deferredPwaPrompt.userChoice.catch(() => null);
+        if (choice && choice.outcome === 'accepted') {
+          deferredPwaPrompt = null;
+          const banner = document.getElementById('pwaInstallBanner');
+          const headerBtn = document.getElementById('btnHeaderInstallPwa');
+          if (banner) banner.classList.add('hidden');
+          if (headerBtn) headerBtn.classList.add('hidden');
+        }
+        return;
+      }
+
+      const ua = navigator.userAgent || '';
+      const isIos = /iphone|ipad|ipod/i.test(ua);
+      const stepsEl = document.getElementById('pwaGuideSteps');
+      const modal = document.getElementById('pwaGuideModal');
+      if (!stepsEl || !modal) return;
+
+      if (isIos) {
+        stepsEl.innerHTML = `
+          <div class="font-bold text-emerald-900">Cara Pasang di iPhone / iPad (Safari):</div>
+          <div>1. Ketuk tombol <b>Bagikan / Share (ikon kotak panah ke atas ⬆️)</b> di bagian bawah layar Safari.</div>
+          <div>2. Geser ke bawah lalu pilih <b>"Tambah ke Layar Utama" (Add to Home Screen)</b>.</div>
+          <div>3. Ketuk <b>"Tambah"</b> di pojok kanan atas. Aplikasi <b>Koperasi MSL</b> siap dibuka dari layar HP!</div>
+        `;
+      } else {
+        stepsEl.innerHTML = `
+          <div class="font-bold text-emerald-900">Cara Pasang di HP Android (Chrome / Browser):</div>
+          <div>1. Ketuk tombol menu <b>titik tiga (⋮)</b> di pojok kanan atas browser.</div>
+          <div>2. Pilih <b>"Instal aplikasi"</b> atau <b>"Tambahkan ke Layar utama"</b>.</div>
+          <div>3. Konfirmasi <b>"Instal"</b> — ikon <b>Koperasi MSL</b> akan langsung muncul di menu HP Anda!</div>
+        `;
+      }
+      modal.classList.remove('hidden');
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPwaPrompt = e;
+      syncPwaUiVisibility();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredPwaPrompt = null;
+      syncPwaUiVisibility();
+    });
+
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          try { reg.update(); } catch {}
+        }).catch(() => {});
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
+      syncPwaUiVisibility();
       const urlParams = new URLSearchParams(window.location.search);
       const q = urlParams.get('q');
+      const savedLastCode = localStorage.getItem('msl_last_emp_code');
       if (q) {
         document.getElementById('queryInput').value = q;
         handleSearch();
+      } else if (savedLastCode && localStorage.getItem('msl_pin_auth_' + savedLastCode.toLowerCase())) {
+        // Auto-buka kartu bagi karyawan yang sudah simpan sesi di Aplikasi PWA HP-nya
+        document.getElementById('queryInput').value = savedLastCode;
+        handleSearch(null, savedLastCode);
       }
     });
   </script>

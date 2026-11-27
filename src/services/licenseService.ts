@@ -186,7 +186,18 @@ export class LicenseService {
       } catch { return false; }
     })();
 
-    if (isSuperAdminSession || storeName.toLowerCase().includes('tumbuh makmur')) {
+    const activeStoreId = localStorage.getItem('ketoko_active_store_id') || '';
+    const lowerStore = storeName.toLowerCase();
+    const isOfficialProStore =
+      activeStoreId === 'store-01' ||
+      activeStoreId === 'store-borneoetam' ||
+      activeStoreId.startsWith('store-koperasimsl') ||
+      lowerStore.includes('tumbuh makmur') ||
+      lowerStore.includes('koperasi') ||
+      lowerStore.includes('muaratoyu') ||
+      lowerStore.includes('borneo etam');
+
+    if (isSuperAdminSession || isOfficialProStore) {
       return {
         isActivated: true,
         isTrial: false,

@@ -1,6 +1,9 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/manifest-karyawan.json", "destination": "/manifest-karyawan.json" },
+    { "source": "/manifest.json", "destination": "/manifest.json" },
+    { "source": "/sw.js", "destination": "/sw.js" },
     { "source": "/super-admin.html", "destination": "/super-admin.html" },
     { "source": "/super-admin", "destination": "/super-admin.html" },
     { "source": "/karyawan.html", "destination": "/karyawan.html" },

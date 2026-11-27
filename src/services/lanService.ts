@@ -211,11 +211,16 @@ class LanService {
     error?: string;
     updatedStocks?: Array<{ id: string; stock: number }>;
   }> {
+    // Jangan pernah mencoba menembak IP LAN (dan menunggu timeout 6 detik!) jika mode LAN tidak aktif!
+    if (!this.isLanActive()) {
+      return { success: false, error: 'LAN mode tidak aktif (Standalone/Cloud)' };
+    }
+
     const cleanUrl = config.serverUrl.replace(/\/+$/, '');
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
 
       const payload = {
         ...trx,
@@ -507,6 +512,9 @@ class LanService {
     cashier_name?: string;
     notes?: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.isLanActive()) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     try {
       const candidates = [
         this.config.serverUrl,
@@ -549,6 +557,9 @@ class LanService {
    * Reset Saldo Kuota Karyawan Bulanan ke Plafon (Rp 2.000.000)
    */
   public async resetEmployeeAllowance(customerId?: string, amount?: number): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.isLanActive()) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     try {
       const candidates = [
         this.config.serverUrl,
@@ -588,6 +599,9 @@ class LanService {
    * Edit / Sesuaikan Saldo atau Plafon Karyawan
    */
   public async adjustEmployeeAllowance(customerId: string, data: { deposit_balance?: number; monthly_allowance?: number; notes?: string }): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.isLanActive()) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     try {
       const candidates = [
         this.config.serverUrl,
@@ -627,6 +641,7 @@ class LanService {
    * Ambil Riwayat Mutasi Saldo Member dari Server
    */
   public async fetchMemberDeposits(customerId?: string): Promise<any[]> {
+    if (!this.isLanActive()) return [];
     try {
       const candidates = [
         this.config.serverUrl,
@@ -782,6 +797,9 @@ class LanService {
     prod: Partial<Product> & { id: string },
     serverUrl?: string
   ): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!this.isLanActive() && !serverUrl) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     const urlsToTry: string[] = [];
     if (serverUrl) {
       urlsToTry.push(serverUrl);
@@ -830,6 +848,9 @@ class LanService {
     items?: any[],
     serverUrl?: string
   ): Promise<{ success: boolean; error?: string }> {
+    if (!this.isLanActive() && !serverUrl) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     const urlsToTry: string[] = [];
     if (serverUrl) {
       urlsToTry.push(serverUrl);
@@ -877,6 +898,9 @@ class LanService {
     originalTrx?: any,
     serverUrl?: string
   ): Promise<{ success: boolean; updatedStocks?: Array<{ id: string; stock: number }>; error?: string }> {
+    if (!this.isLanActive() && !serverUrl) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     const urlsToTry: string[] = [];
     if (serverUrl) {
       urlsToTry.push(serverUrl);
@@ -928,6 +952,9 @@ class LanService {
     productId: string,
     serverUrl?: string
   ): Promise<{ success: boolean; error?: string }> {
+    if (!this.isLanActive() && !serverUrl) {
+      return { success: false, error: 'LAN mode tidak aktif' };
+    }
     const urlsToTry: string[] = [];
     if (serverUrl) urlsToTry.push(serverUrl);
     if (this.isClientMode() && this.config.serverUrl) urlsToTry.push(this.config.serverUrl);

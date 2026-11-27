@@ -191,11 +191,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         let latestCust = selectedSaldoCustomer;
         let existingHash = extractEmployeePinHash(latestCust);
 
-        // Jika di lokal belum terbaca ada PIN, cek cepat ke Cloud (jaga-jaga karyawan baru saja bikin PIN di HP detik ini)
-        if (!existingHash && navigator.onLine) {
-          const refreshed = await syncService
-            .refreshSingleCustomerFromCloud(latestCust.id || latestCust.code)
-            .catch(() => null);
+        // Jika belum disegarkan saat modal dibuka, cek cepat (maks 500ms) agar tombol bayar tetap instan
+        if (!existingHash && navigator.onLine && !syncService.wasCustomerRecentlyRefreshed(latestCust.id || latestCust.code, 20000)) {
+          const refreshed = await Promise.race([
+            syncService.refreshSingleCustomerFromCloud(latestCust.id || latestCust.code),
+            new Promise<null>((r) => setTimeout(() => r(null), 500))
+          ]).catch(() => null);
           if (refreshed) {
             latestCust = refreshed;
             existingHash = extractEmployeePinHash(refreshed);
