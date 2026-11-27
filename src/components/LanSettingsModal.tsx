@@ -876,13 +876,6 @@ export const LanSettingsModal: React.FC<LanSettingsModalProps> = ({
           <div className="flex space-x-2">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-[#ddc3aa] bg-white hover:bg-[#faebd7] text-[#5c3c26] font-bold text-xs"
-            >
-              Tutup
-            </button>
-            <button
-              type="button"
               onClick={handleSaveAndApply}
               disabled={isSyncingProducts || isSyncingSupabase}
               className="px-5 py-2 rounded-xl bg-[#7c4e2f] hover:bg-[#633e26] text-white font-bold text-xs shadow-sm flex items-center space-x-1.5 transition-all"

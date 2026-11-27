@@ -249,16 +249,6 @@ export const OmsetChartModal: React.FC<OmsetChartModalProps> = ({
 
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-[#e5d0be] bg-white flex items-center justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-[#96633b] hover:bg-[#83532e] text-white font-bold rounded-xl text-xs shadow-xs transition-all"
-          >
-            Tutup Grafik
-          </button>
-        </div>
-
       </div>
     </div>
   );

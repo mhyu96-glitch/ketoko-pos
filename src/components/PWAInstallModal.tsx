@@ -160,24 +160,17 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-white border-t border-[#e5d0be] flex items-center justify-between gap-2 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-[#ddc3aa] bg-[#fcf9f5] hover:bg-[#faebd7] text-[#5c3c26] font-bold text-xs transition-colors"
-          >
-            {isInstalled ? 'Tutup' : 'Nanti Saja'}
-          </button>
-
-          {!isInstalled && isInstallable && (
+        {!isInstalled && isInstallable && (
+          <div className="p-4 bg-white border-t border-[#e5d0be] flex items-center justify-center shrink-0">
             <button
               onClick={handleInstallClick}
-              className="flex-1 py-2.5 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-800/20 flex items-center justify-center space-x-2 transition-all active:scale-95"
+              className="w-full max-w-md py-2.5 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-800/20 flex items-center justify-center space-x-2 transition-all active:scale-95"
             >
               <Download className="w-4 h-4 text-emerald-200" />
               <span>Pasang Sekarang (Install)</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
       </div>
     </div>

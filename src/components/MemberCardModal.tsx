@@ -876,13 +876,6 @@ Terima kasih.
                 </button>
               );
             })()}
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 transition-colors text-xs sm:text-sm"
-            >
-              Tutup
-            </button>
           </div>
         </div>
 

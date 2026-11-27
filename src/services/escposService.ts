@@ -768,7 +768,7 @@ export async function printThermalReceiptSpooler(
 ): Promise<{ success: boolean; message: string }> {
   try {
     const is80 = config.paperWidth === '80mm';
-    const headerLines = (config.headerText || 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu').split('\n');
+    const headerLines = (config.headerText || 'KETOKO POS').split('\n');
     const storeTitle = headerLines[0] || 'KETOKO POS';
     const storeSubLines = headerLines.slice(1);
     const footerLines = (config.footerText || 'Terima kasih atas kunjungan Anda!').split('\n');
@@ -1149,10 +1149,10 @@ export function generateDotMatrixHTML(
   const leftMarginMm = typeof config?.dotMatrixLeftMargin === 'number' ? config.dotMatrixLeftMargin : 0;
 
   // Nama & Kop Usaha
-  const storeName = (config?.dotMatrixStoreTitle || config?.headerText?.split('\n')[0] || storeProfile?.name || 'CV. TUMBUH MAKMUR AIR CONINDO').trim();
-  const storeSub = (config?.dotMatrixStoreSub || storeProfile?.tagline || 'SPAREPART & PENDINGIN RUANGAN AC').trim();
-  const storeAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu').trim();
-  const rawStorePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '0811 5121 215').trim();
+  const storeName = (config?.dotMatrixStoreTitle || config?.headerText?.split('\n')[0] || storeProfile?.name || 'KETOKO POS').trim();
+  const storeSub = (config?.dotMatrixStoreSub || storeProfile?.tagline || 'RETAIL & GROSIR').trim();
+  const storeAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || '-').trim();
+  const rawStorePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '-').trim();
   const cleanPhone = rawStorePhone.replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '').trim() || rawStorePhone;
 
   // Catatan Bawah Faktur (Notice Retur/Garansi)

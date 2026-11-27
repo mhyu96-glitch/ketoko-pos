@@ -731,17 +731,11 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
           <div className="flex items-center space-x-2">
             <button
               onClick={handlePrintDailyReport}
-              className="px-3 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-bold shadow-xs transition-colors flex items-center space-x-1.5"
+              className="px-3.5 py-2 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-bold shadow-xs transition-colors flex items-center space-x-1.5"
               title="Cetak Laporan Penjualan Hari Ini"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
               <span>Cetak Laporan Hari Ini</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl font-bold shadow-xs transition-colors"
-            >
-              Tutup
             </button>
           </div>
         </div>

@@ -611,18 +611,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           </div>
         </div>
 
-        {/* Bottom Bar Close Button (Hidden on Print) */}
-        <div className="no-print p-3 bg-white border-t border-[#e5d0be] flex items-center justify-between text-xs text-[#5c3c26]">
+        {/* Bottom Info Bar (Hidden on Print) */}
+        <div className="no-print px-4 sm:px-6 lg:px-8 py-3 bg-white border-t border-[#e5d0be] flex items-center justify-between text-xs text-[#5c3c26]">
           <span className="text-[11px] text-[#8a6b53]">
             💡 <b>Tips:</b> Gunakan tombol <b>Cetak Faktur</b> untuk mencetak ke kertas A4 atau simpan langsung ke file PDF via dialog cetak.
           </span>
-          <button
-            onClick={onClose}
-            type="button"
-            className="px-5 py-2 bg-[#3d2617] hover:bg-[#28180e] text-white rounded-xl font-bold transition-all active:scale-95 shadow-sm"
-          >
-            Selesai / Tutup
-          </button>
         </div>
 
       </div>

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { Transaction } from '../types';
 import type { PrinterConfig } from './PrinterSettingsModal';
-import { DEFAULT_CONFIG } from './PrinterSettingsModal';
+import { loadActiveStorePrinterConfig, saveActiveStorePrinterConfig } from './PrinterSettingsModal';
 import { 
   formatRupiah, 
   ESCPOSBuilder, 
@@ -38,22 +38,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onOpenPrinterSettings,
   onOpenInvoice
 }) => {
-  const [config, setConfig] = useState<PrinterConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<PrinterConfig>(() => loadActiveStorePrinterConfig());
   const [printStatus, setPrintStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      const saved = localStorage.getItem('ketoko_printer_settings');
-      if (saved) {
-        try {
-          setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) });
-        } catch {
-          setConfig(DEFAULT_CONFIG);
-        }
-      } else {
-        setConfig(DEFAULT_CONFIG);
-      }
+      setConfig(loadActiveStorePrinterConfig());
       setPrintStatus(null);
     }
   }, [isOpen]);
@@ -130,11 +121,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const handleSelectPaperSize = (size: any) => {
     const updated = { ...config, dotMatrixPaperSize: size };
     setConfig(updated);
-    try {
-      localStorage.setItem('ketoko_printer_settings', JSON.stringify(updated));
-    } catch {
-      // ignore
-    }
+    saveActiveStorePrinterConfig(updated);
   };
 
   return (

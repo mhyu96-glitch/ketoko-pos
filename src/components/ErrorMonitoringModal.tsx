@@ -407,14 +407,6 @@ export const ErrorMonitoringModal: React.FC<ErrorMonitoringModalProps> = ({ isOp
               <Zap className="w-3.5 h-3.5 text-amber-600" />
               <span>Test Eror</span>
             </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 transition-colors text-xs"
-            >
-              Tutup
-            </button>
           </div>
         </div>
 

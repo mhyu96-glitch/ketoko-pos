@@ -1092,14 +1092,8 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-[#e5d0be] bg-white flex items-center justify-between text-xs text-[#8a6b53] shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-t border-[#e5d0be] bg-white flex items-center justify-between text-xs text-[#8a6b53] shrink-0">
           <span>{printStatus || 'Data Hutang Piutang otomatis terintegrasi dengan laporan keuangan KetokoPOS'}</span>
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-[#96633b] hover:bg-[#83532e] text-white rounded-xl font-bold transition-all shadow-xs"
-          >
-            Tutup
-          </button>
         </div>
 
       </div>

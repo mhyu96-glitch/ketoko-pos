@@ -1052,13 +1052,6 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
         {/* 1. Full-Screen Workspace Header */}
         <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#5e3519] bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs">
           <div className="flex items-center space-x-3.5">
-            <button
-              onClick={onClose}
-              title="Kembali ke Kasir / Dashboard"
-              className="p-2.5 rounded-2xl bg-[#543017] hover:bg-[#422511] text-amber-100 border border-[#9b663b]/50 transition-colors flex items-center justify-center"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
             <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 shadow-inner border border-[#9b663b]/50 hidden sm:flex">
               <FileText className="w-5 h-5" />
             </div>
@@ -2631,19 +2624,12 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
         </div>
 
-        {/* 4. Footer */}
-        <div className="p-4 border-t border-[#e4d5c7] bg-[#f5ece3] flex items-center justify-between shrink-0">
+        {/* 4. Status Footer */}
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-t border-[#e4d5c7] bg-[#f5ece3] flex items-center justify-between shrink-0">
           <div className="text-xs text-[#856b59] flex items-center space-x-2 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
             <span>Data tersinkronisasi real-time dengan IndexedDB KetokoPOS</span>
           </div>
-
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-xl bg-[#7c4e2f] hover:bg-[#633e26] text-white font-bold text-xs transition-all shadow-xs active:scale-95"
-          >
-            Tutup
-          </button>
         </div>
 
       </div>

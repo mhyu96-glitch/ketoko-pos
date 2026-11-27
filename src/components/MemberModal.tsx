@@ -771,13 +771,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         {/* Header - Full-Screen Workspace */}
         <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-[#85542f] bg-gradient-to-r from-[#96633b] to-[#a6744c] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3.5">
-            <button
-              onClick={onClose}
-              title="Kembali"
-              className="p-2.5 rounded-2xl bg-[#83532e] hover:bg-[#6f4021] text-amber-100 border border-[#a6744c] transition-colors flex items-center justify-center"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
             <div className="p-2.5 rounded-2xl bg-[#83532e] text-amber-200 border border-[#a6744c] hidden sm:flex">
               <Users className="w-5 h-5" />
             </div>
@@ -1866,13 +1859,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             {/* Header */}
             <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-emerald-800 to-teal-700 text-white flex items-center justify-between shrink-0 border-b border-emerald-900">
               <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSharePortalModal(false)}
-                  className="p-2 rounded-xl bg-emerald-950/50 hover:bg-emerald-950/80 text-emerald-100 transition-colors"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
                 <div className="p-2 rounded-xl bg-emerald-950/50 text-emerald-200 hidden sm:flex">
                   <Smartphone className="w-5 h-5" />
                 </div>
@@ -1968,16 +1954,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 </div>
               </div>
             </div>
-
-            <div className="px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-t border-[#e5d0be] flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowSharePortalModal(false)}
-                className="px-6 py-2.5 bg-[#7c4e2f] hover:bg-[#633e26] text-white rounded-xl text-xs font-bold transition-colors"
-              >
-                Kembali ke Data Pelanggan
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1989,14 +1965,6 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             {/* Header */}
             <div className="px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 border-b border-[#5e3519]">
               <div className="flex items-center space-x-3.5">
-                <button
-                  type="button"
-                  onClick={() => setShowBatchPrintModal(false)}
-                  title="Kembali ke Master Data Pelanggan"
-                  className="p-2.5 rounded-2xl bg-[#543017] hover:bg-[#422511] text-amber-100 border border-[#9b663b]/50 transition-colors"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
                 <div className="p-2.5 rounded-2xl bg-[#543017] text-amber-200 border border-[#9b663b]/50 hidden sm:flex">
                   <Printer className="w-5 h-5" />
                 </div>
@@ -2223,13 +2191,9 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
             {/* Sticky Bottom Action Bar */}
             <div className="px-4 sm:px-6 lg:px-8 py-4 bg-white border-t border-[#e4d5c7] flex flex-wrap items-center justify-between gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowBatchPrintModal(false)}
-                className="px-5 py-2.5 bg-[#f5ece3] hover:bg-[#ebdccf] text-[#543c2e] rounded-xl text-xs font-bold transition-colors"
-              >
-                ← Kembali ke Data Pelanggan
-              </button>
+              <div className="text-xs text-[#856b59] font-medium">
+                Batch {safeBatchIndex + 1} siap dicetak ({selectedPrintSlice.length} kartu)
+              </div>
               <div className="flex flex-wrap items-center gap-2.5">
                 {batchPrintCandidates.length > BATCH_PRINT_SIZE && (
                   <button

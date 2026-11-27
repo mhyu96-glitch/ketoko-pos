@@ -1718,17 +1718,6 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-4 sm:px-6 lg:px-8 py-3.5 bg-[#f5ece3] border-t border-[#e4d5c7] flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsHeldModalOpen(false)}
-                className="px-5 py-2 bg-[#7c4e2f] hover:bg-[#633e26] text-white rounded-xl text-xs font-bold transition-colors"
-              >
-                Kembali ke Kasir
-              </button>
-            </div>
-
           </div>
         </div>
       )}

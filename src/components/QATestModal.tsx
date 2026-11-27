@@ -340,16 +340,6 @@ export const QATestModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50/80 text-right">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-semibold"
-          >
-            Tutup
-          </button>
-        </div>
-
       </div>
     </div>
   );

@@ -41,6 +41,7 @@ import {
   numberToWordsID
 } from '../services/escposService';
 import { convertImageFileToWebP } from '../utils/imageConverter';
+import { getStoredStores } from '../services/storeRegistry';
 
 interface PrinterSettingsModalProps {
   isOpen: boolean;
@@ -112,19 +113,142 @@ export const DEFAULT_CONFIG: PrinterConfig = {
   dotMatrixShowNotice: true
 };
 
+export function getActiveStoreDefaultPrinterConfig(): PrinterConfig {
+  let activeStoreId = 'store-01';
+  let profile: any = null;
+  try {
+    if (typeof window !== 'undefined') {
+      activeStoreId = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+      const host = window.location.hostname.toLowerCase();
+      if (host.startsWith('koperasimsl-cabang.')) activeStoreId = 'store-koperasimsl-cabang';
+      else if (host.startsWith('koperasimsl.')) activeStoreId = 'store-koperasimsl';
+      else if (host.startsWith('borneoetam.')) activeStoreId = 'store-borneoetam';
+
+      const rawProfile = localStorage.getItem('ketoko_store_profile');
+      if (rawProfile) profile = JSON.parse(rawProfile);
+    }
+  } catch {}
+
+  const isTumbuhMakmur = activeStoreId === 'store-01';
+  if (isTumbuhMakmur) {
+    const tmName = profile?.name || 'CV. TUMBUH MAKMUR AIR CONINDO';
+    const tmAddr = profile?.address || 'Jl. P Antasari No.106, Samarinda Ulu';
+    const tmPhone = profile?.phone || '0811 5121 215';
+    return {
+      ...DEFAULT_CONFIG,
+      headerText: `${tmName}\n${tmAddr}\nTelp: ${tmPhone}`,
+      footerText: profile?.footer_message || DEFAULT_CONFIG.footerText,
+      logoUrl: profile?.logo_url || DEFAULT_CONFIG.logoUrl,
+      dotMatrixStoreTitle: tmName,
+      dotMatrixStoreSub: 'SPAREPART & PENDINGIN RUANGAN AC',
+      dotMatrixStoreAddress: tmAddr,
+      dotMatrixStorePhone: tmPhone,
+    };
+  }
+
+  const regStore = getStoredStores().find((s) => s.id === activeStoreId);
+  const profileIsForeignTM =
+    profile?.name && /tumbuh\s*makmur/i.test(String(profile.name));
+
+  const storeName =
+    (!profileIsForeignTM && profile?.name) ||
+    regStore?.name ||
+    'KETOKO POS';
+  const storeAddr =
+    (!profileIsForeignTM && (profile?.address || profile?.branch_name)) ||
+    regStore?.branch ||
+    '-';
+  const storePhone =
+    (!profileIsForeignTM && profile?.phone) ||
+    regStore?.phone ||
+    '-';
+  const hasValidPhone = storePhone && storePhone !== '-';
+  const headerLines = [storeName, storeAddr];
+  if (hasValidPhone) headerLines.push(`Telp: ${storePhone}`);
+
+  const isKoperasi = /koperasi/i.test(storeName) || activeStoreId.includes('koperasi');
+
+  return {
+    ...DEFAULT_CONFIG,
+    headerText: headerLines.join('\n'),
+    footerText:
+      (!profileIsForeignTM && profile?.footer_message) ||
+      (isKoperasi
+        ? 'Terima kasih telah berbelanja di Koperasi Karyawan!\nSimpan struk ini sebagai bukti transaksi sah.'
+        : 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli tidak dapat ditukar kembali.'),
+    showLogo: Boolean(!profileIsForeignTM && profile?.logo_url),
+    logoUrl: (!profileIsForeignTM && profile?.logo_url) || '',
+    dotMatrixStoreTitle: storeName,
+    dotMatrixStoreSub: isKoperasi
+      ? 'UNIT USAHA WASERDA & KOPERASI KARYAWAN'
+      : 'RETAIL & GROSIR',
+    dotMatrixStoreAddress: storeAddr,
+    dotMatrixStorePhone: hasValidPhone ? storePhone : '-',
+    dotMatrixNotice:
+      '* Barang yang sudah dibeli tidak dapat ditukar/dikembalikan kecuali ada perjanjian.\n* Simpan bukti faktur resmi ini untuk keperluan administrasi.',
+  };
+}
+
+export function loadActiveStorePrinterConfig(): PrinterConfig {
+  const baseDefault = getActiveStoreDefaultPrinterConfig();
+  try {
+    if (typeof window === 'undefined') return baseDefault;
+    let activeStoreId = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    const host = window.location.hostname.toLowerCase();
+    if (host.startsWith('koperasimsl-cabang.')) activeStoreId = 'store-koperasimsl-cabang';
+    else if (host.startsWith('koperasimsl.')) activeStoreId = 'store-koperasimsl';
+    else if (host.startsWith('borneoetam.')) activeStoreId = 'store-borneoetam';
+
+    const isTumbuhMakmur = activeStoreId === 'store-01';
+    const perStoreKey = `ketoko_printer_settings_${activeStoreId}`;
+    const rawPerStore = localStorage.getItem(perStoreKey);
+    const rawLegacy = localStorage.getItem('ketoko_printer_settings');
+    const raw = rawPerStore || (isTumbuhMakmur ? rawLegacy : null);
+
+    if (!raw) return baseDefault;
+    const parsed = JSON.parse(raw);
+    const merged: PrinterConfig = { ...baseDefault, ...parsed };
+
+    if (!isTumbuhMakmur) {
+      if (/tumbuh\s*makmur/i.test(merged.headerText || '')) {
+        merged.headerText = baseDefault.headerText;
+      }
+      if (/tumbuh\s*makmur/i.test(merged.dotMatrixStoreTitle || '')) {
+        merged.dotMatrixStoreTitle = baseDefault.dotMatrixStoreTitle;
+      }
+      if (/antasari/i.test(merged.dotMatrixStoreAddress || '')) {
+        merged.dotMatrixStoreAddress = baseDefault.dotMatrixStoreAddress;
+      }
+      if (/0811\s*5121\s*215/.test(merged.dotMatrixStorePhone || '')) {
+        merged.dotMatrixStorePhone = baseDefault.dotMatrixStorePhone;
+      }
+      if (/sparepart\s*&\s*pendingin/i.test(merged.dotMatrixStoreSub || '')) {
+        merged.dotMatrixStoreSub = baseDefault.dotMatrixStoreSub;
+      }
+      if (merged.logoUrl === DEFAULT_CONFIG.logoUrl && !baseDefault.logoUrl) {
+        merged.logoUrl = '';
+        merged.showLogo = false;
+      }
+    }
+    return merged;
+  } catch {
+    return baseDefault;
+  }
+}
+
+export function saveActiveStorePrinterConfig(cfg: PrinterConfig): void {
+  try {
+    const activeStoreId = localStorage.getItem('ketoko_active_store_id') || 'store-01';
+    localStorage.setItem(`ketoko_printer_settings_${activeStoreId}`, JSON.stringify(cfg));
+    localStorage.setItem('ketoko_printer_settings', JSON.stringify(cfg));
+  } catch {}
+}
+
 export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const [config, setConfig] = useState<PrinterConfig>(() => {
-    const saved = localStorage.getItem('ketoko_printer_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Migrate legacy SERIAL to USB if needed
-      return { ...DEFAULT_CONFIG, ...parsed };
-    }
-    return DEFAULT_CONFIG;
-  });
+  const [config, setConfig] = useState<PrinterConfig>(() => loadActiveStorePrinterConfig());
 
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -138,10 +262,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      const saved = localStorage.getItem('ketoko_printer_settings');
-      if (saved) {
-        setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) });
-      }
+      setConfig(loadActiveStorePrinterConfig());
       setBtStatus(getBluetoothPrinterStatus());
       setTestResult(null);
       setSaveToast(false);
@@ -149,6 +270,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const storeDefaultCfg = getActiveStoreDefaultPrinterConfig();
 
   const handlePairBluetooth = async (forceNew = true) => {
     setIsConnectingBt(true);
@@ -160,7 +283,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       if (res.success) {
         const updated = { ...config, driverType: 'BLUETOOTH' as const };
         setConfig(updated);
-        localStorage.setItem('ketoko_printer_settings', JSON.stringify(updated));
+        saveActiveStorePrinterConfig(updated);
       }
     } catch (err: any) {
       setTestResult({
@@ -173,7 +296,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   };
 
   const handleSaveSettings = () => {
-    localStorage.setItem('ketoko_printer_settings', JSON.stringify(config));
+    saveActiveStorePrinterConfig(config);
     setSaveToast(true);
     setTimeout(() => {
       setSaveToast(false);
@@ -699,7 +822,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                         type="text"
                         value={config.dotMatrixStoreTitle ?? config.headerText.split('\n')[0] ?? ''}
                         onChange={(e) => setConfig({ ...config, dotMatrixStoreTitle: e.target.value })}
-                        placeholder="CV. TUMBUH MAKMUR AIR CONINDO"
+                        placeholder={storeDefaultCfg.dotMatrixStoreTitle || 'Nama Toko'}
                         className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-bold focus:bg-white focus:border-[#7c4e2f]"
                       />
                     </div>
@@ -708,9 +831,9 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                       <span className="text-[10px] font-bold text-stone-700 block mb-1">Subjudul / Bidang Usaha:</span>
                       <input
                         type="text"
-                        value={config.dotMatrixStoreSub ?? 'SPAREPART & PENDINGIN RUANGAN AC'}
+                        value={config.dotMatrixStoreSub ?? storeDefaultCfg.dotMatrixStoreSub ?? ''}
                         onChange={(e) => setConfig({ ...config, dotMatrixStoreSub: e.target.value })}
-                        placeholder="SPAREPART & PENDINGIN RUANGAN AC"
+                        placeholder={storeDefaultCfg.dotMatrixStoreSub || 'Bidang Usaha'}
                         className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
                       />
                     </div>
@@ -721,7 +844,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                         type="text"
                         value={config.dotMatrixStoreAddress ?? config.headerText.split('\n')[1] ?? ''}
                         onChange={(e) => setConfig({ ...config, dotMatrixStoreAddress: e.target.value })}
-                        placeholder="Jl. P Antasari No.106, Samarinda"
+                        placeholder={storeDefaultCfg.dotMatrixStoreAddress || 'Alamat Toko'}
                         className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs focus:bg-white focus:border-[#7c4e2f]"
                       />
                     </div>
@@ -732,7 +855,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                         type="text"
                         value={config.dotMatrixStorePhone ?? config.headerText.split('\n')[2] ?? ''}
                         onChange={(e) => setConfig({ ...config, dotMatrixStorePhone: e.target.value })}
-                        placeholder="0811 5121 215"
+                        placeholder={storeDefaultCfg.dotMatrixStorePhone || 'Nomor Telepon'}
                         className="w-full px-2.5 py-1.5 bg-[#fdfaf7] text-[#332219] rounded-xl border border-[#ddc3aa] text-xs font-mono focus:bg-white focus:border-[#7c4e2f]"
                       />
                     </div>
@@ -1326,16 +1449,16 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                           <div className="flex justify-between items-start border-b border-stone-800 pb-1.5">
                             <div>
                               <div className="font-black text-xs uppercase tracking-wide text-stone-950">
-                                {config.dotMatrixStoreTitle || config.headerText.split('\n')[0] || 'CV. TUMBUH MAKMUR AIR CONINDO'}
+                                {config.dotMatrixStoreTitle || config.headerText.split('\n')[0] || storeDefaultCfg.dotMatrixStoreTitle}
                               </div>
                               <div className="text-[8px] font-bold text-stone-700">
-                                {config.dotMatrixStoreSub || 'SPAREPART & PENDINGIN RUANGAN AC'}
+                                {config.dotMatrixStoreSub || storeDefaultCfg.dotMatrixStoreSub}
                               </div>
                               <div className="text-[8.5px] font-bold text-stone-900">
-                                {config.dotMatrixStoreAddress || config.headerText.split('\n')[1] || 'Jl. P Antasari No.106, Samarinda'}
+                                {config.dotMatrixStoreAddress || config.headerText.split('\n')[1] || storeDefaultCfg.dotMatrixStoreAddress}
                               </div>
                               <div className="text-[8.5px] font-bold text-stone-900">
-                                Telp / WA: <b>{(config.dotMatrixStorePhone || config.headerText.split('\n')[2] || '0811 5121 215').replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '')}</b>
+                                Telp / WA: <b>{(config.dotMatrixStorePhone || config.headerText.split('\n')[2] || storeDefaultCfg.dotMatrixStorePhone || '-').replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '')}</b>
                               </div>
                             </div>
                             <div className="text-right">
