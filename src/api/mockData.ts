@@ -74,7 +74,7 @@ export const DEFAULT_STORE_PROFILE = {
   address: 'Jl. P Antasari No.106, Air Putih, Kec. Samarinda Ulu, Kota Samarinda, Kalimantan Timur 75243',
   city: 'Samarinda',
   phone: '0811 5121 215',
-  npwp: '00.000.000.0-000.000',
+  npwp: '',
   footer_message: 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar atau dikembalikan.',
   logo_base64: ''
 };

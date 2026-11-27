@@ -4,6 +4,8 @@
  * structured data tables, and signature blocks.
  */
 
+import { resolveStoreFromCurrentHost } from './storeRegistry';
+
 export interface PDFReportOptions {
   title: string;
   subtitle?: string;
@@ -35,13 +37,60 @@ export interface PDFReportOptions {
   }>;
 }
 
+function sanitizeReportAddress(addr?: string, branchName?: string): string {
+  const trimmed = (addr || '').trim();
+  if (!trimmed || trimmed === '-') return '';
+  if (/jl\.?\s*pahlawan/i.test(trimmed)) return '';
+  if (branchName && trimmed.toLowerCase() === branchName.trim().toLowerCase()) return '';
+  return trimmed;
+}
+
+function sanitizeReportPhone(phone?: string): string {
+  const trimmed = (phone || '').trim();
+  if (!trimmed || trimmed === '-' || trimmed === '0812-3456-7890' || trimmed === '08123456789') {
+    return '';
+  }
+  return trimmed;
+}
+
 export function exportReportToPDF(options: PDFReportOptions) {
-  const storeName = options.storeProfile?.name || 'KETOKO POS';
-  const branchName = options.storeProfile?.branch_name || 'Cabang Samarinda (BR-01)';
-  const storeAddress = options.storeProfile?.address || 'Jl. Pahlawan No. 45, Samarinda';
-  const storePhone = options.storeProfile?.phone || '0812-3456-7890';
-  const storeNpwp = options.storeProfile?.npwp || '01.234.567.8-721.000';
-  const logo = options.storeProfile?.logo_base64;
+  const hostStore = resolveStoreFromCurrentHost();
+  let savedProfile: Partial<NonNullable<PDFReportOptions['storeProfile']>> = {};
+  try {
+    const rawSaved = typeof window !== 'undefined' ? localStorage.getItem('ketoko_store_profile') : null;
+    if (rawSaved) savedProfile = JSON.parse(rawSaved);
+  } catch {}
+
+  const storeName =
+    options.storeProfile?.name ||
+    savedProfile.name ||
+    hostStore.name ||
+    'KETOKO POS';
+  const branchName =
+    options.storeProfile?.branch_name ||
+    savedProfile.branch_name ||
+    hostStore.branch ||
+    '';
+  const storeAddress = sanitizeReportAddress(
+    options.storeProfile?.address ?? savedProfile.address,
+    branchName
+  );
+  const storePhone = sanitizeReportPhone(
+    options.storeProfile?.phone ?? savedProfile.phone ?? hostStore.phone
+  );
+  const logo = options.storeProfile?.logo_base64 || savedProfile.logo_base64;
+
+  const isKoperasi =
+    hostStore.id.startsWith('store-koperasimsl') || /koperasi/i.test(storeName);
+  const accentColor = isKoperasi ? '#065f46' : '#0f766e';
+  const accentBg = isKoperasi ? '#ecfdf5' : '#f0fdfa';
+  const accentBorder = isKoperasi ? '#a7f3d0' : '#99f6e4';
+  const badgeLabel = isKoperasi ? 'Dokumen Resmi Koperasi' : 'Dokumen Resmi Toko';
+
+  const contactParts: string[] = [];
+  if (storeAddress) contactParts.push(storeAddress);
+  if (storePhone) contactParts.push(`Telp: ${storePhone}`);
+  const contactLine = contactParts.join(' • ');
 
   const alignments = options.table.alignments || options.table.headers.map((_, i) => (i === 0 ? 'center' : i >= options.table.headers.length - 3 ? 'right' : 'left'));
 
@@ -93,7 +142,7 @@ export function exportReportToPDF(options: PDFReportOptions) {
     .store-logo-placeholder {
       width: 50px;
       height: 50px;
-      background: #7c4e2f;
+      background: ${accentColor};
       color: #ffffff;
       border-radius: 8px;
       display: flex;
@@ -112,7 +161,7 @@ export function exportReportToPDF(options: PDFReportOptions) {
     .store-info .branch {
       font-size: 12px;
       font-weight: 700;
-      color: #7c4e2f;
+      color: ${accentColor};
       margin-bottom: 2px;
     }
     .store-info .address {
@@ -175,8 +224,8 @@ export function exportReportToPDF(options: PDFReportOptions) {
       padding: 8px 10px;
     }
     .kpi-card.highlight {
-      background: #fdfaf7;
-      border-color: #ddc3aa;
+      background: ${accentBg};
+      border-color: ${accentBorder};
     }
     .kpi-label {
       font-size: 9px;
@@ -192,7 +241,7 @@ export function exportReportToPDF(options: PDFReportOptions) {
       font-family: monospace, sans-serif;
     }
     .kpi-card.highlight .kpi-value {
-      color: #7c4e2f;
+      color: ${accentColor};
     }
     .kpi-sub {
       font-size: 8.5px;
@@ -282,12 +331,12 @@ export function exportReportToPDF(options: PDFReportOptions) {
       ${logo ? `<img src="${logo}" alt="Logo" class="store-logo" />` : `<div class="store-logo-placeholder">${storeName.charAt(0)}</div>`}
       <div class="store-info">
         <h1>${storeName}</h1>
-        <div class="branch">${branchName}</div>
-        <div class="address">${storeAddress} • Telp: ${storePhone} ${storeNpwp ? `• NPWP: ${storeNpwp}` : ''}</div>
+        ${branchName ? `<div class="branch">${branchName}</div>` : ''}
+        ${contactLine ? `<div class="address">${contactLine}</div>` : ''}
       </div>
     </div>
     <div class="report-meta">
-      <div class="report-badge">Dokumen Resmi Retail</div>
+      <div class="report-badge">${badgeLabel}</div>
       <div class="report-date">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
     </div>
   </div>

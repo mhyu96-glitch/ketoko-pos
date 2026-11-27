@@ -726,7 +726,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   };
 
   return (
-    <div className="flex-1 w-full p-1.5 sm:p-3 flex flex-col bg-[#f6f0ea] lg:h-full lg:min-h-0 lg:overflow-hidden">
+    <div className="flex-1 w-full p-1.5 sm:p-2 flex flex-col bg-[#f6f0ea] lg:h-full lg:min-h-0 lg:overflow-hidden">
       
       {/* Top Banner if Seeding */}
       {isCatalogSeeding && (
@@ -737,10 +737,10 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
       )}
 
       {/* Main Cashier Workspace (Split: Left Table 65%, Right Checkout 35%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-3 lg:flex-1 lg:min-h-0 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-2.5 lg:flex-1 lg:min-h-0 items-stretch">
         
         {/* LEFT COLUMN: Fast Barcode Scanner & Expansive Transaction Table (8 of 12 cols) */}
-        <div className="lg:col-span-8 flex flex-col lg:h-full space-y-2">
+        <div className="lg:col-span-8 flex flex-col lg:h-full lg:min-h-0 space-y-2">
           
           {/* 1. Barcode & Search Bar + Quick Product Chips */}
           <div className="shrink-0 bg-white p-2.5 rounded-2xl border border-[#e4d5c7] shadow-xs space-y-1.5">
@@ -996,10 +996,10 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
         </div>
 
         {/* RIGHT COLUMN: Fully Filled, Professional Retail POS Panel (4 of 12 cols) */}
-        <div className="lg:col-span-4 flex flex-col lg:h-full space-y-2 pb-24 lg:pb-0">
+        <div className="lg:col-span-4 flex flex-col lg:h-full lg:min-h-0 lg:overflow-y-auto scrollbar-thin space-y-1.5 pb-24 lg:pb-0.5">
           
           {/* CARD 1: MEMBER, PPN & TOTAL TAGIHAN HERO */}
-          <div className="bg-white rounded-2xl border border-[#e4d5c7] p-3 shadow-xs space-y-2 shrink-0">
+          <div className="bg-white rounded-2xl border border-[#e4d5c7] p-2.5 shadow-xs space-y-1.5 shrink-0">
             
             {/* Member & Tax Toggle + Input Mode Switch */}
             <div className="flex items-center space-x-2">
@@ -1207,28 +1207,28 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
             {/* Selected Member Saldo & Quick Cash/Saldo Switcher Card */}
             {activeMemberDisplayName && (
-              <div className={`px-3 py-2.5 rounded-xl border text-xs transition-all animate-fadeIn shadow-2xs space-y-2 ${
+              <div className={`px-2.5 py-2 rounded-xl border text-xs transition-all animate-fadeIn shadow-2xs space-y-1.5 ${
                 isCustomerCardBlocked(activeCustomer)
                   ? 'bg-rose-50 text-rose-950 border-rose-300'
                   : selectedPaymentMethod === 'CASH'
                     ? 'bg-sky-50/90 text-sky-950 border-sky-300'
                     : 'bg-emerald-50/90 text-emerald-950 border-emerald-300'
               }`}>
-                <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className={`flex items-center flex-wrap gap-1.5 text-[10px] font-semibold ${
+                    <div className={`flex items-center flex-wrap gap-1 text-[10px] font-semibold leading-tight ${
                       isCustomerCardBlocked(activeCustomer)
                         ? 'text-rose-700'
                         : selectedPaymentMethod === 'CASH'
                           ? 'text-sky-700'
                           : 'text-emerald-700'
                     }`}>
-                      <Coins className="w-3.5 h-3.5 shrink-0" />
+                      <Coins className="w-3 h-3 shrink-0" />
                       <span className="truncate">
-                        {activeCustomer?.code ? `NIK / Kode: ${activeCustomer.code}` : 'Saldo Simpanan Anggota'}
+                        {activeCustomer?.code ? `NIK: ${activeCustomer.code}` : 'Saldo Anggota'}
                       </span>
                       {activeAfdelingInfo && (
-                        <span className={`px-1.5 py-0.5 rounded-md font-extrabold text-[9.5px] border ${
+                        <span className={`px-1.5 py-0.2 rounded font-extrabold text-[9px] border ${
                           isCustomerCardBlocked(activeCustomer)
                             ? 'bg-rose-100 text-rose-800 border-rose-300'
                             : selectedPaymentMethod === 'CASH'
@@ -1239,13 +1239,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                         </span>
                       )}
                     </div>
-                    {activeAfdelingInfo?.job && (
-                      <div className="text-[9.5px] font-medium opacity-75 truncate mt-0.5">
-                        Jabatan: {activeAfdelingInfo.job}
-                      </div>
-                    )}
-                    <div className="flex items-baseline gap-1.5 mt-0.5">
-                      <span className={`font-black text-sm sm:text-base tabular-nums tracking-tight ${
+                    <div className="flex items-baseline flex-wrap gap-x-1.5 gap-y-0 mt-0.5">
+                      <span className={`font-black text-sm tabular-nums tracking-tight ${
                         isCustomerCardBlocked(activeCustomer)
                           ? 'text-rose-900'
                           : selectedPaymentMethod === 'CASH'
@@ -1263,22 +1258,27 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                       }`}>
                         {selectedPaymentMethod === 'CASH' ? 'Saldo Utuh (Beli Cash)' : 'Sisa Saldo'}
                       </span>
+                      {activeAfdelingInfo?.job && (
+                        <span className="text-[9px] font-medium opacity-70 truncate">
+                          • {activeAfdelingInfo.job}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center shrink-0">
                     {isCustomerCardBlocked(activeCustomer) ? (
-                      <span className="px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[10px] font-extrabold whitespace-nowrap shadow-2xs">
-                        🚫 Kartu Diblokir
+                      <span className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-extrabold whitespace-nowrap shadow-2xs">
+                        🚫 Diblokir
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => setIsTopUpModalOpen(true)}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-extrabold flex items-center gap-1 whitespace-nowrap shrink-0 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                        className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold flex items-center gap-1 whitespace-nowrap shrink-0 transition-all shadow-2xs active:scale-95 cursor-pointer"
                         title="Isi Ulang Saldo Anggota"
                       >
-                        <Wallet className="w-3.5 h-3.5 shrink-0" />
+                        <Wallet className="w-3 h-3 shrink-0" />
                         <span>+ Top Up</span>
                       </button>
                     )}
@@ -1287,29 +1287,29 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
                 {/* Pilihan Cepat Member: Potong Saldo vs Beli Cash */}
                 {!isCustomerCardBlocked(activeCustomer) && (
-                  <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-emerald-200/70">
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-emerald-200/70">
                     <button
                       type="button"
                       onClick={() => setSelectedPaymentMethod('SALDO')}
-                      className={`py-1.5 px-2 rounded-lg text-[10.5px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                      className={`py-1 px-2 rounded-lg text-[10px] font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer border ${
                         selectedPaymentMethod === 'SALDO'
                           ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
                           : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
                       }`}
                     >
-                      <Wallet className="w-3.5 h-3.5 shrink-0" />
+                      <Wallet className="w-3 h-3 shrink-0" />
                       <span>Potong Saldo</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedPaymentMethod('CASH')}
-                      className={`py-1.5 px-2 rounded-lg text-[10.5px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                      className={`py-1 px-2 rounded-lg text-[10px] font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer border ${
                         selectedPaymentMethod === 'CASH'
                           ? 'bg-sky-700 text-white border-sky-800 shadow-2xs'
                           : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'
                       }`}
                     >
-                      <Coins className="w-3.5 h-3.5 shrink-0" />
+                      <Coins className="w-3 h-3 shrink-0" />
                       <span>Beli Cash</span>
                     </button>
                   </div>
@@ -1378,12 +1378,12 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             </div>
 
             {/* SOLID RICH GRAND TOTAL CARD */}
-            <div className="p-3 bg-[#7c4e2f] text-white rounded-xl shadow-xs space-y-0.5 border border-[#5c3c26]">
-              <div className="flex items-center justify-between text-[11px] font-bold text-[#fde68a] uppercase tracking-wider">
+            <div className="px-3 py-2 bg-[#7c4e2f] text-white rounded-xl shadow-xs space-y-0.5 border border-[#5c3c26]">
+              <div className="flex items-center justify-between text-[10.5px] font-bold text-[#fde68a] uppercase tracking-wider">
                 <span>Total Tagihan Pembayaran</span>
                 <span className="text-[10px] text-white/80 font-normal">{totalItemCount} Item</span>
               </div>
-              <div className="font-mono font-black text-2xl sm:text-3xl text-white tracking-tight leading-none pt-0.5">
+              <div className="font-mono font-black text-xl sm:text-2xl text-white tracking-tight leading-none pt-0.5">
                 {formatRupiah(grandTotal)}
               </div>
             </div>
@@ -1391,7 +1391,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
           </div>
 
           {/* CARD 2: METODE BAYAR & CASH/NON-CASH (Fills Remaining Space Ergonomically) */}
-          <div className="bg-white rounded-2xl border border-[#e4d5c7] p-3 shadow-xs flex flex-col justify-between space-y-2 lg:flex-1 lg:min-h-0">
+          <div className="bg-white rounded-2xl border border-[#e4d5c7] p-2.5 shadow-xs flex flex-col justify-between space-y-1.5 lg:flex-1 lg:min-h-0">
             
             {/* 1. Payment Method 6-Grid (Termasuk Pilihan Input Invoice Langsung) */}
             <div className="space-y-1 shrink-0">
@@ -1436,7 +1436,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
 
             {/* 2. Middle Section: Cash Input & Ergonomic Widgets */}
             {selectedPaymentMethod === 'CASH' ? (
-              <div className="flex flex-col justify-between space-y-1.5 bg-[#fcf8f4] p-2.5 rounded-xl border border-[#ebdccf] lg:flex-1 lg:min-h-0">
+              <div className="flex flex-col justify-between space-y-1.5 bg-[#fcf8f4] p-2 rounded-xl border border-[#ebdccf] lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-thin">
                 
                 {/* Input Cash Received */}
                 <div className="flex items-center justify-between text-xs shrink-0">
@@ -1546,8 +1546,8 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                           </span>
                         </div>
                       </div>
-                    ) : (
-                      /* Keyboard Shortcut Helper Grid */
+                    ) : !activeMemberDisplayName ? (
+                      /* Keyboard Shortcut Helper Grid (sembunyikan saat kartu member aktif agar tombol bawah tidak terdorong) */
                       <div className="grid grid-cols-2 gap-1 text-[10px] text-[#5c3c26]">
                         <div className="p-1.5 bg-white rounded-lg border border-[#ebdccf] flex items-center space-x-1.5 shadow-2xs">
                           <kbd className="px-1 py-0.2 bg-[#faebd7] text-[#7c4e2f] rounded font-mono font-bold text-[9px]">F1</kbd>
@@ -1566,7 +1566,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                           <span className="font-bold text-[#166534]">Bayar / Cetak</span>
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                   </div>
                 ) : (
@@ -1620,19 +1620,21 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
               </div>
             ) : (
               /* Non-Cash Saldo / QRIS / Debit / Transfer Info Box */
-              <div className="flex flex-col items-center justify-center p-3 sm:p-4 bg-[#fcf8f4] rounded-xl border border-[#ebdccf] text-center space-y-2 lg:flex-1 lg:min-h-0 overflow-y-auto">
+              <div className="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-[#fcf8f4] rounded-xl border border-[#ebdccf] text-center space-y-1.5 lg:flex-1 lg:min-h-0 overflow-y-auto scrollbar-thin">
                 {selectedPaymentMethod === 'SALDO' ? (
-                  <div className="w-full space-y-2">
-                    <div className="w-10 h-10 bg-emerald-100 rounded-xl border border-emerald-300 flex items-center justify-center text-emerald-800 mx-auto shadow-2xs">
-                      <Wallet className="w-6 h-6" />
+                  <div className="w-full space-y-1.5">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <div className="w-6 h-6 bg-emerald-100 rounded-lg border border-emerald-300 flex items-center justify-center text-emerald-800 shadow-2xs shrink-0">
+                        <Wallet className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-black text-slate-800">Pembayaran Saldo Member</span>
                     </div>
-                    <div className="text-xs font-black text-slate-800">Pembayaran Saldo Member</div>
                     
                     {activeCustomer ? (
-                      <div className="bg-white p-2.5 rounded-xl border border-emerald-200 text-left space-y-1.5 font-mono text-xs shadow-2xs">
+                      <div className="bg-white p-2 rounded-xl border border-emerald-200 text-left space-y-1 font-mono text-[11px] shadow-2xs">
                         <div className="flex justify-between text-slate-600">
                           <span className="font-sans">Anggota:</span>
-                          <span className="font-bold text-slate-800 truncate max-w-[130px] font-sans">{activeCustomer.name}</span>
+                          <span className="font-bold text-slate-800 truncate max-w-[150px] font-sans">{activeCustomer.name}</span>
                         </div>
                         <div className="flex justify-between text-slate-600">
                           <span className="font-sans">Saldo Saat Ini:</span>
@@ -1650,27 +1652,27 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                         </div>
 
                         {(Number(activeCustomer.deposit_balance) || 0) < grandTotal ? (
-                          <div className="pt-1">
+                          <div className="pt-0.5">
                             <div className="text-[10px] text-rose-600 font-bold font-sans mb-1 text-center">
                               ⚠️ Saldo kurang Rp {(grandTotal - (Number(activeCustomer.deposit_balance) || 0)).toLocaleString('id-ID')}
                             </div>
                             <button
                               type="button"
                               onClick={() => setIsTopUpModalOpen(true)}
-                              className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-extrabold font-sans flex items-center justify-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                              className="w-full py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-extrabold font-sans flex items-center justify-center gap-1 shadow-xs cursor-pointer active:scale-95"
                             >
                               <Plus className="w-3 h-3" />
                               <span>Top Up Saldo Sekarang</span>
                             </button>
                           </div>
                         ) : (
-                          <div className="pt-1 text-[10px] text-emerald-700 font-sans font-bold text-center bg-emerald-50 py-1 rounded-md border border-emerald-200">
+                          <div className="text-[10px] text-emerald-700 font-sans font-bold text-center bg-emerald-50 py-0.5 rounded-md border border-emerald-200">
                             ✓ Saldo mencukupi untuk pembayaran
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-300 text-amber-900 text-left space-y-1.5 text-xs">
+                      <div className="bg-amber-50 p-2 rounded-xl border border-amber-300 text-amber-900 text-left space-y-1 text-xs">
                         <p className="font-bold">⚠️ Belum Ada Member Dipilih</p>
                         <p className="text-[11px] text-amber-800 leading-snug">
                           Ketik nama/kode anggota pada kolom pelanggan di atas, atau klik tombol <b>Member</b>.
@@ -1678,7 +1680,7 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={onOpenMemberModal}
-                          className="w-full py-1.5 px-2 bg-[#7c4e2f] hover:bg-[#5c3c26] text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer"
+                          className="w-full py-1 px-2 bg-[#7c4e2f] hover:bg-[#5c3c26] text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer"
                         >
                           Cari & Pilih Member
                         </button>
@@ -1720,12 +1722,12 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
             )}
 
             {/* 3. Main Action Buttons: 1-Click Direct Receipt Print */}
-            <div className="space-y-1.5 pt-1 shrink-0">
+            <div className="space-y-1.5 pt-0.5 shrink-0">
               <button
                 type="button"
                 onClick={handleTriggerPayment}
                 disabled={cartItems.length === 0 || isPaymentProcessing}
-                className="w-full py-3.5 px-4 bg-[#166534] hover:bg-[#14532d] disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold rounded-xl shadow-md flex items-center justify-center space-x-2 text-sm sm:text-base transition-all active:scale-[0.98]"
+                className="w-full py-2.5 sm:py-3 px-4 bg-[#166534] hover:bg-[#14532d] disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold rounded-xl shadow-md flex items-center justify-center space-x-2 text-sm sm:text-base transition-all active:scale-[0.98]"
               >
                 {isPaymentProcessing ? (
                   <div className="flex items-center space-x-2">

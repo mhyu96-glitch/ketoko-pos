@@ -667,14 +667,17 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
   const handleResetAllEmployeesFromReport = async () => {
     const totalEmp = employeeReport?.summary.total_employees || 0;
-    if (!confirm(`Konfirmasi Reset Saldo Bulanan:\n\nReset saldo kuota ${totalEmp} karyawan kembali ke plafon default (Rp 2.000.000)?\n\nTransaksi pemakaian bulan berjalan akan mulai dari kuota baru.`)) {
+    const confirmWord = window.prompt(
+      `⚠️ PERINGATAN RESET MASSAL (${totalEmp} Karyawan)\n\nKetik "RESET" (huruf besar) untuk mereset seluruh saldo kuota karyawan kembali ke Rp 2.000.000.\n\n(Tips: Jika terjadi salah reset, Anda bisa menekan tombol "🛠️ Pulihkan Saldo dari Transaksi" untuk mengembalikan sisa saldo sesuai riwayat belanja bulan ini).`
+    );
+    if (!confirmWord || confirmWord.trim().toUpperCase() !== 'RESET') {
       return;
     }
     setIsResettingEmployees(true);
     try {
       const res = await employeeAllowanceService.resetEmployeeAllowance();
       if (res.success) {
-        const updated = await employeeAllowanceService.generateMonthlyReport(customers, transactions);
+        const updated = await employeeAllowanceService.generateMonthlyReport(customers, transactions, employeeMonth);
         setEmployeeReport(updated);
         alert(`Berhasil! Saldo kuota ${res.count || totalEmp} karyawan telah direset ke Rp 2.000.000.`);
       } else {
@@ -687,14 +690,57 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     }
   };
 
+  const handleRestoreBalancesFromTransactions = async () => {
+    if (
+      !window.confirm(
+        `🛠️ PULIHKAN SALDO DARI RIWAYAT TRANSAKSI (${employeeReport?.period_name || employeeMonth})\n\nSistem akan menghitung ulang:\nSisa Saldo = Plafon Rp 2.000.000 - Total Belanja Potong Saldo Bulan Ini\nberdasarkan nota transaksi kasir yang tercatat, lalu memulihkan saldo seluruh karyawan.\n\nLanjutkan pemulihan saldo?`
+      )
+    ) {
+      return;
+    }
+    setIsResettingEmployees(true);
+    try {
+      const res = await employeeAllowanceService.recalculateBalancesFromTransactions(undefined, employeeMonth);
+      const refreshedCusts = await db.customers.toArray();
+      setCustomers(refreshedCusts);
+      const updated = await employeeAllowanceService.generateMonthlyReport(refreshedCusts, transactions, employeeMonth);
+      setEmployeeReport(updated);
+      alert(`✅ ${res.message}`);
+    } catch (err: any) {
+      alert('Gagal memulihkan saldo: ' + (err.message || ''));
+    } finally {
+      setIsResettingEmployees(false);
+    }
+  };
+
   const handleResetSingleFromReport = async (empId: string, name: string, targetAllowance: number) => {
-    if (!confirm(`Reset saldo kuota bulanan karyawan "${name}" kembali ke ${formatRupiah(targetAllowance)}?`)) {
+    const empRecord = employeeReport?.employees.find((e) => e.customer_id === empId);
+    const spentMonth = empRecord?.spent_this_month || 0;
+    if (spentMonth > 0) {
+      const choice = window.prompt(
+        `Pilih aksi untuk "${name}":\n- Belanja Potong Saldo Bulan Ini: ${formatRupiah(spentMonth)}\n- Seharusnya Sisa Saldo: ${formatRupiah(Math.max(0, targetAllowance - spentMonth))}\n\nKetik "1" untuk PULIHKAN sesuai potongan transaksi (${formatRupiah(Math.max(0, targetAllowance - spentMonth))})\nKetik "2" untuk RESET PENUH ke ${formatRupiah(targetAllowance)}`,
+        '1'
+      );
+      if (!choice) return;
+      if (choice.trim() === '1') {
+        const res = await employeeAllowanceService.recalculateBalancesFromTransactions(empId, employeeMonth);
+        const refreshedCusts = await db.customers.toArray();
+        setCustomers(refreshedCusts);
+        const updated = await employeeAllowanceService.generateMonthlyReport(refreshedCusts, transactions, employeeMonth);
+        setEmployeeReport(updated);
+        alert(`✅ Saldo "${name}" berhasil dipulihkan ke ${formatRupiah(Math.max(0, targetAllowance - spentMonth))}.\n(${res.message})`);
+        return;
+      }
+      if (choice.trim() !== '2') return;
+    } else if (!confirm(`Reset saldo kuota bulanan karyawan "${name}" kembali ke ${formatRupiah(targetAllowance)}?`)) {
       return;
     }
     try {
       const res = await employeeAllowanceService.resetEmployeeAllowance(empId, targetAllowance);
       if (res.success) {
-        const updated = await employeeAllowanceService.generateMonthlyReport(customers, transactions);
+        const refreshedCusts = await db.customers.toArray();
+        setCustomers(refreshedCusts);
+        const updated = await employeeAllowanceService.generateMonthlyReport(refreshedCusts, transactions, employeeMonth);
         setEmployeeReport(updated);
       } else {
         alert('Gagal reset: ' + (res.message || 'Error'));
@@ -916,6 +962,16 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     const storeName = storeProfile?.name || 'KETOKO POS';
     const branchName = storeProfile?.branch_name || branchId;
 
+    if (activeTab === 'employee_allowance') {
+      if (employeeReport) {
+        employeeAllowanceService.exportEmployeeAllowanceExcel(
+          { ...employeeReport, employees: filteredEmployees },
+          storeName
+        );
+      }
+      return;
+    }
+
     if (activeTab === 'customer_items') {
       exportCustomerItemsToExcel({
         storeName,
@@ -1100,12 +1156,12 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
             {/* Export CSV / Excel Button */}
             <button
-              onClick={handleExportCSV}
+              onClick={activeTab === 'employee_allowance' ? handleExportExcel : handleExportCSV}
               className="px-3 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-amber-100 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs active:scale-95 border border-[#9b663b]/50 whitespace-nowrap"
               title="Unduh Data Mentah Laporan dalam Format Excel / CSV"
             >
               <FileSpreadsheet className="w-4 h-4 text-amber-200" />
-              <span className="hidden md:inline">Export CSV</span>
+              <span className="hidden md:inline">{activeTab === 'employee_allowance' ? 'Export Excel' : 'Export CSV'}</span>
             </button>
 
             {/* Thermal Print Button */}
@@ -2259,8 +2315,18 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Action Reset All & Print Afdeling Payroll */}
+                {/* Quick Action Export Excel, Reset All & Print Afdeling Payroll */}
                 <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleExportExcel}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs active:scale-95 border border-emerald-400/50"
+                    title="Unduh Laporan Saldo Karyawan format Microsoft Excel (.xls) rapi siap cetak"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-white" />
+                    <span>📊 Export Excel Rapi (.xls)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -2281,13 +2347,24 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
                   <button
                     type="button"
+                    onClick={handleRestoreBalancesFromTransactions}
+                    disabled={isResettingEmployees}
+                    className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs active:scale-95 border border-sky-400/50 disabled:opacity-50"
+                    title="Jika terjadi salah klik Reset Saldo, tombol ini menghitung ulang Sisa Saldo = Rp 2.000.000 - Total Belanja Potong Saldo Bulan Ini dari nota transaksi kasir"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 text-sky-100 ${isResettingEmployees ? 'animate-spin' : ''}`} />
+                    <span>🛠️ Pulihkan Saldo dari Transaksi</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleResetAllEmployeesFromReport}
                     disabled={isResettingEmployees}
                     className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs active:scale-95 disabled:opacity-50"
                     title="Reset saldo seluruh karyawan ke Rp 2.000.000"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 text-amber-100 ${isResettingEmployees ? 'animate-spin' : ''}`} />
-                    <span>{isResettingEmployees ? 'Mereset...' : '🔄 Reset Semua ke Rp 2 Jt'}</span>
+                    <span>{isResettingEmployees ? 'Memproses...' : '🔄 Reset Semua ke Rp 2 Jt'}</span>
                   </button>
                 </div>
               </div>

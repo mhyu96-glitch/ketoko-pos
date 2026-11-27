@@ -16,6 +16,22 @@ import { CustomSelect } from './CustomSelect';
 import { lanService } from '../services/lanService';
 import { syncService } from '../services/syncService';
 import { getSupabaseClient } from '../api/supabaseClient';
+import { getCurrentActiveStoreId, normalizeStoreId } from '../utils/customerAccess';
+
+/** Supplier default AC milik CV. Tumbuh Makmur (store-01) tidak boleh tampil di toko lain */
+const isAcDefaultSupplier = (s: Supplier) =>
+  s.id === 'sup-001' || /distributor\s*ac|sparepart/i.test(s.name || '');
+
+/** Filter supplier agar hanya milik toko aktif (isolasi antar toko) */
+export const filterSuppliersForStore = (list: Supplier[], storeId: string): Supplier[] => {
+  const active = normalizeStoreId(storeId);
+  return list.filter((s) => {
+    const owner = (s as any).store_id ? normalizeStoreId((s as any).store_id) : '';
+    if (owner) return owner === active;
+    if (active !== 'store-01' && isAcDefaultSupplier(s)) return false;
+    return true;
+  });
+};
 
 interface PurchasesAndReturnsModalProps {
   isOpen: boolean;
@@ -168,30 +184,80 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     const allPurchases = await db.purchases.toArray();
     const allPRet = await db.purchaseReturns.toArray();
     const allSRet = await db.salesReturns.toArray();
-    let allSuppliers = await db.suppliers.toArray();
+    const activeStore = normalizeStoreId(getCurrentActiveStoreId());
 
-    // Pastikan supplier tidak kosong agar user langsung punya opsi
+    // Bersihkan supplier default AC warisan di toko non-AC
+    if (activeStore !== 'store-01') {
+      const rawSups = await db.suppliers.toArray();
+      const acIds = rawSups.filter((s) => isAcDefaultSupplier(s)).map((s) => s.id);
+      if (acIds.length > 0) {
+        await db.suppliers.bulkDelete(acIds).catch(() => {});
+      }
+    }
+
+    let allSuppliers = filterSuppliersForStore(await db.suppliers.toArray(), activeStore);
+
+    // Sinkronkan supplier yang sudah tercatat di histori faktur pembelian (misal: "ofa mart") agar otomatis muncul di dropdown
+    const existingNames = new Set(allSuppliers.map((s) => (s.name || '').trim().toLowerCase()));
+    const discoveredSuppliers: Supplier[] = [];
+    for (const pur of allPurchases) {
+      const sName = (pur.supplier_name || '').trim();
+      if (!sName || existingNames.has(sName.toLowerCase())) continue;
+      if (activeStore !== 'store-01' && /distributor\s*ac|sparepart/i.test(sName)) continue;
+      existingNames.add(sName.toLowerCase());
+      discoveredSuppliers.push({
+        id: pur.supplier_id || `sup-${Date.now()}-${discoveredSuppliers.length}`,
+        code: `SUP-${String(allSuppliers.length + discoveredSuppliers.length + 1).padStart(2, '0')}`,
+        name: sName,
+        sales_contact: '-',
+        phone: '',
+        address: '',
+        store_id: activeStore,
+        created_at: pur.created_at || new Date().toISOString()
+      });
+    }
+    if (discoveredSuppliers.length > 0) {
+      await db.suppliers.bulkPut(discoveredSuppliers).catch(() => {});
+      allSuppliers = [...discoveredSuppliers, ...allSuppliers];
+    }
+
+    // Pastikan supplier tidak kosong agar user langsung punya opsi (khusus milik toko aktif)
     if (allSuppliers.length === 0) {
-      const defaultSuppliers: Supplier[] = [
-        {
-          id: 'sup-001',
-          code: 'SUP-01',
-          name: 'Distributor AC & Sparepart Utama',
-          sales_contact: 'Bpk. Hendra',
-          phone: '0812-3456-7890',
-          address: 'Samarinda',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'sup-002',
-          code: 'SUP-02',
-          name: 'Supplier Umum / Mitra Toko',
-          sales_contact: 'Admin Toko',
-          phone: '0811-5121-215',
-          address: 'Samarinda',
-          created_at: new Date().toISOString()
-        }
-      ];
+      const defaultSuppliers: Supplier[] = activeStore === 'store-01'
+        ? [
+            {
+              id: 'sup-001',
+              code: 'SUP-01',
+              name: 'Distributor AC & Sparepart Utama',
+              sales_contact: 'Bpk. Hendra',
+              phone: '0812-3456-7890',
+              address: 'Samarinda',
+              store_id: activeStore,
+              created_at: new Date().toISOString()
+            } as Supplier,
+            {
+              id: 'sup-002',
+              code: 'SUP-02',
+              name: 'Supplier Umum / Mitra Toko',
+              sales_contact: 'Admin Toko',
+              phone: '',
+              address: '',
+              store_id: activeStore,
+              created_at: new Date().toISOString()
+            } as Supplier
+          ]
+        : [
+            {
+              id: `sup-umum-${activeStore}`,
+              code: 'SUP-01',
+              name: 'Supplier Umum / Mitra Toko',
+              sales_contact: 'Admin Toko',
+              phone: '',
+              address: '',
+              store_id: activeStore,
+              created_at: new Date().toISOString()
+            } as Supplier
+          ];
       await db.suppliers.bulkPut(defaultSuppliers);
       allSuppliers = defaultSuppliers;
       try {

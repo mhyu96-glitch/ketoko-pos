@@ -20,6 +20,7 @@ import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escpo
 import { syncService } from '../services/syncService';
 import { CustomSelect } from './CustomSelect';
 import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
+import { filterSuppliersForStore } from './PurchasesAndReturnsModal';
 
 interface DebtReceivableModalProps {
   isOpen: boolean;
@@ -91,10 +92,10 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
     const allReceivables = await db.receivables.toArray();
     const allSuppliers = await db.suppliers.toArray();
     const allCustomers = await db.customers.toArray();
-    const activeStoreId = branchId || getCurrentActiveStoreId();
+    const activeStoreId = getCurrentActiveStoreId();
     setDebts(allDebts);
     setReceivables(allReceivables);
-    setSuppliers(allSuppliers);
+    setSuppliers(filterSuppliersForStore(allSuppliers, activeStoreId));
     setCustomers(filterCustomersForStore(allCustomers, activeStoreId));
     onUpdated?.();
   };

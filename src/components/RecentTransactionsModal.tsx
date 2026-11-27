@@ -184,7 +184,8 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
     const savedStore = localStorage.getItem('ketoko_store_profile');
     const store = savedStore ? JSON.parse(savedStore) : {};
-    const storeName = store.name || 'CV. TUMBUH MAKMUR AIR CONINDO';
+    const storeName = store.name || 'KETOKO POS';
+    const branchSubtitle = store.branch_name || '';
 
     const html = `<!DOCTYPE html>
 <html lang="id">
@@ -217,6 +218,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 <body>
   <div class="report">
     <h1>${storeName.toUpperCase()}</h1>
+    ${branchSubtitle ? `<div style="text-align:center;font-size:10px;font-weight:700;margin-bottom:2px;">${branchSubtitle}</div>` : ''}
     <h2>LAPORAN PENJUALAN HARIAN — ${today.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</h2>
     <div class="sep"></div>
     

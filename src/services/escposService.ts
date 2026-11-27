@@ -215,7 +215,9 @@ export class ESCPOSBuilder {
     this.alignCenter();
 
     // Store Name & Header Text (dibungkus rapi sesuai lebar kolom kertas 58mm/80mm)
-    const headerLines = (config.headerText || 'KETOKO MODERN POS\nJl. Pahlawan No. 45 Samarinda').split('\n');
+    const headerLines = (config.headerText || 'KETOKO POS')
+      .split('\n')
+      .filter((line) => !/jl\.?\s*pahlawan|npwp/i.test(line));
     if (headerLines.length > 0) {
       this.bold(true)
         .textSize(style === 'modern' || style === 'detailed' ? 'double_h' : 'normal');
@@ -1694,10 +1696,21 @@ export function generateDotMatrixHTML(
 
   // Nama & Kop Usaha
   const storeName = (config?.dotMatrixStoreTitle || config?.headerText?.split('\n')[0] || storeProfile?.name || 'KETOKO POS').trim();
-  const storeSub = (config?.dotMatrixStoreSub || storeProfile?.tagline || 'RETAIL & GROSIR').trim();
-  const storeAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || '-').trim();
-  const rawStorePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '-').trim();
-  const cleanPhone = rawStorePhone.replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '').trim() || rawStorePhone;
+  const storeSub = (config?.dotMatrixStoreSub || storeProfile?.branch_name || storeProfile?.tagline || '').trim();
+  const rawStoreAddr = (config?.dotMatrixStoreAddress || config?.headerText?.split('\n')[1] || storeProfile?.address || '').trim();
+  const storeAddr =
+    !rawStoreAddr ||
+    rawStoreAddr === '-' ||
+    /jl\.?\s*pahlawan/i.test(rawStoreAddr) ||
+    rawStoreAddr.toLowerCase() === storeSub.toLowerCase()
+      ? ''
+      : rawStoreAddr;
+  const rawStorePhone = (config?.dotMatrixStorePhone || config?.headerText?.split('\n')[2] || storeProfile?.phone || '').trim();
+  const strippedPhone = rawStorePhone.replace(/^(telp\s*\/\s*wa|telp|wa|hp)\s*[:\-]?\s*/i, '').trim();
+  const cleanPhone =
+    !strippedPhone || strippedPhone === '-' || strippedPhone === '0812-3456-7890'
+      ? ''
+      : strippedPhone;
 
   // Catatan Bawah Faktur (Notice Retur/Garansi)
   const showNotice = config?.dotMatrixShowNotice !== false;
@@ -1946,8 +1959,8 @@ export function generateDotMatrixHTML(
         <td style="width: 54%; vertical-align: top;">
           <div class="store-title">${storeName.toUpperCase()}</div>
           ${storeSub ? `<div class="store-sub">${storeSub.toUpperCase()}</div>` : ''}
-          <div class="store-addr">${storeAddr}</div>
-          <div class="store-addr">Telp / WA: <b>${cleanPhone}</b></div>
+          ${storeAddr ? `<div class="store-addr">${storeAddr}</div>` : ''}
+          ${cleanPhone ? `<div class="store-addr">Telp / WA: <b>${cleanPhone}</b></div>` : ''}
         </td>
         <td style="width: 46%; text-align: right; vertical-align: top;">
           <div class="faktur-title">FAKTUR PENJUALAN</div>

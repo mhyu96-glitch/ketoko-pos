@@ -317,6 +317,18 @@ export const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        let dirty = false;
+        if (parsed.address && /jl\.?\s*pahlawan/i.test(parsed.address)) {
+          parsed.address = '';
+          dirty = true;
+        }
+        if (parsed.npwp) {
+          parsed.npwp = '';
+          dirty = true;
+        }
+        if (dirty) {
+          localStorage.setItem('ketoko_store_profile', JSON.stringify(parsed));
+        }
         if (parsed.name && parsed.name === store.name) {
           return {
             name: parsed.name,

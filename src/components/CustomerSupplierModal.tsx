@@ -34,6 +34,7 @@ import { CustomerBranchBadge, CustomerBranchFields } from './CustomerBranchField
 import { MemberCardModal } from './MemberCardModal';
 import { MemberTopUpModal } from './MemberTopUpModal';
 import { CustomSelect } from './CustomSelect';
+import { filterSuppliersForStore } from './PurchasesAndReturnsModal';
 
 interface CustomerSupplierModalProps {
   isOpen: boolean;
@@ -128,7 +129,7 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
       const allCust = await db.customers.toArray();
       const allSup = await db.suppliers.toArray();
       setCustomers(filterCustomersForStore(allCust, activeStoreId));
-      setSuppliers(allSup);
+      setSuppliers(filterSuppliersForStore(allSup, activeStoreId));
       onUpdated?.();
 
       // Sinkronisasi background dari LAN server jika aktif
@@ -269,8 +270,9 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
         sales_contact: supSalesContact.trim(),
         phone: supPhone.trim(),
         address: supAddress.trim(),
-        payment_term_days: Number(supTermDays)
-      };
+        payment_term_days: Number(supTermDays),
+        store_id: normalizeStoreId(activeStoreId)
+      } as Supplier;
       await db.suppliers.add(newSup);
     }
 

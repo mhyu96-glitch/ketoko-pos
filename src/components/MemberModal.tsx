@@ -272,7 +272,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       showToast('Tidak ada karyawan yang terdaftar (tipe KARYAWAN).');
       return;
     }
-    if (!confirm(`Konfirmasi Reset Saldo Bulanan Koperasi:\n\nApakah Anda yakin ingin mereset saldo kuota ${totalEmp} karyawan kembali ke plafon default (Rp 2.000.000)?\n\nTransaksi dan mutasi reset otomatis dicatat oleh sistem.`)) {
+    const confirmWord = window.prompt(
+      `⚠️ PERINGATAN RESET MASSAL (${totalEmp} Karyawan)\n\nKetik "RESET" (huruf besar) untuk mereset saldo kuota seluruh karyawan kembali ke Rp 2.000.000.\n\n(Tips: Jika terjadi salah reset, klik tombol "🛠️ Pulihkan Saldo" untuk mengembalikan sisa saldo sesuai riwayat transaksi bulan ini).`
+    );
+    if (!confirmWord || confirmWord.trim().toUpperCase() !== 'RESET') {
       return;
     }
     setIsResettingAll(true);
@@ -291,12 +294,46 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     }
   };
 
-  // Reset 1 Karyawan Tertentu
-  const handleResetSingleEmployee = async (m: Customer) => {
-    const targetAmt = Math.min(2000000, m.monthly_allowance || 2000000);
-    if (!confirm(`Reset saldo kuota bulanan karyawan "${m.name}" kembali ke ${formatRupiah(targetAmt)}?`)) {
+  // Pulihkan Saldo Semua Karyawan dari Riwayat Transaksi Bulan Ini (Atasi salah klik Reset)
+  const handleRestoreAllBalancesFromTrx = async () => {
+    if (
+      !window.confirm(
+        '🛠️ PULIHKAN SALDO DARI RIWAYAT TRANSAKSI BULAN INI\n\nSistem akan menghitung ulang:\nSisa Saldo = Plafon Rp 2.000.000 - Total Belanja Potong Saldo Bulan Ini\nberdasarkan nota transaksi kasir yang tercatat, lalu memulihkan saldo karyawan.\n\nLanjutkan pemulihan saldo?'
+      )
+    ) {
       return;
     }
+    setIsResettingAll(true);
+    try {
+      const res = await employeeAllowanceService.recalculateBalancesFromTransactions();
+      await loadMembers();
+      showToast(`✅ ${res.message}`);
+    } catch (err: any) {
+      showToast('Gagal memulihkan saldo: ' + (err.message || ''));
+    } finally {
+      setIsResettingAll(false);
+    }
+  };
+
+  // Reset / Pulihkan 1 Karyawan Tertentu
+  const handleResetSingleEmployee = async (m: Customer) => {
+    const targetAmt = Math.min(2000000, m.monthly_allowance || 2000000);
+    const choice = window.prompt(
+      `Pilih aksi saldo untuk "${m.name}" (${m.code || m.id}):\n- Saldo Saat Ini: ${formatRupiah(Number(m.deposit_balance) || 0)}\n\nKetik "1" untuk PULIHKAN Saldo sesuai potongan transaksi bulan ini (Atasi salah reset)\nKetik "2" untuk RESET PENUH ke ${formatRupiah(targetAmt)}`,
+      '1'
+    );
+    if (!choice) return;
+    if (choice.trim() === '1') {
+      try {
+        const res = await employeeAllowanceService.recalculateBalancesFromTransactions(m.id);
+        await loadMembers();
+        showToast(`✅ Saldo "${m.name}" berhasil dipulihkan dari transaksi bulan ini! (${res.message})`);
+      } catch (err: any) {
+        showToast('Gagal memulihkan saldo: ' + (err.message || ''));
+      }
+      return;
+    }
+    if (choice.trim() !== '2') return;
     try {
       const res = await employeeAllowanceService.resetEmployeeAllowance(m.id, targetAmt);
       if (res.success) {
@@ -916,16 +953,28 @@ export const MemberModal: React.FC<MemberModalProps> = ({
               <span>🖨️ Cetak Kartu Fisik (Tanpa HP)</span>
             </button>
 
+            {/* Tombol Pulihkan Saldo dari Transaksi (Atasi Salah Reset) */}
+            <button
+              type="button"
+              onClick={handleRestoreAllBalancesFromTrx}
+              disabled={isResettingAll}
+              className="px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
+              title="Pulihkan / hitung ulang sisa saldo seluruh karyawan dari nota transaksi bulan ini (Atasi salah klik Reset)"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 text-sky-200 ${isResettingAll ? 'animate-spin' : ''}`} />
+              <span>🛠️ Pulihkan Saldo</span>
+            </button>
+
             {/* Tombol Reset Kuota Bulanan Semua Karyawan */}
             <button
               type="button"
               onClick={handleResetAllEmployees}
               disabled={isResettingAll}
               className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
-              title="Reset saldo kuota seluruh karyawan menjadi Rp 2.000.000 (Otomatis tiap awal bulan)"
+              title="Reset saldo kuota seluruh karyawan menjadi Rp 2.000.000 (Wajib ketik RESET)"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-amber-200 ${isResettingAll ? 'animate-spin' : ''}`} />
-              <span>{isResettingAll ? 'Mereset...' : '🔄 Reset Saldo Rp 2 Jt'}</span>
+              <span>{isResettingAll ? 'Memproses...' : '🔄 Reset Saldo Rp 2 Jt'}</span>
             </button>
           </div>
 

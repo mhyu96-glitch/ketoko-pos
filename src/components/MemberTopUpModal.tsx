@@ -125,6 +125,15 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
     const printWindow = window.open('', '_blank', 'width=400,height=600');
     if (!printWindow) return;
 
+    let storeTitle = 'KOPERASI KARYAWAN';
+    try {
+      const savedStore = localStorage.getItem('ketoko_store_profile');
+      if (savedStore) {
+        const parsed = JSON.parse(savedStore);
+        if (parsed?.name) storeTitle = parsed.name;
+      }
+    } catch {}
+
     const receiptHtml = `
       <!DOCTYPE html>
       <html>
@@ -143,8 +152,8 @@ export const MemberTopUpModal: React.FC<MemberTopUpModalProps> = ({
       </head>
       <body>
         <div class="header">
-          <div class="title">KOPERASI KARYAWAN BERSAMA</div>
-          <div class="subtitle">${mutation.store_name || 'Ketoko Multi-Cabang'}</div>
+          <div class="title">${storeTitle}</div>
+          <div class="subtitle">${mutation.store_name || ''}</div>
           <div class="subtitle">BUKTI SETORAN / TOP UP SALDO</div>
         </div>
         <div class="row"><span>No. Ref:</span><span>${mutation.id}</span></div>

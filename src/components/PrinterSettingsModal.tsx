@@ -1991,7 +1991,6 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     <div className="font-black text-xs uppercase tracking-wide text-stone-950 whitespace-pre-line">
                       {config.headerText}
                     </div>
-                    <div className="text-[9px] text-stone-500 font-mono">NPWP: 01.889.324.5-728.000</div>
                     <span className="inline-block mt-1 px-2 py-0.5 bg-stone-100 text-stone-800 font-bold text-[8px] rounded border border-stone-300 uppercase">
                       FAKTUR PENJUALAN GROSIR & RETAIL
                     </span>

@@ -14,6 +14,7 @@ import {
 import type { Transaction, Customer, StoreProfile } from '../types';
 import { formatRupiah, numberToWordsID } from '../services/escposService';
 import { formatCustomerAddressDisplay, getCustomerAfdelingDisplay, clampEmployeeAllowance, clampEmployeeBalance } from '../utils/customerAccess';
+import { resolveStoreFromCurrentHost } from '../services/storeRegistry';
 import { db } from '../db';
 
 interface InvoiceModalProps {
@@ -21,6 +22,43 @@ interface InvoiceModalProps {
   onClose: () => void;
   transaction: Transaction | null;
   storeProfile?: StoreProfile | null;
+}
+
+function buildCleanStoreProfile(prop?: StoreProfile | null): StoreProfile {
+  const hostStore = resolveStoreFromCurrentHost();
+  const isStore01 = hostStore.id === 'store-01';
+  let saved: Partial<StoreProfile> = {};
+  try {
+    const raw = localStorage.getItem('ketoko_store_profile');
+    if (raw) saved = JSON.parse(raw);
+  } catch {}
+
+  const base = prop || saved;
+  const rawAddr = (base?.address || '').trim();
+  const cleanAddr = /jl\.?\s*pahlawan/i.test(rawAddr) || rawAddr === '-' ? '' : rawAddr;
+  const rawPhone = (base?.phone || hostStore.phone || '').trim();
+  const cleanPhone =
+    rawPhone === '-' || rawPhone === '0812-3456-7890' || rawPhone === '08123456789'
+      ? ''
+      : rawPhone;
+
+  return {
+    name: base?.name || hostStore.name || 'KETOKO POS',
+    branch_name: base?.branch_name || hostStore.branch || '',
+    tagline:
+      base?.tagline ||
+      (isStore01
+        ? 'Pusat Sparepart AC, Pipa Tembaga, Freon & Komponen Pendingin'
+        : hostStore.branch || ''),
+    address: cleanAddr,
+    phone: cleanPhone,
+    npwp: '',
+    footer_message:
+      base?.footer_message ||
+      (isStore01
+        ? 'Barang yang sudah dibeli dapat ditukar maksimal 2x24 jam dengan membawa faktur resmi ini.'
+        : 'Terima kasih telah berbelanja. Simpan faktur ini sebagai bukti transaksi yang sah.')
+  } as StoreProfile;
 }
 
 export const InvoiceModal: React.FC<InvoiceModalProps> = ({
@@ -31,22 +69,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 }) => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [copied, setCopied] = useState(false);
-  const [storeProfile, setStoreProfile] = useState<StoreProfile>(() => {
-    if (propStoreProfile) return propStoreProfile;
-    try {
-      const saved = localStorage.getItem('ketoko_store_profile');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return {
-      name: 'CV. TUMBUH MAKMUR AIR CONINDO',
-      branch_name: 'Cabang Samarinda (BR-01)',
-      tagline: 'Pusat Sparepart AC, Pipa Tembaga, Freon & Komponen Pendingin',
-      address: 'Jl. Pahlawan No. 45, Samarinda, Kalimantan Timur',
-      phone: '0812-3456-7890',
-      npwp: '01.234.567.8-721.000',
-      footer_message: 'Barang yang sudah dibeli dapat ditukar maksimal 2x24 jam dengan membawa faktur resmi ini.'
-    } as StoreProfile;
-  });
+  const [storeProfile, setStoreProfile] = useState<StoreProfile>(() =>
+    buildCleanStoreProfile(propStoreProfile)
+  );
 
   // Load Customer detail from Dexie if available
   useEffect(() => {
@@ -79,12 +104,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       };
       fetchCust();
 
-      if (!propStoreProfile) {
-        try {
-          const saved = localStorage.getItem('ketoko_store_profile');
-          if (saved) setStoreProfile(JSON.parse(saved));
-        } catch {}
-      }
+      setStoreProfile(buildCleanStoreProfile(propStoreProfile));
     }
   }, [isOpen, transaction, propStoreProfile]);
 
@@ -227,9 +247,26 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     printWindow.document.close();
   };
 
+  const activeHostStore = resolveStoreFromCurrentHost();
+  const isStore01 = activeHostStore.id === 'store-01';
+  const invoiceSubtitle = storeProfile.branch_name || storeProfile.tagline || '';
+  const invoiceAddress =
+    storeProfile.address &&
+    !/jl\.?\s*pahlawan/i.test(storeProfile.address) &&
+    storeProfile.address !== '-' &&
+    storeProfile.address.trim().toLowerCase() !== invoiceSubtitle.trim().toLowerCase()
+      ? storeProfile.address.trim()
+      : '';
+  const invoicePhone =
+    storeProfile.phone &&
+    storeProfile.phone !== '-' &&
+    storeProfile.phone !== '0812-3456-7890'
+      ? storeProfile.phone.trim()
+      : '';
+
   // Kirim Invoice via WhatsApp
   const handleShareWhatsApp = () => {
-    let text = `*FAKTUR PENJUALAN - ${storeProfile.name || 'CV. TUMBUH MAKMUR AIR CONINDO'}*\n`;
+    let text = `*FAKTUR PENJUALAN - ${storeProfile.name || activeHostStore.name}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `*No. Faktur :* ${transaction.receipt_number}\n`;
     text += `*Tanggal    :* ${formattedDate} (${formattedTime})\n`;
@@ -262,7 +299,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       if (transaction.due_date) text += `*Jatuh Tempo:* ${dueDateFormatted}\n`;
     }
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `_Terima kasih atas kepercayaan Anda berbelanja di ${storeProfile.name || 'CV. Tumbuh Makmur Air Conindo'}._`;
+    text += `_Terima kasih atas kepercayaan Anda berbelanja di ${storeProfile.name || activeHostStore.name}._`;
 
     const cleanPhone = custPhone.replace(/\D/g, '');
     let waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -316,21 +353,21 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       <div className="bg-[#fcf9f5] w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Control Bar (Hidden on Print) */}
-        <div className="no-print px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-[#6f4021] via-[#85532f] to-[#9b663b] text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-sm border-b border-[#5e3519]">
+        <div className="no-print px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-sm border-b border-emerald-950">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-2xl bg-white/10 text-amber-200 border border-white/20">
+            <div className="p-2 rounded-2xl bg-white/10 text-emerald-200 border border-white/20">
               <FileText className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-bold text-sm sm:text-base leading-tight">Faktur Penjualan / Invoice Pelanggan</h3>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                  isLunas ? 'bg-emerald-800 text-emerald-100 border border-emerald-500/40' : 'bg-amber-800 text-amber-100 border border-amber-500/40'
+                  isLunas ? 'bg-emerald-700 text-emerald-100 border border-emerald-400/40' : 'bg-amber-800 text-amber-100 border border-amber-500/40'
                 }`}>
                   {isLunas ? 'LUNAS' : 'TEMPO'}
                 </span>
               </div>
-              <p className="text-xs text-[#fcefe3]/90 font-mono mt-0.5">
+              <p className="text-xs text-emerald-100/90 font-mono mt-0.5">
                 {transaction.receipt_number} • {formattedDate}
               </p>
             </div>
@@ -406,18 +443,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <div className="pb-4 border-b-2 border-stone-800 flex justify-between items-start gap-4">
                 <div>
                   <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight uppercase leading-none">
-                    {storeProfile.name || 'CV. TUMBUH MAKMUR AIR CONINDO'}
+                    {storeProfile.name || activeHostStore.name}
                   </h1>
-                  <p className="text-xs font-semibold text-stone-600 mt-1">
-                    {storeProfile.tagline || 'Spesialis Sparepart AC, Pipa Tembaga, Freon & Komponen Pendingin'}
-                  </p>
-                  <p className="text-[11px] text-stone-600 mt-0.5">
-                    {storeProfile.address || 'Jl. Pahlawan No. 45, Samarinda, Kalimantan Timur'}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-stone-600 mt-1 font-mono">
-                    <span>Telp/WA: <b>{storeProfile.phone || '0812-3456-7890'}</b></span>
-                    {storeProfile.npwp && <span>NPWP: <b>{storeProfile.npwp}</b></span>}
-                  </div>
+                  {invoiceSubtitle && (
+                    <p className="text-xs font-semibold text-stone-600 mt-1">
+                      {invoiceSubtitle}
+                    </p>
+                  )}
+                  {invoiceAddress && (
+                    <p className="text-[11px] text-stone-600 mt-0.5">
+                      {invoiceAddress}
+                    </p>
+                  )}
+                  {invoicePhone && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-stone-600 mt-1 font-mono">
+                      <span>Telp/WA: <b>{invoicePhone}</b></span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-right shrink-0">
@@ -540,16 +582,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     <span className="text-xs font-bold italic text-stone-800">{terbilangText}</span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-200/80 text-[11px] text-stone-700 space-y-1">
+                  <div className="p-2.5 rounded-lg bg-emerald-50/50 border border-emerald-200/80 text-[11px] text-stone-700 space-y-1">
                     <div className="font-bold text-stone-800 flex items-center space-x-1">
-                      <CreditCard className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Informasi Pembayaran & Rekening Toko:</span>
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Catatan & Ketentuan Faktur:</span>
                     </div>
-                    <p className="leading-snug text-stone-600">
-                      Transfer Bank: <b>BCA 012-345-6789</b> a/n <b>CV Tumbuh Makmur Air Conindo</b>
-                    </p>
+                    {isStore01 && (
+                      <p className="leading-snug text-stone-600">
+                        Transfer Bank: <b>BCA 012-345-6789</b> a/n <b>CV Tumbuh Makmur Air Conindo</b>
+                      </p>
+                    )}
                     <p className="text-[10px] text-stone-500 italic">
-                      * {storeProfile.footer_message || 'Barang yang sudah dibeli dapat ditukar maksimal 2x24 jam dengan membawa faktur resmi ini.'}
+                      * {storeProfile.footer_message || 'Terima kasih telah berbelanja. Simpan faktur resmi ini sebagai bukti transaksi yang sah.'}
                     </p>
                   </div>
                 </div>
@@ -577,7 +621,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
                   <div className="flex justify-between py-2 border-t-2 border-b-2 border-stone-800 text-sm font-black text-stone-900 bg-stone-50 px-2 rounded">
                     <span>TOTAL TAGIHAN:</span>
-                    <span className="font-mono text-[#96633b]">{formatRupiah(grandTotal)}</span>
+                    <span className="font-mono text-emerald-800">{formatRupiah(grandTotal)}</span>
                   </div>
 
                   {transaction.payment_method === 'CASH' && (

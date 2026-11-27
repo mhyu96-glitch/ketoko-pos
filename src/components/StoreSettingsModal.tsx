@@ -29,7 +29,7 @@ import { db } from '../db';
 import type { User, Product, StoreProfile } from '../types';
 import { useTheme, type ThemeCategory } from '../context/ThemeContext';
 import { CustomSelect } from './CustomSelect';
-import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
+import { getStoredStores, resolveStoreFromCurrentHost, type RegisteredStoreInfo } from '../services/storeRegistry';
 import { getCurrentActiveStoreId, getStoreDisplayName, normalizeStoreId } from '../utils/customerAccess';
 
 interface StoreSettingsModalProps {
@@ -40,17 +40,20 @@ interface StoreSettingsModalProps {
   onUpdated?: () => void;
 }
 
-const DEFAULT_STORE_PROFILE: StoreProfile = {
-  name: 'Ketoko POS',
-  branch_name: 'Cabang Samarinda (BR-01)',
-  tagline: 'Solusi Belanja Hemat, Cepat & Terlengkap',
-  address: 'Jl. Pahlawan No. 45, Samarinda, Kalimantan Timur',
-  phone: '0812-3456-7890',
-  footer_message: 'Terima kasih atas kunjungan Anda! Barang yang dibeli dapat ditukar max 3 hari.',
-  logo_base64: '',
-  npwp: '01.234.567.8-721.000',
-  tax_rate: 11
-};
+function getCleanDefaultStoreProfile(): StoreProfile {
+  const hostStore = resolveStoreFromCurrentHost();
+  return {
+    name: hostStore.name || 'Ketoko POS',
+    branch_name: hostStore.branch || 'Toko Utama',
+    tagline: '',
+    address: '',
+    phone: hostStore.phone && hostStore.phone !== '-' ? hostStore.phone : '',
+    footer_message: 'Terima kasih atas kunjungan Anda! Simpan struk ini sebagai bukti transaksi sah.',
+    logo_base64: '',
+    npwp: '',
+    tax_rate: 0
+  };
+}
 
 export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   isOpen,
@@ -68,14 +71,27 @@ export const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
 
   // Store Profile State
   const [storeProfile, setStoreProfile] = useState<StoreProfile>(() => {
+    const fallback = getCleanDefaultStoreProfile();
     const saved = localStorage.getItem('ketoko_store_profile');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.name && parsed.name !== 'Ketoko POS') return parsed;
+        if (parsed.name && parsed.name !== 'Ketoko POS') {
+          const cleanAddress = /jl\.?\s*pahlawan/i.test(parsed.address || '') ? '' : (parsed.address || '');
+          const cleanNpwp =
+            parsed.npwp === '01.234.567.8-721.000' || parsed.npwp === '00.000.000.0-000.000'
+              ? ''
+              : (parsed.npwp || '');
+          return {
+            ...fallback,
+            ...parsed,
+            address: cleanAddress,
+            npwp: cleanNpwp
+          };
+        }
       } catch {}
     }
-    return DEFAULT_STORE_PROFILE;
+    return fallback;
   });
   const [profileSaved, setProfileSaved] = useState(false);
   const [terminalStoreId, setTerminalStoreId] = useState<string>(() => getCurrentActiveStoreId());
