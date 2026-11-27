@@ -330,16 +330,34 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
     [activeCustomer]
   );
 
-  // Saat member dipilih, otomatis arahkan default ke Potong Saldo (kecuali kasir klik Beli Cash); saat member dihapus kembali ke Tunai
+  // Saat member dipilih, otomatis arahkan default ke Potong Saldo; saat member dihapus / Transaksi Baru, reset penuh ke Tunai & input kosong
   const prevMemberRef = useRef<string>('');
   useEffect(() => {
-    if (memberId && memberId !== prevMemberRef.current) {
+    const activeKey = (memberId || customerName || '').trim();
+    if (activeKey && activeKey !== prevMemberRef.current) {
       setSelectedPaymentMethod('SALDO');
-    } else if (!memberId && prevMemberRef.current && selectedPaymentMethod === 'SALDO') {
+    } else if (!activeKey && prevMemberRef.current) {
       setSelectedPaymentMethod('CASH');
+      setMemberSearchQuery('');
+      setIsSearching(false);
+      setIsMemberDropdownOpen(false);
     }
-    prevMemberRef.current = memberId;
-  }, [memberId]);
+    prevMemberRef.current = activeKey;
+  }, [memberId, customerName]);
+
+  useEffect(() => {
+    const handleNewTransactionReset = () => {
+      prevMemberRef.current = '';
+      setSelectedPaymentMethod('CASH');
+      setMemberSearchQuery('');
+      setIsSearching(false);
+      setIsMemberDropdownOpen(false);
+      setCashGivenInput('');
+      setCustomDate('');
+    };
+    window.addEventListener('ketoko_new_transaction', handleNewTransactionReset);
+    return () => window.removeEventListener('ketoko_new_transaction', handleNewTransactionReset);
+  }, []);
 
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);

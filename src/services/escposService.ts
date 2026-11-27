@@ -841,7 +841,7 @@ export async function printRawBufferViaSpooler(
 
     const text = new TextDecoder().decode(new Uint8Array(cleanBytes)).trim();
     const is80 = savedWidth === '80mm';
-    let printWidthMm = is80 ? 72 : 45;
+    let printWidthMm = is80 ? 72 : 43.5;
     try {
       const saved = localStorage.getItem('ketoko_printer_settings');
       if (saved) {
@@ -959,7 +959,7 @@ export async function printThermalReceiptSpooler(
   try {
     const transaction = await enrichTransactionMemberData(rawTransaction);
     const is80 = config.paperWidth === '80mm';
-    const defaultWidthMm = is80 ? 72 : 45;
+    const defaultWidthMm = is80 ? 72 : 43.5;
     const rawCfgWidth = Number(config.printableWidthMm);
     const printWidthMm =
       !isNaN(rawCfgWidth) && rawCfgWidth >= (is80 ? 60 : 38) && rawCfgWidth <= (is80 ? 80 : 54)
@@ -1312,9 +1312,9 @@ export async function printThermalReceiptSpooler(
       width: ${printWidthMm}mm !important;
       max-width: ${printWidthMm}mm !important;
       margin: 0 !important;
-      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '1mm 0.5mm 4mm 0.5mm'} !important;
+      padding: ${is80 ? '1.5mm 1mm 5mm 1mm' : '1mm 0.4mm 4mm 0.2mm'} !important;
       font-family: Consolas, 'Liberation Mono', 'Courier New', monospace;
-      font-size: ${is80 ? '11px' : style === 'compact' ? '8.8px' : '9.2px'};
+      font-size: ${is80 ? '11px' : style === 'compact' ? '8.5px' : '9px'};
       line-height: 1.25;
       color: #000000;
       background: #ffffff;

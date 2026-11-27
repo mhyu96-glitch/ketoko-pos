@@ -1849,8 +1849,9 @@ export const App: React.FC = () => {
       }));
     } catch {}
 
-    // 2. Clear cart & Show receipt INSTANTLY without waiting on queue count
+    // 2. Clear cart & reset member input INSTANTLY for next transaction
     clearCart();
+    window.dispatchEvent(new CustomEvent('ketoko_new_transaction'));
     setIsPaymentOpen(false);
     setActiveReceipt(newTrx);
     setIsReceiptOpen(true);
@@ -2091,7 +2092,10 @@ export const App: React.FC = () => {
 
       if (payload.used_pos_cart) {
         clearCart();
+      } else if (cartItems.length === 0) {
+        setMemberId('', '');
       }
+      window.dispatchEvent(new CustomEvent('ketoko_new_transaction'));
       setIsDirectInvoiceOpen(false);
       setSelectedInvoiceTrx(newTrx);
       syncService.getPendingCount().then(setPendingSyncCount).catch(() => {});
@@ -2742,7 +2746,13 @@ export const App: React.FC = () => {
       {isReceiptOpen && (
         <ReceiptModal
           isOpen={isReceiptOpen}
-          onClose={() => setIsReceiptOpen(false)}
+          onClose={() => {
+            setIsReceiptOpen(false);
+            if (cartItems.length === 0) {
+              clearCart();
+              window.dispatchEvent(new CustomEvent('ketoko_new_transaction'));
+            }
+          }}
           transaction={activeReceipt}
           onOpenPrinterSettings={() => setIsPrinterSettingsOpen(true)}
           onOpenInvoice={(trx) => setSelectedInvoiceTrx(trx)}

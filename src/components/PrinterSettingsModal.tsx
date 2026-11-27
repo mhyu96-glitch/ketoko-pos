@@ -34,7 +34,6 @@ import {
   connectBluetoothPrinter,
   getBluetoothPrinterStatus,
   disconnectBluetoothPrinter,
-  printReceiptUniversal, 
   printThermalTestSpooler,
   formatRupiah,
   printEpsonLX310Invoice,
@@ -89,7 +88,7 @@ export const DEFAULT_CONFIG: PrinterConfig = {
   dotMatrixPaperSize: 'A4_HALF',
   driverType: IS_WINDOWS_OS ? 'BROWSER' : 'USB',
   paperWidth: '58mm',
-  printableWidthMm: 45,
+  printableWidthMm: 43.5,
   autoCut: true,
   headerText: 'CV. TUMBUH MAKMUR AIR CONINDO\nJl. P Antasari No.106, Samarinda Ulu\nTelp: 0811 5121 215',
   footerText: 'Terima kasih atas kunjungan Anda!\nBarang yang dibeli tidak dapat ditukar kembali.',
@@ -1216,7 +1215,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setConfig({ ...config, paperWidth: '58mm', printableWidthMm: 45 })}
+                      onClick={() => setConfig({ ...config, paperWidth: '58mm', printableWidthMm: 43.5 })}
                       className={`py-2 rounded-xl border text-center font-mono text-xs font-bold transition-all ${
                         config.paperWidth === '58mm'
                           ? 'bg-[#7c4e2f] text-white border-[#7c4e2f] shadow-2xs'
@@ -1263,11 +1262,11 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     Lebar Area Cetak Efektif Printhead ({config.paperWidth === '80mm' ? 'Kertas 80mm' : 'Kertas 58mm'}):
                   </span>
                   <span className="font-mono font-extrabold text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    {config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 45)} mm
+                    {config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 43.5)} mm
                   </span>
                 </div>
                 <p className="text-[10.5px] text-stone-500 leading-snug">
-                  Kertas 58mm memiliki lebar pemanas fisik <b>45–48mm</b>. Gunakan <b>45 mm (Standar POS-58)</b> agar teks & angka nominal kanan pas penuh dan tidak terpotong di tepi kanan.
+                  Printhead kertas 58mm memotong di <b>~44.8mm</b>. Gunakan <b>43.5 mm (Standar POS-58)</b> agar seluruh huruf & angka nominal kanan tercetak utuh tanpa terpotong.
                 </p>
                 <div className="grid grid-cols-4 gap-1.5 pt-0.5">
                   {(config.paperWidth === '80mm'
@@ -1278,13 +1277,13 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                         { mm: 78, label: '78 mm', sub: 'Penuh Maks' }
                       ]
                     : [
-                        { mm: 43, label: '43 mm', sub: 'Aman Mini' },
-                        { mm: 45, label: '45 mm', sub: 'Standar POS-58' },
-                        { mm: 46.5, label: '46.5 mm', sub: 'Lebar' },
-                        { mm: 48, label: '48 mm', sub: 'Penuh 384-dot' }
+                        { mm: 42, label: '42 mm', sub: 'Ekstra Aman' },
+                        { mm: 43.5, label: '43.5 mm', sub: 'Standar POS-58' },
+                        { mm: 45, label: '45 mm', sub: 'Lebar' },
+                        { mm: 47, label: '47 mm', sub: 'Maks 384-dot' }
                       ]
                   ).map((opt) => {
-                    const currentMm = config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 45);
+                    const currentMm = config.printableWidthMm || (config.paperWidth === '80mm' ? 72 : 43.5);
                     const active = Number(currentMm) === opt.mm;
                     return (
                       <button

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { CartItem, Product, Customer } from '../types';
 import { db } from '../db';
 import {
@@ -16,6 +16,17 @@ export function useCart(activeStoreId?: string) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [memberId, setMemberIdState] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const memberIdRef = useRef<string>('');
+  const customerNameRef = useRef<string>('');
+  const lookupSeqRef = useRef<number>(0);
+
+  useEffect(() => {
+    memberIdRef.current = memberId;
+  }, [memberId]);
+
+  useEffect(() => {
+    customerNameRef.current = customerName;
+  }, [customerName]);
   const [memberBlockedInfo, setMemberBlockedInfo] = useState<MemberBlockedState | null>(null);
   const [memberDiscountPercent, setMemberDiscountPercent] = useState<number>(0);
   const [taxEnabled, setTaxEnabled] = useState<boolean>(true);
@@ -128,26 +139,33 @@ export function useCart(activeStoreId?: string) {
   const setMemberId = useCallback((id: string, nameOrDiscount?: string | number) => {
     const cleanId = (id || '').trim();
     const resolvedStoreId = activeStoreId || getCurrentActiveStoreId();
+    const currentSeq = ++lookupSeqRef.current;
+    memberIdRef.current = cleanId;
     setMemberIdState(cleanId);
     setMemberDiscountPercent(0);
 
     if (!cleanId) {
+      customerNameRef.current = '';
       setCustomerName('');
       setMemberBlockedInfo(null);
       return;
     }
 
     const applyResolvedCustomer = (cust: Customer, explicitSelect: boolean) => {
+      if (currentSeq !== lookupSeqRef.current) return false;
       const access = checkCustomerBranchAccess(cust, resolvedStoreId);
       if (!access.allowed) {
+        customerNameRef.current = '';
         setCustomerName('');
         setMemberBlockedInfo({ ...access, customer: cust });
         if (explicitSelect) {
+          memberIdRef.current = '';
           setMemberIdState('');
         }
         return false;
       }
       setMemberBlockedInfo(null);
+      customerNameRef.current = cust.name;
       setCustomerName(cust.name);
       return true;
     };
@@ -157,12 +175,15 @@ export function useCart(activeStoreId?: string) {
       (async () => {
         try {
           const custById = await db.customers.get(cleanId);
+          if (currentSeq !== lookupSeqRef.current) return;
           if (custById) {
             applyResolvedCustomer(custById, true);
             return;
           }
         } catch {}
+        if (currentSeq !== lookupSeqRef.current) return;
         setMemberBlockedInfo(null);
+        customerNameRef.current = fallbackName;
         setCustomerName(fallbackName);
       })();
       return;
@@ -175,6 +196,7 @@ export function useCart(activeStoreId?: string) {
       try {
         // 1. Cari via ID eksak
         const custById = await db.customers.get(cleanId);
+        if (currentSeq !== lookupSeqRef.current) return;
         if (custById && custById.name && isCustomerBelongsToStoreOrCluster(custById.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custById, false);
           return;
@@ -182,6 +204,7 @@ export function useCart(activeStoreId?: string) {
 
         // 2. Cari via Kode Pelanggan (case-insensitive)
         const custByCode = await db.customers.where('code').equalsIgnoreCase(cleanId).first();
+        if (currentSeq !== lookupSeqRef.current) return;
         if (custByCode && custByCode.name && isCustomerBelongsToStoreOrCluster(custByCode.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByCode, false);
           return;
@@ -189,6 +212,7 @@ export function useCart(activeStoreId?: string) {
 
         // 3. Cari via No HP
         const custByPhone = await db.customers.where('phone').equalsIgnoreCase(cleanId).first();
+        if (currentSeq !== lookupSeqRef.current) return;
         if (custByPhone && custByPhone.name && isCustomerBelongsToStoreOrCluster(custByPhone.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByPhone, false);
           return;
@@ -196,6 +220,7 @@ export function useCart(activeStoreId?: string) {
 
         // 4. Cari via Nama Pelanggan (case-insensitive)
         const custByName = await db.customers.where('name').equalsIgnoreCase(cleanId).first();
+        if (currentSeq !== lookupSeqRef.current) return;
         if (custByName && custByName.name && isCustomerBelongsToStoreOrCluster(custByName.store_id, resolvedStoreId)) {
           applyResolvedCustomer(custByName, false);
           return;
@@ -203,6 +228,7 @@ export function useCart(activeStoreId?: string) {
 
         // 5. In-Memory Search: Hanya kunci otomatis jika benar-benar identik (exact match) dengan kode, nama lengkap, atau nomor HP
         const allCusts = await db.customers.toArray();
+        if (currentSeq !== lookupSeqRef.current) return;
         const clusterCusts = allCusts.filter(c => isCustomerBelongsToStoreOrCluster(c.store_id, resolvedStoreId));
         const lower = cleanId.toLowerCase();
         const cleanDigits = cleanId.replace(/[^0-9]/g, '');
@@ -224,6 +250,7 @@ export function useCart(activeStoreId?: string) {
 
         // Jika hanya mengetik sebagian kata (query parsial untuk dropdown suggestions):
         // Biarkan customerName kosong agar kasir bebas melihat dan memilih daftar member di dropdown autocomplete
+        customerNameRef.current = '';
         setCustomerName('');
       } catch (err) {
         console.warn('[useCart] Gagal mencari data pelanggan:', err);
@@ -232,12 +259,15 @@ export function useCart(activeStoreId?: string) {
   }, [activeStoreId]);
 
   // Sinkronisasi otomatis data pelanggan yang sedang dipilih jika terjadi pembaruan di latar belakang
+  // Menggunakan memberIdRef & customerNameRef terkini agar member yang sudah di-reset saat Transaksi Baru tidak pernah muncul kembali!
   useEffect(() => {
     const resolvedStoreId = activeStoreId || getCurrentActiveStoreId();
     const handleCustUpdated = (cust: any) => {
       if (!cust) return;
-      const cleanMember = (memberId || '').trim().toLowerCase();
-      const cleanCustName = (customerName || '').trim().toLowerCase();
+      const cleanMember = (memberIdRef.current || '').trim().toLowerCase();
+      const cleanCustName = (customerNameRef.current || '').trim().toLowerCase();
+      if (!cleanMember && !cleanCustName) return;
+
       const matches =
         (cleanMember && (
           cust.id?.toLowerCase() === cleanMember ||
@@ -249,26 +279,31 @@ export function useCart(activeStoreId?: string) {
       if (matches && cust.name) {
         const access = checkCustomerBranchAccess(cust, resolvedStoreId);
         if (!access.allowed) {
+          memberIdRef.current = '';
+          customerNameRef.current = '';
           setMemberIdState('');
           setCustomerName('');
           setMemberBlockedInfo({ ...access, customer: cust });
           return;
         }
         setMemberBlockedInfo(null);
+        customerNameRef.current = cust.name;
         setCustomerName(cust.name);
       }
     };
 
     const handleCustDeleted = (id: string) => {
       if (!id) return;
-      const cleanMember = (memberId || '').trim().toLowerCase();
+      const cleanMember = (memberIdRef.current || '').trim().toLowerCase();
       if (cleanMember && (id.toLowerCase() === cleanMember)) {
+        memberIdRef.current = '';
+        customerNameRef.current = '';
         setMemberIdState('');
         setCustomerName('');
       }
     };
 
-    const onDomUpdate = (e: any) => handleCustUpdated(e?.detail);
+    const onDomUpdate = (e: any) => handleCustUpdated(e?.detail?.customer || e?.detail);
     const onDomDelete = (e: any) => handleCustDeleted(e?.detail?.id);
 
     window.addEventListener('ketoko_customer_updated', onDomUpdate);
@@ -293,9 +328,12 @@ export function useCart(activeStoreId?: string) {
       window.removeEventListener('ketoko_customer_deleted', onDomDelete);
       if (bc) bc.close();
     };
-  }, [memberId, customerName]);
+  }, [activeStoreId]);
 
   const clearCart = useCallback(() => {
+    lookupSeqRef.current++;
+    memberIdRef.current = '';
+    customerNameRef.current = '';
     setItems([]);
     setMemberIdState('');
     setCustomerName('');
