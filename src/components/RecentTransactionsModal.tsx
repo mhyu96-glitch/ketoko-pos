@@ -18,7 +18,8 @@ import {
   Edit3, 
   FileSpreadsheet, 
   FileText, 
-  AlertTriangle 
+  AlertTriangle,
+  Wallet
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product } from '../types';
@@ -26,6 +27,19 @@ import { formatRupiah } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { EditTransactionModal } from './EditTransactionModal';
 import { InvoiceModal } from './InvoiceModal';
+
+const getLocalDateKey = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getYesterdayDateKey = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+};
 
 interface RecentTransactionsModalProps {
   isOpen: boolean;
@@ -49,6 +63,8 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState('');
   const [selectedMethod, setSelectedMethod] = useState<string>('ALL');
+  const [dateFilterMode, setDateFilterMode] = useState<'date' | 'all'>('date');
+  const [targetDate, setTargetDate] = useState<string>(() => getLocalDateKey());
   const [isLoading, setIsLoading] = useState(false);
   const [viewingItemsTrx, setViewingItemsTrx] = useState<Transaction | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -168,9 +184,17 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   };
 
   const handlePrintDailyReport = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayTrx = transactions.filter(t => new Date(t.created_at) >= today);
+    const todayTrx = filtered;
+    const reportDateObj = (() => {
+      if (dateFilterMode === 'date' && targetDate) {
+        const [y, m, d] = targetDate.split('-').map(Number);
+        if (y && m && d) return new Date(y, m - 1, d);
+      }
+      return new Date();
+    })();
+    const reportDateHeader = dateFilterMode === 'all'
+      ? 'SEMUA TANGGAL'
+      : reportDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
     
     const totalSales = todayTrx.reduce((s, t) => s + t.grand_total, 0);
     const totalItems = todayTrx.reduce((s, t) => s + t.items.reduce((a, it) => a + it.qty, 0), 0);
@@ -191,7 +215,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>Laporan Penjualan Hari Ini - ${today.toLocaleDateString('id-ID')}</title>
+  <title>Laporan Penjualan - ${reportDateHeader}</title>
   <style>
     @page { size: 210mm 148.5mm; margin: 6mm 10mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -219,7 +243,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
   <div class="report">
     <h1>${storeName.toUpperCase()}</h1>
     ${branchSubtitle ? `<div style="text-align:center;font-size:10px;font-weight:700;margin-bottom:2px;">${branchSubtitle}</div>` : ''}
-    <h2>LAPORAN PENJUALAN HARIAN — ${today.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</h2>
+    <h2>LAPORAN PENJUALAN HARIAN — ${reportDateHeader}</h2>
     <div class="sep"></div>
     
     <table class="summary-tbl">
@@ -287,7 +311,14 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
     }
   };
 
+  const todayKey = getLocalDateKey();
+  const yesterdayKey = getYesterdayDateKey();
+
   const filtered = transactions.filter((trx) => {
+    if (dateFilterMode === 'date' && targetDate) {
+      const trxDateKey = getLocalDateKey(new Date(trx.created_at));
+      if (trxDateKey !== targetDate) return false;
+    }
     const q = search.toLowerCase();
     const matchQuery =
       trx.receipt_number.toLowerCase().includes(q) ||
@@ -309,6 +340,9 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
 
   const cashTrx = filtered.filter((t) => t.payment_method === 'CASH');
   const cashTotal = cashTrx.reduce((acc, t) => acc + t.grand_total, 0);
+
+  const saldoTrx = filtered.filter((t) => t.payment_method === 'SALDO');
+  const saldoTotal = saldoTrx.reduce((acc, t) => acc + t.grand_total, 0);
 
   const transferTrx = filtered.filter((t) => t.payment_method === 'TRANSFER');
   const transferTotal = transferTrx.reduce((acc, t) => acc + t.grand_total, 0);
@@ -379,8 +413,8 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
           </div>
         </div>
 
-        {/* 2.b Detail Pembayaran (TF vs CASH Hero Strip) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 bg-[#fcf9f5] border-b border-[#e5d0be]">
+        {/* 2.b Detail Pembayaran (TF vs CASH vs SALDO Hero Strip) */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3 bg-[#fcf9f5] border-b border-[#e5d0be]">
           {/* CASH Card */}
           <div 
             onClick={() => setSelectedMethod(selectedMethod === 'CASH' ? 'ALL' : 'CASH')}
@@ -399,6 +433,27 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
             </div>
             <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
               {totalVolume > 0 ? ((cashTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
+            </div>
+          </div>
+
+          {/* POTONG SALDO Card */}
+          <div 
+            onClick={() => setSelectedMethod(selectedMethod === 'SALDO' ? 'ALL' : 'SALDO')}
+            className={`p-2.5 rounded-2xl border cursor-pointer transition-all ${
+              selectedMethod === 'SALDO' 
+                ? 'bg-amber-50 border-amber-700 ring-2 ring-amber-700/20 shadow-xs' 
+                : 'bg-white border-[#dfcebe] hover:border-amber-700'
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
+              <span className="flex items-center"><Wallet className="w-3.5 h-3.5 mr-1" /> POTONG SALDO</span>
+              <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-amber-200">{saldoTrx.length} Nota</span>
+            </div>
+            <div className="text-base sm:text-lg font-black font-mono text-amber-900 mt-1">
+              {formatRupiah(saldoTotal)}
+            </div>
+            <div className="text-[10px] text-[#856b59] font-medium mt-0.5">
+              {totalVolume > 0 ? ((saldoTotal / totalVolume) * 100).toFixed(1) : 0}% dari omset
             </div>
           </div>
 
@@ -467,8 +522,70 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
         </div>
 
         {/* 3. Search & Filter Bar */}
-        <div className="p-3 sm:p-4 border-b border-[#e5d0be] bg-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          {/* Search Box */}
+        <div className="p-3 sm:p-4 border-b border-[#e5d0be] bg-white flex flex-col gap-2.5">
+          {/* Date Picker Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#f0e4d7]">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-[#5c3c26]">
+              <Calendar className="w-3.5 h-3.5 text-[#96633b]" />
+              <span>Filter Tanggal:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilterMode('date');
+                  setTargetDate(todayKey);
+                }}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all border ${
+                  dateFilterMode === 'date' && targetDate === todayKey
+                    ? 'bg-[#2d5a40] text-white border-[#2d5a40]'
+                    : 'bg-[#fcf9f5] text-[#5c3c26] border-[#ddc3aa] hover:bg-[#f5ebe0]'
+                }`}
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilterMode('date');
+                  setTargetDate(yesterdayKey);
+                }}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all border ${
+                  dateFilterMode === 'date' && targetDate === yesterdayKey
+                    ? 'bg-[#2d5a40] text-white border-[#2d5a40]'
+                    : 'bg-[#fcf9f5] text-[#5c3c26] border-[#ddc3aa] hover:bg-[#f5ebe0]'
+                }`}
+              >
+                Kemarin
+              </button>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setDateFilterMode('date');
+                    setTargetDate(e.target.value);
+                  }
+                }}
+                className="px-2.5 py-1 rounded-xl border border-[#ddc3aa] bg-[#fcf9f5] text-xs font-mono font-bold text-[#3d2617] focus:outline-none focus:border-[#2d5a40]"
+                title="Pilih tanggal nota transaksi"
+              />
+              <button
+                type="button"
+                onClick={() => setDateFilterMode('all')}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all border ${
+                  dateFilterMode === 'all'
+                    ? 'bg-[#96633b] text-white border-[#96633b]'
+                    : 'bg-[#fcf9f5] text-[#5c3c26] border-[#ddc3aa] hover:bg-[#f5ebe0]'
+                }`}
+              >
+                Semua Tanggal
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            {/* Search Box */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-[#8a6b53] absolute left-3 top-2.5" />
             <input
@@ -503,6 +620,7 @@ export const RecentTransactionsModal: React.FC<RecentTransactionsModalProps> = (
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
+          </div>
           </div>
         </div>
 

@@ -26,7 +26,8 @@ import {
   FileSpreadsheet,
   Smartphone,
   ShieldCheck,
-  RotateCcw
+  RotateCcw,
+  Wallet
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile, Customer } from '../types';
@@ -55,6 +56,31 @@ interface FullReportsCenterModalProps {
 // Default initial operational expenses (clean 0-data state)
 const INITIAL_EXPENSES: OperationalExpense[] = [];
 
+const getLocalDateKey = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getYesterdayDateKey = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+};
+
+const parseLocalDateStart = (yyyyMmDd: string): Date => {
+  const [y, m, d] = yyyyMmDd.split('-').map(Number);
+  if (!y || !m || !d) return new Date(0);
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+};
+
+const parseLocalDateEnd = (yyyyMmDd: string): Date => {
+  const [y, m, d] = yyyyMmDd.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d, 23, 59, 59, 999);
+};
+
 export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   isOpen,
   onClose,
@@ -77,9 +103,11 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const [showAfdelingSummaryTable, setShowAfdelingSummaryTable] = useState(true);
   const [isResettingEmployees, setIsResettingEmployees] = useState(false);
   
-  const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all' | 'custom'>('all');
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'date' | '7days' | 'month' | 'all' | 'custom'>('today');
   
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateKey();
+  const yesterdayStr = getYesterdayDateKey();
+  const [targetDate, setTargetDate] = useState<string>(todayStr);
   const [startDate, setStartDate] = useState<string>(todayStr);
   const [endDate, setEndDate] = useState<string>(todayStr);
 
@@ -88,7 +116,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>('ALL');
   const [selectedProductCategory, setSelectedProductCategory] = useState<string>('ALL');
   const [inventoryStockFilter, setInventoryStockFilter] = useState<'ALL' | 'CRITICAL'>('ALL');
-  const [paymentFilterMethod, setPaymentFilterMethod] = useState<'ALL' | 'CASH' | 'QRIS' | 'DEBIT' | 'TRANSFER'>('ALL');
+  const [paymentFilterMethod, setPaymentFilterMethod] = useState<'ALL' | 'CASH' | 'SALDO' | 'QRIS' | 'DEBIT' | 'TRANSFER'>('ALL');
 
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
@@ -249,57 +277,67 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     return map;
   }, [products]);
 
-  // Filter transactions based on active Date Preset
+  // Filter transactions based on active Date Preset (using local calendar date boundaries)
   const filteredTransactions = useMemo(() => {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = parseLocalDateStart(getLocalDateKey(now));
+    const todayEnd = parseLocalDateEnd(getLocalDateKey(now));
 
     return transactions.filter((t) => {
       const tDate = new Date(t.created_at);
       if (dateFilter === 'today') {
-        return tDate >= today;
+        return tDate >= todayStart && tDate <= todayEnd;
+      } else if (dateFilter === 'yesterday') {
+        const yKey = getYesterdayDateKey();
+        return tDate >= parseLocalDateStart(yKey) && tDate <= parseLocalDateEnd(yKey);
+      } else if (dateFilter === 'date') {
+        const dKey = targetDate || getLocalDateKey(now);
+        return tDate >= parseLocalDateStart(dKey) && tDate <= parseLocalDateEnd(dKey);
       } else if (dateFilter === '7days') {
-        const sevenDaysAgo = new Date(today);
-        sevenDaysAgo.setDate(today.getDate() - 7);
-        return tDate >= sevenDaysAgo;
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        return tDate >= sevenDaysAgo && tDate <= todayEnd;
       } else if (dateFilter === 'month') {
-        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        return tDate >= firstDayOfMonth;
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        return tDate >= firstDayOfMonth && tDate <= todayEnd;
       } else if (dateFilter === 'custom') {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        const start = parseLocalDateStart(startDate);
+        const end = parseLocalDateEnd(endDate);
         return tDate >= start && tDate <= end;
       }
       return true; // 'all'
     });
-  }, [transactions, dateFilter, startDate, endDate]);
+  }, [transactions, dateFilter, targetDate, startDate, endDate]);
 
   // Filter expenses based on active Date Preset
   const filteredExpenses = useMemo(() => {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = parseLocalDateStart(getLocalDateKey(now));
+    const todayEnd = parseLocalDateEnd(getLocalDateKey(now));
 
     return expenses.filter((e) => {
-      const eDate = new Date(e.date);
+      const eDate = parseLocalDateStart(e.date);
       if (dateFilter === 'today') {
-        return eDate >= today;
+        return eDate >= todayStart && eDate <= todayEnd;
+      } else if (dateFilter === 'yesterday') {
+        const yKey = getYesterdayDateKey();
+        return eDate >= parseLocalDateStart(yKey) && eDate <= parseLocalDateEnd(yKey);
+      } else if (dateFilter === 'date') {
+        const dKey = targetDate || getLocalDateKey(now);
+        return eDate >= parseLocalDateStart(dKey) && eDate <= parseLocalDateEnd(dKey);
       } else if (dateFilter === '7days') {
-        const sevenDaysAgo = new Date(today);
-        sevenDaysAgo.setDate(today.getDate() - 7);
-        return eDate >= sevenDaysAgo;
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        return eDate >= sevenDaysAgo && eDate <= todayEnd;
       } else if (dateFilter === 'month') {
-        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        return eDate >= firstDayOfMonth;
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        return eDate >= firstDayOfMonth && eDate <= todayEnd;
       } else if (dateFilter === 'custom') {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        const start = parseLocalDateStart(startDate);
+        const end = parseLocalDateEnd(endDate);
         return eDate >= start && eDate <= end;
       }
       return true;
     });
-  }, [expenses, dateFilter, startDate, endDate]);
+  }, [expenses, dateFilter, targetDate, startDate, endDate]);
 
   // Comprehensive Metrics Calculation
   const metrics = useMemo(() => {
@@ -481,24 +519,30 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   // Helper to format date label
   const periodFormattedHeader = useMemo(() => {
     if (dateFilter === 'custom') {
-      const s = new Date(startDate);
-      const e = new Date(endDate);
+      const s = parseLocalDateStart(startDate);
+      const e = parseLocalDateStart(endDate);
       const sStr = s.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
       const eStr = e.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
       return `Dari ${sStr} s/d ${eStr}`;
     } else if (dateFilter === 'today') {
-      const t = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      const t = parseLocalDateStart(getLocalDateKey()).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
       return `Hari Ini (${t})`;
+    } else if (dateFilter === 'yesterday') {
+      const y = parseLocalDateStart(getYesterdayDateKey()).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      return `Kemarin (${y})`;
+    } else if (dateFilter === 'date') {
+      const d = parseLocalDateStart(targetDate || getLocalDateKey()).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      return `Tanggal: ${d}`;
     } else if (dateFilter === '7days') {
       const now = new Date();
       const sevenAgo = new Date();
-      sevenAgo.setDate(now.getDate() - 7);
-      return `Dari ${sevenAgo.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} s/d ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      sevenAgo.setDate(now.getDate() - 6);
+      return `7 Hari (${sevenAgo.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} - ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })})`;
     } else if (dateFilter === 'month') {
       return `Bulan Ini (${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })})`;
     }
     return 'Semua Periode Transaksi';
-  }, [dateFilter, startDate, endDate]);
+  }, [dateFilter, targetDate, startDate, endDate]);
 
   const customerMap = useMemo(() => new Map(customers.map((c) => [c.id, c.name])), [customers]);
 
@@ -1491,20 +1535,35 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
             </button>
           </div>
 
-          {/* Quick Date Presets */}
-          <div className="flex items-center space-x-1 bg-white/80 p-1 rounded-xl border border-[#dfcebe] text-xs font-bold self-start sm:self-auto shadow-2xs">
+          {/* Quick Date Presets + Target Date Picker */}
+          <div className="flex flex-wrap items-center gap-1 bg-white/80 p-1 rounded-xl border border-[#dfcebe] text-xs font-bold self-start sm:self-auto shadow-2xs">
             <span className="text-[#856b59] px-2 flex items-center space-x-1 text-[11px]">
               <Calendar className="w-3 h-3 text-[#7c4e2f]" />
               <span>Periode:</span>
             </span>
 
             <button
-              onClick={() => setDateFilter('today')}
+              onClick={() => {
+                setDateFilter('today');
+                setTargetDate(todayStr);
+              }}
               className={`px-2.5 py-1 rounded-lg transition-all ${
-                dateFilter === 'today' ? 'bg-[#7c4e2f] text-white shadow-2xs' : 'text-[#543c2e] hover:bg-[#ebdccf]'
+                dateFilter === 'today' ? 'bg-[#2d5a40] text-white shadow-2xs' : 'text-[#543c2e] hover:bg-[#ebdccf]'
               }`}
             >
               Hari Ini
+            </button>
+
+            <button
+              onClick={() => {
+                setDateFilter('yesterday');
+                setTargetDate(yesterdayStr);
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all ${
+                dateFilter === 'yesterday' ? 'bg-[#2d5a40] text-white shadow-2xs' : 'text-[#543c2e] hover:bg-[#ebdccf]'
+              }`}
+            >
+              Kemarin
             </button>
 
             <button
@@ -1540,8 +1599,36 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 dateFilter === 'custom' ? 'bg-[#7c4e2f] text-white shadow-2xs' : 'text-[#543c2e] hover:bg-[#ebdccf]'
               }`}
             >
-              Manual
+              Rentang
             </button>
+
+            <div className="flex items-center space-x-1 pl-1.5 ml-1 border-l border-[#dfcebe]">
+              <span className="text-[10px] font-extrabold text-[#7c4e2f] uppercase">Tgl:</span>
+              <input
+                type="date"
+                value={dateFilter === 'today' ? todayStr : dateFilter === 'yesterday' ? yesterdayStr : targetDate}
+                onChange={(e) => {
+                  const picked = e.target.value;
+                  if (!picked) return;
+                  setTargetDate(picked);
+                  setStartDate(picked);
+                  setEndDate(picked);
+                  if (picked === todayStr) {
+                    setDateFilter('today');
+                  } else if (picked === yesterdayStr) {
+                    setDateFilter('yesterday');
+                  } else {
+                    setDateFilter('date');
+                  }
+                }}
+                className={`px-2 py-0.5 rounded-lg border text-[11px] font-mono font-bold focus:outline-none ${
+                  dateFilter === 'date'
+                    ? 'bg-[#2d5a40] text-white border-[#2d5a40]'
+                    : 'bg-[#fcf9f5] text-[#332219] border-[#dfcebe] focus:border-[#2d5a40]'
+                }`}
+                title="Pilih tanggal laporan yang dituju"
+              />
+            </div>
           </div>
         </div>
 
@@ -1646,7 +1733,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                 </div>
               </div>
 
-              {/* Rincian Detail Penjualan: CASH vs TRANSFER (TF) / Non-Tunai */}
+              {/* Rincian Detail Penjualan: CASH vs SALDO vs TRANSFER (TF) / Non-Tunai */}
               <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e4d5c7] shadow-xs space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
@@ -1654,8 +1741,8 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                       <CreditCard className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="font-black text-sm text-[#332219]">Rincian Metode Pembayaran (TF vs CASH)</h4>
-                      <p className="text-[11px] text-[#856b59]">Detail pembagian omset penjualan antara Tunai (Cash), Transfer Bank (TF), QRIS & Debit</p>
+                      <h4 className="font-black text-sm text-[#332219]">Rincian Metode Pembayaran ({periodFormattedHeader})</h4>
+                      <p className="text-[11px] text-[#856b59]">Detail pembagian omset penjualan antara Tunai (Cash), Potong Saldo Member, Transfer Bank (TF), QRIS & Debit</p>
                     </div>
                   </div>
                   <span className="text-xs font-mono font-bold text-[#7c4e2f] bg-[#f5ece3] px-3 py-1 rounded-xl border border-[#dfcebe] self-start sm:self-auto">
@@ -1663,7 +1750,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 pt-1">
                   {/* CASH Card */}
                   <div className="p-4 rounded-2xl bg-[#f7faf7] border border-[#cce2cf] flex flex-col justify-between">
                     <div className="flex items-center justify-between gap-2 text-[#166534] mb-1">
@@ -1679,6 +1766,24 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     </div>
                     <div className="text-[10px] text-[#856b59] mt-1 font-medium">
                       {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
+                    </div>
+                  </div>
+
+                  {/* POTONG SALDO Card */}
+                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 text-amber-900 mb-1">
+                      <span className="text-xs font-black uppercase flex items-center whitespace-nowrap">
+                        <Wallet className="w-3.5 h-3.5 mr-1 shrink-0" /> Potong Saldo
+                      </span>
+                      <span className="text-[10px] tabular-nums font-bold bg-white px-2 py-0.5 rounded-md border border-amber-200 whitespace-nowrap shrink-0">
+                        {metrics.paymentCountMap.SALDO} Nota
+                      </span>
+                    </div>
+                    <div className="text-xl font-black tabular-nums text-amber-900 mt-1">
+                      {formatRupiah(metrics.paymentMethodMap.SALDO)}
+                    </div>
+                    <div className="text-[10px] text-[#856b59] mt-1 font-medium">
+                      {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.SALDO / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total omset
                     </div>
                   </div>
 
@@ -1758,9 +1863,10 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f0e4d7] font-medium">
-                      {filteredTransactions.slice(0, 40).map((trx) => (
+                      {filteredTransactions.slice(0, 50).map((trx) => (
                         <tr key={trx.id} className="hover:bg-[#fcf8f4] transition-colors">
                           <td className="py-2.5 px-4 text-[#856b59] whitespace-nowrap font-mono text-[11px]">
+                            {new Date(trx.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
                             {new Date(trx.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                           </td>
                           <td className="py-2.5 px-4 font-mono font-bold text-[#332219] whitespace-nowrap">
@@ -1768,8 +1874,14 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                           </td>
                           <td className="py-2.5 px-4 text-[#543c2e] whitespace-nowrap">{trx.cashier_name || 'Kasir'}</td>
                           <td className="py-2.5 px-4 whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#faebd7] text-[#7c4e2f] border border-[#eed7c4]">
-                              {trx.payment_method}
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                              trx.payment_method === 'CASH'
+                                ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf]'
+                                : trx.payment_method === 'SALDO'
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-[#faebd7] text-[#7c4e2f] border-[#eed7c4]'
+                            }`}>
+                              {trx.payment_method === 'SALDO' ? 'POTONG SALDO' : trx.payment_method}
                             </span>
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono text-[#543c2e] whitespace-nowrap">
@@ -2139,7 +2251,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
             <div className="space-y-5 animate-fadeIn">
               
               {/* Payment Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
                 <div 
                   onClick={() => setPaymentFilterMethod(paymentFilterMethod === 'CASH' ? 'ALL' : 'CASH')}
                   className={`p-4 rounded-3xl bg-white border shadow-xs cursor-pointer transition-all ${
@@ -2154,7 +2266,25 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                     {formatRupiah(metrics.paymentMethodMap.CASH)}
                   </div>
                   <span className="text-[11px] text-[#856b59] mt-1 block font-medium">
-                    {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total
+                    {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total ({metrics.paymentCountMap.CASH} Nota)
+                  </span>
+                </div>
+
+                <div 
+                  onClick={() => setPaymentFilterMethod(paymentFilterMethod === 'SALDO' ? 'ALL' : 'SALDO')}
+                  className={`p-4 rounded-3xl bg-white border shadow-xs cursor-pointer transition-all ${
+                    paymentFilterMethod === 'SALDO' ? 'border-amber-700 ring-2 ring-amber-700/20 shadow-sm' : 'border-[#e4d5c7] hover:border-[#b8957c]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 text-amber-800 mb-1.5">
+                    <Wallet className="w-4 h-4" />
+                    <span className="text-xs font-bold uppercase">Potong Saldo</span>
+                  </div>
+                  <div className="text-2xl font-black font-mono text-[#332219] whitespace-nowrap">
+                    {formatRupiah(metrics.paymentMethodMap.SALDO)}
+                  </div>
+                  <span className="text-[11px] text-[#856b59] mt-1 block font-medium">
+                    {metrics.totalNetRevenue > 0 ? ((metrics.paymentMethodMap.SALDO / metrics.totalNetRevenue) * 100).toFixed(1) : 0}% dari total ({metrics.paymentCountMap.SALDO} Nota)
                   </span>
                 </div>
 
@@ -2248,6 +2378,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                         .map((trx) => (
                           <tr key={trx.id} className="hover:bg-[#fcf8f4] transition-colors">
                             <td className="py-2.5 px-4 text-[#856b59] font-mono text-[11px] whitespace-nowrap">
+                              {new Date(trx.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
                               {new Date(trx.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                             </td>
                             <td className="py-2.5 px-4 font-mono font-bold text-[#332219] whitespace-nowrap">{trx.receipt_number}</td>
@@ -2257,13 +2388,15 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                 trx.payment_method === 'CASH'
                                   ? 'bg-[#edf5ee] text-[#166534] border-[#cce2cf]'
+                                  : trx.payment_method === 'SALDO'
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
                                   : trx.payment_method === 'TRANSFER'
                                   ? 'bg-[#fcf5ed] text-[#7c4e2f] border-[#eed7c4]'
                                   : trx.payment_method === 'QRIS'
                                   ? 'bg-[#f0f7fb] text-[#0369a1] border-[#bae6fd]'
                                   : 'bg-[#faf5ff] text-[#6b21a8] border-[#e9d5ff]'
                               }`}>
-                                {trx.payment_method}
+                                {trx.payment_method === 'SALDO' ? 'POTONG SALDO' : trx.payment_method}
                               </span>
                             </td>
                             <td className="py-2.5 px-4 text-right font-mono font-black text-[#332219] whitespace-nowrap">

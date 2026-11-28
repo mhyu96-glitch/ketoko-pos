@@ -194,7 +194,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   const effectiveRole = userRole || currentUser?.role || 'CASHIER';
   const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'MANAGER';
 
-  // Fast Single-Pass O(N) Metrics & Aggregations
+  // Fast Single-Pass O(N) Metrics & Aggregations (Khusus Sesi Kasir Hari Ini)
   const { 
     totalRevenue, 
     totalTransactions, 
@@ -202,10 +202,12 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     lowStockCount, 
     topLowStockProducts,
     cashRevenue,
+    saldoRevenue,
     transferRevenue,
     qrisRevenue,
     debitRevenue,
     cashPercent,
+    saldoPercent,
     transferPercent,
     qrisPercent,
     debitPercent,
@@ -216,19 +218,23 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     todayItemsSold,
     todayTrxCount
   } = useMemo(() => {
-    let revenue = 0;
-    let itemsSold = 0;
     let cash = 0;
+    let saldo = 0;
     let nonCash = 0;
 
     let tRevenueToday = 0;
     let tItemsSoldToday = 0;
     let tTrxCountToday = 0;
 
-    const todayDateStr = new Date().toISOString().split('T')[0];
+    const nowLocal = new Date();
+    const todayY = nowLocal.getFullYear();
+    const todayM = nowLocal.getMonth();
+    const todayD = nowLocal.getDate();
     const isTrxToday = (dStr?: string) => {
       if (!dStr) return false;
-      return dStr.startsWith(todayDateStr) || new Date(dStr).toDateString() === new Date().toDateString();
+      const dt = new Date(dStr);
+      if (isNaN(dt.getTime())) return false;
+      return dt.getFullYear() === todayY && dt.getMonth() === todayM && dt.getDate() === todayD;
     };
 
     const soldMap = new Map<string, SoldProductSummary>();
@@ -240,32 +246,36 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
     for (let i = 0; i < tLen; i++) {
       const t = transactions[i];
       if (!t || !isTrxForThisStore(t)) continue;
-      const gTotal = Number(t.grand_total) || 0;
-      revenue += gTotal;
-      if (t.payment_method === 'CASH') {
-        cash += gTotal;
-      } else if (t.payment_method === 'TRANSFER') {
-        transfer += gTotal;
-        nonCash += gTotal;
-      } else if (t.payment_method === 'QRIS') {
-        qris += gTotal;
-        nonCash += gTotal;
-      } else if (t.payment_method === 'DEBIT') {
-        debit += gTotal;
-        nonCash += gTotal;
-      } else {
-        nonCash += gTotal;
-      }
       const itemsArr = Array.isArray(t.items) ? t.items : [];
       const itLen = itemsArr.length;
-      for (let j = 0; j < itLen; j++) {
-        itemsSold += Number(itemsArr[j]?.qty) || 0;
-      }
+      const itemsSum = itemsArr.reduce(
+        (s, it: any) => s + (Number(it?.subtotal_item) || (Number(it?.price_applied) || 0) * (Number(it?.qty) || 1)),
+        0
+      );
+      const gTotal = Number(t.grand_total) > 0 ? Number(t.grand_total) : (Number(t.subtotal) > 0 ? Number(t.subtotal) : itemsSum);
 
       const isCurrentDay = isTrxToday(t.created_at);
       if (isCurrentDay) {
         tTrxCountToday++;
         tRevenueToday += gTotal;
+
+        if (t.payment_method === 'CASH') {
+          cash += gTotal;
+        } else if (t.payment_method === 'SALDO') {
+          saldo += gTotal;
+          nonCash += gTotal;
+        } else if (t.payment_method === 'TRANSFER') {
+          transfer += gTotal;
+          nonCash += gTotal;
+        } else if (t.payment_method === 'QRIS') {
+          qris += gTotal;
+          nonCash += gTotal;
+        } else if (t.payment_method === 'DEBIT') {
+          debit += gTotal;
+          nonCash += gTotal;
+        } else {
+          nonCash += gTotal;
+        }
 
         for (let j = 0; j < itLen; j++) {
           const item = itemsArr[j];
@@ -326,27 +336,30 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
       }
     }
 
-    const cPct = revenue > 0 ? (cash / revenue) * 100 : 0;
-    const tfPct = revenue > 0 ? (transfer / revenue) * 100 : 0;
-    const qrisPct = revenue > 0 ? (qris / revenue) * 100 : 0;
-    const debitPct = revenue > 0 ? (debit / revenue) * 100 : 0;
-    const ncPct = revenue > 0 ? 100 - Math.round(cPct) : 0;
-    const avgBasket = tLen > 0 ? Math.round(revenue / tLen) : 0;
+    const cPct = tRevenueToday > 0 ? (cash / tRevenueToday) * 100 : 0;
+    const sPct = tRevenueToday > 0 ? (saldo / tRevenueToday) * 100 : 0;
+    const tfPct = tRevenueToday > 0 ? (transfer / tRevenueToday) * 100 : 0;
+    const qrisPct = tRevenueToday > 0 ? (qris / tRevenueToday) * 100 : 0;
+    const debitPct = tRevenueToday > 0 ? (debit / tRevenueToday) * 100 : 0;
+    const ncPct = tRevenueToday > 0 ? 100 - Math.round(cPct) : 0;
+    const avgBasket = tTrxCountToday > 0 ? Math.round(tRevenueToday / tTrxCountToday) : 0;
     const recent = [...transactions].slice(0, 5);
     const sortedTodaySold = Array.from(soldMap.values()).sort((a, b) => b.totalQty - a.totalQty);
 
     return {
-      totalRevenue: revenue,
-      totalTransactions: tLen,
-      totalItemsSold: itemsSold,
+      totalRevenue: tRevenueToday,
+      totalTransactions: tTrxCountToday,
+      totalItemsSold: tItemsSoldToday,
       lowStockCount: count,
       topLowStockProducts: topLow,
       cashRevenue: cash,
+      saldoRevenue: saldo,
       transferRevenue: transfer,
       qrisRevenue: qris,
       debitRevenue: debit,
       nonCashRevenue: nonCash,
       cashPercent: Math.round(cPct),
+      saldoPercent: Math.round(sPct),
       transferPercent: Math.round(tfPct),
       qrisPercent: Math.round(qrisPct),
       debitPercent: Math.round(debitPct),
@@ -465,11 +478,17 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
 
           <div className="mt-4 pt-3 border-t border-[#f0e4d7]/80">
             {/* Mini Payment Breakdown Pill */}
-            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[10.5px] font-mono">
               <span className="text-[#166534] font-bold flex items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#166534] mr-1 inline-block shrink-0" />
                 Cash: {formatRupiah(cashRevenue)}
               </span>
+              {saldoRevenue > 0 && (
+                <span className="text-teal-800 font-bold flex items-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-700 mr-1 inline-block shrink-0" />
+                  Saldo: {formatRupiah(saldoRevenue)}
+                </span>
+              )}
               <span className="text-[#7c4e2f] font-bold flex items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#7c4e2f] mr-1 inline-block shrink-0" />
                 TF: {formatRupiah(transferRevenue)}
@@ -482,6 +501,7 @@ export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
             {/* Visual mini bar */}
             <div className="w-full h-1.5 bg-[#ebdccf] rounded-full overflow-hidden flex mt-2">
               <div style={{ width: `${cashPercent}%` }} className="bg-[#166534] h-full" title={`Cash: ${cashPercent}%`} />
+              <div style={{ width: `${saldoPercent}%` }} className="bg-teal-700 h-full" title={`Potong Saldo: ${saldoPercent}%`} />
               <div style={{ width: `${transferPercent}%` }} className="bg-[#7c4e2f] h-full" title={`Transfer TF: ${transferPercent}%`} />
               <div style={{ width: `${qrisPercent + debitPercent}%` }} className="bg-[#0369a1] h-full" title={`QRIS & EDC: ${qrisPercent + debitPercent}%`} />
             </div>

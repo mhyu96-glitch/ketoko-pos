@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   FileText, 
@@ -8,12 +8,41 @@ import {
   CreditCard,
   Calculator,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  Wallet,
+  DollarSign
 } from 'lucide-react';
 import type { Transaction, StoreProfile } from '../types';
 import { formatRupiah, printShiftReport } from '../services/escposService';
 import { exportReportToPDF } from '../services/pdfReportService';
 import { db } from '../db';
+import { resolveStoreFromCurrentHost } from '../config/storeConfig';
+
+const getLocalDateKey = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getYesterdayDateKey = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+};
+
+const formatDateLabelId = (yyyyMmDd: string): string => {
+  const parts = yyyyMmDd.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return yyyyMmDd;
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  return d.toLocaleDateString('id-ID', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 // Helper: format angka ke string titik ribuan (contoh: 10950 -> "10.950")
 const formatRupiahInput = (val: string | number | undefined | null): string => {
@@ -49,6 +78,25 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
   const [localTrx, setLocalTrx] = useState<Transaction[]>([]);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [shiftDateMode, setShiftDateMode] = useState<'date' | 'all'>('date');
+  const [targetDate, setTargetDate] = useState<string>(() => getLocalDateKey());
+
+  const todayKey = getLocalDateKey();
+  const yesterdayKey = getYesterdayDateKey();
+
+  const resolvedBranchLabel = useMemo(() => {
+    const resolvedStore = resolveStoreFromCurrentHost();
+    try {
+      const saved = localStorage.getItem('ketoko_store_profile');
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<StoreProfile>;
+        if (parsed.branch_name && !parsed.branch_name.toLowerCase().includes('samarinda')) {
+          return `${branchId} (${parsed.branch_name})`;
+        }
+      }
+    } catch {}
+    return `${branchId} (${resolvedStore.branch})`;
+  }, [branchId, isOpen]);
 
   // Shift Cash Balancing States
   const [openingCashInput, setOpeningCashInput] = useState<string>(() => {
@@ -60,6 +108,8 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
 
   React.useEffect(() => {
     if (isOpen) {
+      setShiftDateMode('date');
+      setTargetDate(getLocalDateKey());
       db.transactions.toArray().then(setLocalTrx);
     }
   }, [isOpen]);
@@ -100,9 +150,38 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
     };
   }, [isOpen]);
 
+  const rawTransactions = initialTransactions !== undefined ? initialTransactions : localTrx;
+
+  // Filter berdasarkan toko aktif dan tanggal shift yang dituju
+  const transactions = useMemo(() => {
+    const activeStoreId = typeof window !== 'undefined'
+      ? (localStorage.getItem('ketoko_active_store_id') || resolveStoreFromCurrentHost().id)
+      : 'store-01';
+
+    return rawTransactions.filter((t: any) => {
+      if (activeStoreId === 'store-01') {
+        if (t.store_id && t.store_id !== 'store-01') return false;
+      } else {
+        if (t.store_id && t.store_id !== activeStoreId) return false;
+      }
+      if (shiftDateMode === 'date' && targetDate) {
+        const trxDateKey = getLocalDateKey(new Date(t.created_at));
+        if (trxDateKey !== targetDate) return false;
+      }
+      return true;
+    });
+  }, [rawTransactions, shiftDateMode, targetDate]);
+
   if (!isOpen) return null;
 
-  const transactions = initialTransactions !== undefined ? initialTransactions : localTrx;
+  const shiftPeriodLabel = shiftDateMode === 'all'
+    ? 'Semua Tanggal'
+    : targetDate === todayKey
+      ? `Hari Ini (${formatDateLabelId(targetDate)})`
+      : targetDate === yesterdayKey
+        ? `Kemarin (${formatDateLabelId(targetDate)})`
+        : formatDateLabelId(targetDate);
+
   const totalTrx = transactions.length;
   const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
   const totalDiscounts = transactions.reduce((sum, t) => sum + t.discount_amount, 0);
@@ -110,6 +189,10 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
 
   const cashTotal = transactions
     .filter((t) => t.payment_method === 'CASH')
+    .reduce((sum, t) => sum + t.grand_total, 0);
+
+  const saldoTotal = transactions
+    .filter((t) => t.payment_method === 'SALDO')
     .reduce((sum, t) => sum + t.grand_total, 0);
 
   const qrisTotal = transactions
@@ -138,8 +221,8 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
 
     exportReportToPDF({
       title: 'LAPORAN REKAPITULASI TUTUP SHIFT KASIR (Z-REPORT)',
-      subtitle: `Petugas Kasir: ${cashierName} • ID Cabang: ${branchId}`,
-      periodText: `Shift Aktif: ${new Date(Date.now() - 8 * 3600 * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} s/d ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} (${new Date().toLocaleDateString('id-ID')})`,
+      subtitle: `Petugas Kasir: ${cashierName} • Cabang: ${resolvedBranchLabel}`,
+      periodText: `Tanggal Shift: ${shiftPeriodLabel}`,
       storeProfile,
       kpis: [
         { label: 'Total Transaksi', value: `${totalTrx} Struk` },
@@ -152,12 +235,13 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
         rows: [
           [1, 'Modal Awal Kasir (Cash Float)', 'Uang kembalian awal shift', formatRupiah(openingCash)],
           [2, 'Penerimaan Tunai (Cash)', `${transactions.filter(t => t.payment_method === 'CASH').length} Transaksi`, formatRupiah(cashTotal)],
-          [3, 'Penerimaan QRIS Digital', `${transactions.filter(t => t.payment_method === 'QRIS').length} Transaksi`, formatRupiah(qrisTotal)],
-          [4, 'Penerimaan Kartu Debit', `${transactions.filter(t => t.payment_method === 'DEBIT').length} Transaksi`, formatRupiah(debitTotal)],
-          [5, 'Penerimaan Transfer Bank', `${transactions.filter(t => t.payment_method === 'TRANSFER').length} Transaksi`, formatRupiah(transferTotal)],
-          [6, 'Ekspektasi Uang Fisik di Laci', 'Modal Awal + Penjualan Tunai', formatRupiah(expectedCash)],
-          [7, 'Uang Fisik Kasir (Hasil Hitung)', 'Diserahkan saat tutup kasir', formatRupiah(actualCash)],
-          [8, 'Status Selisih Kasir', variance === 0 ? 'SEIMBANG / PAS' : variance > 0 ? 'LEBIH KAS' : 'KURANG KAS', (variance >= 0 ? '+' : '') + formatRupiah(variance)]
+          [3, 'Penerimaan Potong Saldo Member', `${transactions.filter(t => t.payment_method === 'SALDO').length} Transaksi`, formatRupiah(saldoTotal)],
+          [4, 'Penerimaan Transfer Bank (TF)', `${transactions.filter(t => t.payment_method === 'TRANSFER').length} Transaksi`, formatRupiah(transferTotal)],
+          [5, 'Penerimaan QRIS Digital', `${transactions.filter(t => t.payment_method === 'QRIS').length} Transaksi`, formatRupiah(qrisTotal)],
+          [6, 'Penerimaan Kartu Debit', `${transactions.filter(t => t.payment_method === 'DEBIT').length} Transaksi`, formatRupiah(debitTotal)],
+          [7, 'Ekspektasi Uang Fisik di Laci', 'Modal Awal + Penjualan Tunai', formatRupiah(expectedCash)],
+          [8, 'Uang Fisik Kasir (Hasil Hitung)', 'Diserahkan saat tutup kasir', formatRupiah(actualCash)],
+          [9, 'Status Selisih Kasir', variance === 0 ? 'SEIMBANG / PAS' : variance > 0 ? 'LEBIH KAS' : 'KURANG KAS', (variance >= 0 ? '+' : '') + formatRupiah(variance)]
         ],
         alignments: ['center', 'left', 'left', 'right'],
         footers: ['TOTAL SETTLEMENT', 'SEMUA SALURAN PEMBAYARAN', `${totalTrx} Trx`, formatRupiah(netSales)]
@@ -221,6 +305,71 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
         {/* Content Body */}
         <div className="p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-4 text-xs bg-[#fcf9f5] flex-1 max-w-3xl mx-auto w-full">
           
+          {/* Filter Tanggal Shift */}
+          <div className="p-3.5 bg-[#f5ece3] rounded-2xl border border-[#dfcebe] flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
+            <div className="flex items-center space-x-2">
+              <Calendar className="w-4 h-4 text-[#7c4e2f]" />
+              <span className="text-[11px] font-extrabold text-[#543c2e] uppercase tracking-wider">Tanggal Shift:</span>
+              <span className="text-xs font-black text-[#7c4e2f] bg-white px-2.5 py-1 rounded-lg border border-[#dfcebe]">
+                {shiftPeriodLabel}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShiftDateMode('date');
+                  setTargetDate(todayKey);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  shiftDateMode === 'date' && targetDate === todayKey
+                    ? 'bg-[#2d5a40] text-white shadow-xs'
+                    : 'bg-white text-[#543c2e] border border-[#dfcebe] hover:bg-[#faebd7]'
+                }`}
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShiftDateMode('date');
+                  setTargetDate(yesterdayKey);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  shiftDateMode === 'date' && targetDate === yesterdayKey
+                    ? 'bg-[#2d5a40] text-white shadow-xs'
+                    : 'bg-white text-[#543c2e] border border-[#dfcebe] hover:bg-[#faebd7]'
+                }`}
+              >
+                Kemarin
+              </button>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setShiftDateMode('date');
+                    setTargetDate(e.target.value);
+                  }
+                }}
+                className="px-2.5 py-1 rounded-xl border border-[#dfcebe] bg-white text-xs font-mono font-bold text-[#3d2617] focus:outline-none focus:border-[#2d5a40]"
+                title="Pilih tanggal shift yang dituju"
+              />
+              <button
+                type="button"
+                onClick={() => setShiftDateMode('all')}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  shiftDateMode === 'all'
+                    ? 'bg-[#96633b] text-white shadow-xs'
+                    : 'bg-white text-[#543c2e] border border-[#dfcebe] hover:bg-[#faebd7]'
+                }`}
+              >
+                Semua
+              </button>
+            </div>
+          </div>
+
           {/* Shift Metadata */}
           <div className="grid grid-cols-2 gap-3 p-3.5 bg-white rounded-2xl border border-[#e5d0be] shadow-xs">
             <div>
@@ -229,14 +378,14 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
             </div>
             <div>
               <span className="text-[#8a6b53] text-[11px] font-bold uppercase tracking-wider block">Cabang Toko:</span>
-              <span className="font-extrabold text-sm text-[#3d2617]">{branchId} (Samarinda)</span>
+              <span className="font-extrabold text-sm text-[#3d2617]">{resolvedBranchLabel}</span>
             </div>
           </div>
 
           {/* Key Metrics */}
           <div className="p-4 bg-white rounded-3xl border border-[#e5d0be] space-y-2.5 shadow-xs">
             <div className="flex justify-between items-center text-[#5c3c26]">
-              <span>Total Nota Terbit:</span>
+              <span>Total Nota Terbit ({shiftPeriodLabel}):</span>
               <span className="font-mono font-bold text-sm text-[#3d2617]">{totalTrx} Transaksi</span>
             </div>
             <div className="flex justify-between items-center text-[#5c3c26]">
@@ -251,20 +400,36 @@ export const ShiftReportModal: React.FC<ShiftReportModalProps> = ({
             )}
             <div className="flex justify-between items-center pt-2 border-t border-[#f2e5d8] text-[#3d2617]">
               <span className="font-black text-sm">Penjualan Bersih (Net):</span>
-              <span className="font-mono font-black text-xl text-[#96633b]">{formatRupiah(netSales)}</span>
+              <span className="font-mono font-black text-xl text-[#166534]">{formatRupiah(netSales)}</span>
             </div>
           </div>
 
           {/* Payment Method Distribution */}
           <div>
             <span className="text-[#5c3c26] font-extrabold text-xs mb-2 block">Rincian Penerimaan Pembayaran:</span>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
               <div className="p-3 bg-white rounded-2xl border border-[#e5d0be] shadow-xs">
-                <div className="flex items-center space-x-1.5 text-[#96633b] font-bold mb-1">
+                <div className="flex items-center space-x-1.5 text-[#166534] font-bold mb-1">
                   <Banknote className="w-4 h-4" />
                   <span>Tunai</span>
                 </div>
                 <div className="font-mono font-black text-xs text-[#3d2617]">{formatRupiah(cashTotal)}</div>
+              </div>
+
+              <div className="p-3 bg-white rounded-2xl border border-[#e5d0be] shadow-xs">
+                <div className="flex items-center space-x-1.5 text-amber-800 font-bold mb-1">
+                  <Wallet className="w-4 h-4" />
+                  <span>Potong Saldo</span>
+                </div>
+                <div className="font-mono font-black text-xs text-[#3d2617]">{formatRupiah(saldoTotal)}</div>
+              </div>
+
+              <div className="p-3 bg-white rounded-2xl border border-[#e5d0be] shadow-xs">
+                <div className="flex items-center space-x-1.5 text-[#7c4e2f] font-bold mb-1">
+                  <DollarSign className="w-4 h-4" />
+                  <span>Transfer (TF)</span>
+                </div>
+                <div className="font-mono font-black text-xs text-[#3d2617]">{formatRupiah(transferTotal)}</div>
               </div>
 
               <div className="p-3 bg-white rounded-2xl border border-[#e5d0be] shadow-xs">
