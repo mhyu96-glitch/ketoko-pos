@@ -41,7 +41,9 @@ export interface ExportCustomerItemsOptions {
  * Format number to Indonesian thousands separator (e.g. 10.000)
  */
 function formatNumber(num: number): string {
-  return (num || 0).toLocaleString('id-ID');
+  const n = Math.round(Number(num) || 0);
+  const sign = n < 0 ? '-' : '';
+  return sign + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 /**

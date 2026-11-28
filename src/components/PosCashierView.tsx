@@ -504,7 +504,9 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
   }, [products, quickSearchKeywords]);
 
   // Calculate change
-  const cashGivenNumber = cashGivenInput ? parseFloat(cashGivenInput) || 0 : 0;
+  const cashGivenNumber = cashGivenInput
+    ? parseInt(String(cashGivenInput).replace(/\D/g, ''), 10) || 0
+    : 0;
   const effectiveCash = cashGivenNumber > 0 ? cashGivenNumber : grandTotal;
   const changeDue = Math.max(0, effectiveCash - grandTotal);
   const isCashSufficient = cashGivenNumber === 0 || cashGivenNumber >= grandTotal;
@@ -1445,9 +1447,17 @@ export const PosCashierView: React.FC<PosCashierViewProps> = React.memo(({
                   </span>
                   <div className="relative w-36">
                     <input
-                      type="number"
-                      value={cashGivenInput}
-                      onChange={(e) => setCashGivenInput(e.target.value)}
+                      type="text"
+                      inputMode="numeric"
+                      value={
+                        cashGivenInput
+                          ? String(parseInt(String(cashGivenInput).replace(/\D/g, ''), 10) || 0).replace(
+                              /\B(?=(\d{3})+(?!\d))/g,
+                              '.'
+                            )
+                          : ''
+                      }
+                      onChange={(e) => setCashGivenInput(e.target.value.replace(/\D/g, ''))}
                       placeholder={formatRupiah(grandTotal)}
                       className="w-full px-2.5 py-1 text-right font-mono font-bold text-xs bg-white border border-[#dfcebe] rounded-lg text-[#332219] focus:border-[#7c4e2f] focus:outline-hidden shadow-2xs"
                     />

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { DebtRecord, ReceivableRecord, Supplier, Customer } from '../types';
-import { formatRupiah, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots, ESCPOSBuilder, printToWebSerial } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { CustomSelect } from './CustomSelect';
 import { filterCustomersForStore, getCurrentActiveStoreId } from '../utils/customerAccess';
@@ -537,11 +537,11 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                     <div>
                       <label className="font-bold text-[#543c2e] block mb-1">Nominal Hutang (Rp):</label>
                       <input
-                        type="number"
-                        min="1"
+                        type="text"
+                        inputMode="numeric"
                         placeholder="Rp 0"
-                        value={newDebtAmount || ''}
-                        onChange={(e) => setNewDebtAmount(Number(e.target.value))}
+                        value={newDebtAmount ? formatNominalDots(newDebtAmount) : ''}
+                        onChange={(e) => setNewDebtAmount(parseNominalDots(e.target.value))}
                         className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-black text-rose-800"
                         required
                       />
@@ -650,9 +650,10 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                     <div>
                       <span className="text-[#856b59] block mb-1">Nominal Pembayaran (Rp):</span>
                       <input
-                        type="number"
-                        value={paymentAmount || ''}
-                        onChange={(e) => setPaymentAmount(Math.min(payingDebt.remaining_amount, Number(e.target.value)))}
+                        type="text"
+                        inputMode="numeric"
+                        value={paymentAmount ? formatNominalDots(paymentAmount) : ''}
+                        onChange={(e) => setPaymentAmount(Math.min(payingDebt.remaining_amount, parseNominalDots(e.target.value)))}
                         placeholder="Masukkan nominal bayar..."
                         className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
                       />
@@ -844,11 +845,11 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                     <div>
                       <label className="font-bold text-[#543c2e] block mb-1">Nominal Piutang (Rp):</label>
                       <input
-                        type="number"
-                        min="1"
+                        type="text"
+                        inputMode="numeric"
                         placeholder="Rp 0"
-                        value={newRecAmount || ''}
-                        onChange={(e) => setNewRecAmount(Number(e.target.value))}
+                        value={newRecAmount ? formatNominalDots(newRecAmount) : ''}
+                        onChange={(e) => setNewRecAmount(parseNominalDots(e.target.value))}
                         className="w-full px-3 py-2 border border-[#dfcebe] rounded-xl bg-white font-mono font-black text-amber-800"
                         required
                       />
@@ -957,9 +958,10 @@ export const DebtReceivableModal: React.FC<DebtReceivableModalProps> = ({
                     <div>
                       <span className="text-[#856b59] block mb-1">Nominal Diterima Kasir (Rp):</span>
                       <input
-                        type="number"
-                        value={paymentAmount || ''}
-                        onChange={(e) => setPaymentAmount(Math.min(payingReceivable.remaining_amount, Number(e.target.value)))}
+                        type="text"
+                        inputMode="numeric"
+                        value={paymentAmount ? formatNominalDots(paymentAmount) : ''}
+                        onChange={(e) => setPaymentAmount(Math.min(payingReceivable.remaining_amount, parseNominalDots(e.target.value)))}
                         placeholder="Nominal diterima..."
                         className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
                       />

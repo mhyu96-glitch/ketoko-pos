@@ -393,7 +393,24 @@ export function formatRow(left: string, right: string, width = 32): string {
 }
 
 export function formatRupiah(num: number): string {
-  return 'Rp ' + (num || 0).toLocaleString('id-ID');
+  const n = Math.round(Number(num) || 0);
+  const sign = n < 0 ? '-' : '';
+  return sign + 'Rp ' + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+export function formatNominalDots(val: string | number | undefined | null): string {
+  if (val === undefined || val === null || val === '') return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return '';
+  return String(parseInt(digits, 10) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+export function parseNominalDots(val: string | number | undefined | null): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return 0;
+  return parseInt(digits, 10) || 0;
 }
 
 let cachedUsbDevice: any = null;

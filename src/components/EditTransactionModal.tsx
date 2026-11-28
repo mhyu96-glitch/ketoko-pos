@@ -15,7 +15,7 @@ import {
 import { db } from '../db';
 import type { Transaction, TransactionItem, Product } from '../types';
 import { syncService } from '../services/syncService';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { CustomSelect } from './CustomSelect';
 
 interface EditTransactionModalProps {
@@ -466,10 +466,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <input
-                          type="number"
-                          min="0"
-                          value={it.price_applied}
-                          onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNominalDots(it.price_applied)}
+                          onChange={(e) => handleUpdateItemPrice(idx, parseNominalDots(e.target.value))}
                           className="w-24 px-2 py-1 text-right text-xs rounded-lg border border-[#ddc3aa] bg-[#fcf9f5] focus:outline-hidden focus:ring-1 focus:ring-[#96633b] font-mono font-semibold"
                         />
                       </td>
@@ -575,10 +575,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                   Uang Diterima / Bayar (Rp)
                 </label>
                 <input
-                  type="number"
-                  min="0"
-                  value={cashGiven}
-                  onChange={(e) => setCashGiven(parseFloat(e.target.value) || 0)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNominalDots(cashGiven)}
+                  onChange={(e) => setCashGiven(parseNominalDots(e.target.value))}
                   className="w-full px-3 py-2 text-sm rounded-xl border border-[#ddc3aa] bg-white font-mono font-bold text-[#3d271d] focus:outline-hidden focus:ring-2 focus:ring-[#96633b]"
                 />
                 <div className="flex flex-wrap gap-1.5">
@@ -623,10 +623,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <div className="flex justify-between items-center">
                 <span className="text-[#166534] font-semibold">Potongan Diskon (Rp):</span>
                 <input
-                  type="number"
-                  min="0"
-                  value={discountAmount}
-                  onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNominalDots(discountAmount)}
+                  onChange={(e) => setDiscountAmount(parseNominalDots(e.target.value))}
                   className="w-28 px-2 py-1 text-right text-xs rounded-lg border border-[#ddc3aa] bg-white font-mono font-semibold text-[#166534] focus:outline-hidden focus:ring-1 focus:ring-[#96633b]"
                 />
               </div>
@@ -634,10 +634,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <div className="flex justify-between items-center">
                 <span className="text-stone-600">Pajak PPN (Rp):</span>
                 <input
-                  type="number"
-                  min="0"
-                  value={taxAmount}
-                  onChange={(e) => setTaxAmount(parseFloat(e.target.value) || 0)}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatNominalDots(taxAmount)}
+                  onChange={(e) => setTaxAmount(parseNominalDots(e.target.value))}
                   className="w-28 px-2 py-1 text-right text-xs rounded-lg border border-[#ddc3aa] bg-white font-mono font-semibold text-stone-800 focus:outline-hidden focus:ring-1 focus:ring-[#96633b]"
                 />
               </div>

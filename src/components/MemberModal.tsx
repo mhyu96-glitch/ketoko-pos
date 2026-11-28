@@ -34,7 +34,7 @@ import type { Customer } from '../types';
 import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
 import { employeeAllowanceService } from '../services/employeeAllowanceService';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { MemberCardModal } from './MemberCardModal';
 import { MemberTopUpModal } from './MemberTopUpModal';
 import { type RegisteredStoreInfo } from '../services/storeRegistry';
@@ -48,7 +48,6 @@ import {
   getStoresForCluster,
   filterCustomersForStore,
   isCustomerBelongsToStoreOrCluster,
-  MAX_EMPLOYEE_ALLOWANCE,
   normalizeAccessScope,
   normalizeStoreId,
   parseEmployeeMeta,
@@ -1096,13 +1095,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     <div>
                       <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Maks Rp 2 Juta):</label>
                       <input
-                        type="number"
-                        min={0}
-                        max={MAX_EMPLOYEE_ALLOWANCE}
-                        step={100000}
-                        value={newAllowance}
-                        onChange={(e) => setNewAllowance(clampEmployeeAllowance(Number(e.target.value)))}
-                        placeholder="2000000"
+                        type="text"
+                        inputMode="numeric"
+                        value={formatNominalDots(newAllowance)}
+                        onChange={(e) => setNewAllowance(clampEmployeeAllowance(parseNominalDots(e.target.value)))}
+                        placeholder="2.000.000"
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                       <span className="text-[10px] text-emerald-700">Maks Rp 2.000.000 • Reset otomatis tiap Tanggal 1</span>
@@ -1110,13 +1107,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     <div>
                       <label className="text-[11px] font-bold text-emerald-800 block mb-1">Saldo Awal Saat Didaftarkan (Maks Rp 2 Juta):</label>
                       <input
-                        type="number"
-                        min={0}
-                        max={MAX_EMPLOYEE_ALLOWANCE}
-                        step={100000}
-                        value={newInitialDeposit}
-                        onChange={(e) => setNewInitialDeposit(clampEmployeeBalance(Number(e.target.value)))}
-                        placeholder="2000000"
+                        type="text"
+                        inputMode="numeric"
+                        value={formatNominalDots(newInitialDeposit)}
+                        onChange={(e) => setNewInitialDeposit(clampEmployeeBalance(parseNominalDots(e.target.value)))}
+                        placeholder="2.000.000"
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                       <span className="text-[10px] text-emerald-700">Bisa langsung dibelanjakan di kasir</span>
@@ -1126,12 +1121,11 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   <div>
                     <label className="text-[11px] font-bold text-[#543c2e] block mb-1">Plafon Limit Piutang Kasir (Rp):</label>
                     <input
-                      type="number"
-                      min={0}
-                      step={100000}
-                      value={newCreditLimit}
-                      onChange={(e) => setNewCreditLimit(Number(e.target.value))}
-                      placeholder="1000000"
+                      type="text"
+                      inputMode="numeric"
+                      value={formatNominalDots(newCreditLimit)}
+                      onChange={(e) => setNewCreditLimit(parseNominalDots(e.target.value))}
+                      placeholder="1.000.000"
                       className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold focus:border-[#7c4e2f]"
                     />
                   </div>
@@ -1257,24 +1251,20 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     <div>
                       <label className="text-[11px] font-bold text-emerald-800 block mb-1">Plafon Kuota Bulanan (Maks Rp 2 Jt):</label>
                       <input
-                        type="number"
-                        min={0}
-                        max={MAX_EMPLOYEE_ALLOWANCE}
-                        step={100000}
-                        value={editAllowance}
-                        onChange={(e) => setEditAllowance(clampEmployeeAllowance(Number(e.target.value)))}
+                        type="text"
+                        inputMode="numeric"
+                        value={formatNominalDots(editAllowance)}
+                        onChange={(e) => setEditAllowance(clampEmployeeAllowance(parseNominalDots(e.target.value)))}
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                     </div>
                     <div>
                       <label className="text-[11px] font-bold text-emerald-800 block mb-1">Sisa Saldo Saat Ini (Maks Rp 2 Jt):</label>
                       <input
-                        type="number"
-                        min={0}
-                        max={MAX_EMPLOYEE_ALLOWANCE}
-                        step={50000}
-                        value={editDepositBalance}
-                        onChange={(e) => setEditDepositBalance(clampEmployeeBalance(Number(e.target.value)))}
+                        type="text"
+                        inputMode="numeric"
+                        value={formatNominalDots(editDepositBalance)}
+                        onChange={(e) => setEditDepositBalance(clampEmployeeBalance(parseNominalDots(e.target.value)))}
                         className="w-full px-3 py-1.5 text-xs border border-emerald-400 bg-emerald-50 rounded-xl font-mono font-bold text-emerald-900 focus:border-emerald-600"
                       />
                     </div>
@@ -1283,11 +1273,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                   <div>
                     <label className="text-[11px] font-bold text-[#543c2e] block mb-1">Plafon Limit Piutang (Rp):</label>
                     <input
-                      type="number"
-                      min={0}
-                      step={100000}
-                      value={editCreditLimit}
-                      onChange={(e) => setEditCreditLimit(Number(e.target.value))}
+                      type="text"
+                      inputMode="numeric"
+                      value={formatNominalDots(editCreditLimit)}
+                      onChange={(e) => setEditCreditLimit(parseNominalDots(e.target.value))}
                       className="w-full px-3 py-1.5 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold focus:border-[#7c4e2f]"
                     />
                   </div>

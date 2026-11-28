@@ -443,3 +443,171 @@ export function exportReportToPDF(options: PDFReportOptions) {
     }
   }
 }
+
+export interface ExcelReportOptions extends PDFReportOptions {
+  filename?: string;
+  sheetName?: string;
+  columnWidths?: number[];
+}
+
+/**
+ * Ekspor Laporan ke File Microsoft Excel (.xls) Rapi Berwarna
+ * Desain seragam dengan Laporan A4 Koperasi (Header Tengah, Kartu KPI, Tabel Berkolom Rapi & Baris Total)
+ */
+export function exportReportToExcel(options: ExcelReportOptions): void {
+  const esc = (v: any) =>
+    String(v ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const hostStore = resolveStoreFromCurrentHost();
+  let savedProfile: Partial<NonNullable<PDFReportOptions['storeProfile']>> = {};
+  try {
+    const rawSaved = typeof window !== 'undefined' ? localStorage.getItem('ketoko_store_profile') : null;
+    if (rawSaved) savedProfile = JSON.parse(rawSaved);
+  } catch {}
+
+  const rawStoreName =
+    options.storeProfile?.name ||
+    savedProfile.name ||
+    hostStore.name ||
+    'KETOKO POS';
+  const storeName =
+    !rawStoreName || rawStoreName.toUpperCase() === 'KETOKO POS'
+      ? (hostStore.name || 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI').toUpperCase()
+      : rawStoreName.toUpperCase();
+  const branchName =
+    options.storeProfile?.branch_name ||
+    savedProfile.branch_name ||
+    hostStore.branch ||
+    '';
+
+  const headers = options.table.headers;
+  const colCount = Math.max(headers.length, 4);
+  const alignments =
+    options.table.alignments ||
+    headers.map((_, i) => (i === 0 ? 'center' : i >= headers.length - 3 ? 'right' : 'left'));
+  const colWidths =
+    options.columnWidths ||
+    headers.map((h, i) => {
+      if (i === 0 && /^no\.?$/i.test(h.trim())) return 45;
+      if (/rincian|barang|nama|deskripsi|komponen/i.test(h)) return 320;
+      if (/pelanggan|karyawan|kasir|kategori/i.test(h)) return 190;
+      if (/waktu|tanggal|nota|sku|kode/i.test(h)) return 150;
+      return 130;
+    });
+
+  const kpis = options.kpis || [];
+  let kpiHtml = '';
+  if (kpis.length > 0) {
+    const baseSpan = Math.max(1, Math.floor(colCount / kpis.length));
+    const spans = kpis.map((_, idx) =>
+      idx === kpis.length - 1 ? Math.max(1, colCount - baseSpan * (kpis.length - 1)) : baseSpan
+    );
+    kpiHtml = `
+  <tr>
+    ${kpis.map((k, i) => `<td colspan="${spans[i]}" class="kpi-lbl">${esc(k.label)}</td>`).join('')}
+  </tr>
+  <tr>
+    ${kpis
+      .map(
+        (k, i) =>
+          `<td colspan="${spans[i]}" class="kpi-val" style="color:${k.highlight ? '#047857' : '#0f172a'};">${esc(k.value)}${k.sublabel ? `<br/><span style="font-size:8.5pt;font-weight:normal;color:#64748b;">${esc(k.sublabel)}</span>` : ''}</td>`
+      )
+      .join('')}
+  </tr>
+  <tr><td colspan="${colCount}" style="border:none;height:10px;padding:0;"></td></tr>`;
+  }
+
+  const rowsHtml = options.table.rows
+    .map((row, rIdx) => {
+      const bg = rIdx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      return `
+  <tr>
+    ${row
+      .map((cell, cIdx) => {
+        const align = alignments[cIdx] || 'left';
+        const str = String(cell ?? '');
+        const isLastCol = cIdx === row.length - 1;
+        const isNeg = str.trim().startsWith('-Rp') || (str.trim().startsWith('-') && str.trim().length > 1);
+        const color = isNeg ? '#b91c1c' : isLastCol && align === 'right' ? '#047857' : '#1f2937';
+        const weight = cIdx === 1 || (isLastCol && align === 'right') ? 'bold' : 'normal';
+        return `<td style="background:${bg};text-align:${align};color:${color};font-weight:${weight};mso-number-format:'\\@';">${esc(str)}</td>`;
+      })
+      .join('')}
+  </tr>`;
+    })
+    .join('');
+
+  const footerHtml = options.table.footers
+    ? `
+  <tr>
+    ${options.table.footers
+      .map((f, cIdx) => {
+        const align = alignments[cIdx] || 'left';
+        return `<td class="tot-td" style="text-align:${align};">${esc(f)}</td>`;
+      })
+      .join('')}
+  </tr>`
+    : '';
+
+  const sheetTitle = (options.sheetName || options.title || 'Laporan')
+    .replace(/[\\/?*[\]:]/g, ' ')
+    .trim()
+    .slice(0, 31);
+
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv="Content-Type" content="application/vnd.ms-excel; charset=utf-8" />
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>${esc(sheetTitle)}</x:Name>
+<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 10pt; color: #1f2937; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { padding: 6px 8px; vertical-align: middle; border: 0.5pt solid #e2e8f0; mso-number-format:"\\@"; }
+  br { mso-data-placement: same-cell; }
+  .hdr-title { font-size: 15pt; font-weight: bold; color: #064e3b; text-align: center; border: none; padding: 6px 0 2px 0; }
+  .hdr-branch { font-size: 10pt; font-weight: bold; color: #047857; text-align: center; border: none; padding: 1px 0; }
+  .hdr-sub { font-size: 11.5pt; font-weight: bold; color: #334155; text-align: center; border: none; padding: 3px 0; }
+  .hdr-period { font-size: 10pt; font-weight: bold; color: #047857; text-align: center; border-top: none; border-left: none; border-right: none; border-bottom: 2pt solid #047857; padding: 2px 0 10px 0; }
+  .kpi-lbl { background: #f8faf9; border-top: 1pt solid #d1fae5; border-left: 1pt solid #d1fae5; border-right: 1pt solid #d1fae5; border-bottom: none; font-size: 8.5pt; font-weight: bold; color: #065f46; text-align: center; text-transform: uppercase; padding: 8px 6px 2px 6px; }
+  .kpi-val { background: #f8faf9; border-bottom: 1pt solid #d1fae5; border-left: 1pt solid #d1fae5; border-right: 1pt solid #d1fae5; border-top: none; font-size: 12pt; font-weight: bold; color: #0f172a; text-align: center; padding: 2px 6px 8px 6px; }
+  .tbl-th { background: #064e3b; color: #ffffff; font-weight: bold; font-size: 10pt; border: 0.5pt solid #064e3b; height: 32px; }
+  .tot-td { background: #ecfdf5; font-weight: bold; font-size: 10.5pt; color: #064e3b; border-top: 1.5pt solid #047857; border-bottom: 1.5pt solid #047857; padding: 8px; }
+</style>
+</head>
+<body>
+<table>
+  <colgroup>${colWidths.map((w) => `<col width="${w}" style="width:${w}px">`).join('')}</colgroup>
+  <tr><td colspan="${colCount}" class="hdr-title">${esc(storeName)}</td></tr>
+  ${branchName ? `<tr><td colspan="${colCount}" class="hdr-branch">${esc(branchName)}</td></tr>` : ''}
+  <tr><td colspan="${colCount}" class="hdr-sub">${esc(options.title)}</td></tr>
+  <tr><td colspan="${colCount}" class="hdr-period">${esc(options.periodText ? `Periode: ${options.periodText}` : `Dicetak: ${new Date().toLocaleString('id-ID')}`)}</td></tr>
+  <tr><td colspan="${colCount}" style="border:none;height:10px;padding:0;"></td></tr>
+  ${kpiHtml}
+  <tr>
+    ${headers.map((h, i) => `<th class="tbl-th" style="text-align:${alignments[i] || 'left'};">${esc(h)}</th>`).join('')}
+  </tr>
+  ${rowsHtml}
+  ${footerHtml}
+</table>
+</body>
+</html>`;
+
+  const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const dateStr = new Date().toISOString().split('T')[0];
+  const fileBase = options.filename || `Laporan_${sheetTitle.replace(/\s+/g, '_')}_${dateStr}`;
+  const finalFilename = fileBase.endsWith('.xls') ? fileBase : `${fileBase}.xls`;
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', finalFilename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

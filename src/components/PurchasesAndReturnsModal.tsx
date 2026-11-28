@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { Purchase, PurchaseReturn, SalesReturn, Supplier, Product } from '../types';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { CustomSelect } from './CustomSelect';
 import { lanService } from '../services/lanService';
 import { syncService } from '../services/syncService';
@@ -297,8 +297,8 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
     }
 
     const prod = targetProd;
-    const parsedBuy = poBuyPrice !== '' ? Math.max(0, Number(poBuyPrice) || 0) : prod.buy_price;
-    const parsedRetail = poRetailPrice !== '' ? Math.max(0, Number(poRetailPrice) || 0) : prod.retail_price;
+    const parsedBuy = poBuyPrice !== '' ? Math.max(0, parseNominalDots(poBuyPrice)) : prod.buy_price;
+    const parsedRetail = poRetailPrice !== '' ? Math.max(0, parseNominalDots(poRetailPrice)) : prod.retail_price;
     const existingIndex = poItems.findIndex((it) => it.product.id === prod.id);
     if (existingIndex >= 0) {
       const updated = [...poItems];
@@ -850,10 +850,10 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                       <div className="sm:col-span-2">
                         <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Harga Modal / Beli (Rp)</label>
                         <input
-                          type="number"
-                          min="0"
-                          value={poBuyPrice}
-                          onChange={(e) => setPoBuyPrice(e.target.value)}
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNominalDots(poBuyPrice)}
+                          onChange={(e) => setPoBuyPrice(e.target.value.replace(/\D/g, ''))}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -868,10 +868,10 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                       <div className="sm:col-span-2">
                         <label className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">Harga Jual (Opsional)</label>
                         <input
-                          type="number"
-                          min="0"
-                          value={poRetailPrice}
-                          onChange={(e) => setPoRetailPrice(e.target.value)}
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNominalDots(poRetailPrice)}
+                          onChange={(e) => setPoRetailPrice(e.target.value.replace(/\D/g, ''))}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -937,11 +937,11 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                                   </td>
                                   <td className="py-2.5 px-2 text-right align-top">
                                     <input
-                                      type="number"
-                                      min="0"
-                                      value={it.buy_price}
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={formatNominalDots(it.buy_price)}
                                       onChange={(e) => {
-                                        const nextBuy = Math.max(0, Number(e.target.value) || 0);
+                                        const nextBuy = Math.max(0, parseNominalDots(e.target.value));
                                         const copy = [...poItems];
                                         copy[idx] = { ...copy[idx], buy_price: nextBuy, subtotal: copy[idx].qty * nextBuy };
                                         setPoItems(copy);
@@ -967,11 +967,11 @@ export const PurchasesAndReturnsModal: React.FC<PurchasesAndReturnsModalProps> =
                                   </td>
                                   <td className="py-2.5 px-2 text-right align-top">
                                     <input
-                                      type="number"
-                                      min="0"
-                                      value={it.retail_price}
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={formatNominalDots(it.retail_price)}
                                       onChange={(e) => {
-                                        const nextRetail = Math.max(0, Number(e.target.value) || 0);
+                                        const nextRetail = Math.max(0, parseNominalDots(e.target.value));
                                         const copy = [...poItems];
                                         copy[idx] = { ...copy[idx], retail_price: nextRetail };
                                         setPoItems(copy);

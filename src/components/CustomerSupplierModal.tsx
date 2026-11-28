@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { Customer, Supplier } from '../types';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { syncService } from '../services/syncService';
 import { lanService } from '../services/lanService';
 import { getStoredStores, type RegisteredStoreInfo } from '../services/storeRegistry';
@@ -523,10 +523,11 @@ export const CustomerSupplierModal: React.FC<CustomerSupplierModalProps> = ({
                     <div>
                       <label className="text-[11px] font-bold text-[#543c2e] block mb-1">Plafon Limit Piutang (Rp):</label>
                       <input
-                        type="number"
-                        value={custCreditLimit || ''}
-                        onChange={(e) => setCustCreditLimit(Number(e.target.value))}
-                        placeholder="1000000"
+                        type="text"
+                        inputMode="numeric"
+                        value={custCreditLimit ? formatNominalDots(custCreditLimit) : ''}
+                        onChange={(e) => setCustCreditLimit(parseNominalDots(e.target.value))}
+                        placeholder="1.000.000"
                         className="w-full px-3 py-2 text-xs border border-[#dfcebe] rounded-xl bg-white font-mono font-bold"
                       />
                     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, PlusCircle, CheckCircle, ArrowDownRight, Search, Package } from 'lucide-react';
 import type { Product } from '../types';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { syncService } from '../services/syncService';
 
 interface RestockModalProps {
@@ -69,8 +69,8 @@ export const RestockModal: React.FC<RestockModalProps> = ({
     setIsSubmitting(true);
     try {
       const newStock = currentProduct.stock + incomingQty;
-      const updatedBuy = newBuyPrice !== '' ? Math.max(0, Number(newBuyPrice) || 0) : currentProduct.buy_price;
-      const updatedRetail = newRetailPrice !== '' ? Math.max(0, Number(newRetailPrice) || 0) : currentProduct.retail_price;
+      const updatedBuy = newBuyPrice !== '' ? Math.max(0, parseNominalDots(newBuyPrice)) : currentProduct.buy_price;
+      const updatedRetail = newRetailPrice !== '' ? Math.max(0, parseNominalDots(newRetailPrice)) : currentProduct.retail_price;
       const updatedWholesale =
         currentProduct.wholesale_price === currentProduct.retail_price
           ? updatedRetail
@@ -220,15 +220,15 @@ export const RestockModal: React.FC<RestockModalProps> = ({
                 Harga Modal / Beli (Rp)
               </label>
               <input
-                type="number"
-                min="0"
-                value={newBuyPrice}
-                onChange={(e) => setNewBuyPrice(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                value={formatNominalDots(newBuyPrice)}
+                onChange={(e) => setNewBuyPrice(e.target.value.replace(/\D/g, ''))}
                 className="w-full px-3.5 py-2.5 bg-amber-50/40 text-stone-900 font-mono font-bold text-base rounded-xl border border-amber-300 focus:bg-white focus:border-amber-600"
               />
-              {currentProduct && Number(newBuyPrice) > currentProduct.buy_price && (
+              {currentProduct && parseNominalDots(newBuyPrice) > currentProduct.buy_price && (
                 <div className="text-[10px] font-bold text-amber-700 mt-1">
-                  ⬆ Modal naik +{formatRupiah(Number(newBuyPrice) - currentProduct.buy_price)}
+                  ⬆ Modal naik +{formatRupiah(parseNominalDots(newBuyPrice) - currentProduct.buy_price)}
                 </div>
               )}
             </div>
@@ -238,10 +238,10 @@ export const RestockModal: React.FC<RestockModalProps> = ({
                 Harga Jual Eceran (Rp)
               </label>
               <input
-                type="number"
-                min="0"
-                value={newRetailPrice}
-                onChange={(e) => setNewRetailPrice(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                value={formatNominalDots(newRetailPrice)}
+                onChange={(e) => setNewRetailPrice(e.target.value.replace(/\D/g, ''))}
                 className="w-full px-3.5 py-2.5 bg-emerald-50/40 text-emerald-950 font-mono font-bold text-base rounded-xl border border-emerald-300 focus:bg-white focus:border-emerald-600"
               />
             </div>

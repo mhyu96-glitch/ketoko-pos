@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { CartItem, Customer, Product, TransactionItem } from '../types';
 import { db } from '../db';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import {
   filterCustomersForStore,
   getCurrentActiveStoreId,
@@ -224,11 +224,11 @@ export const DirectSalesInvoiceModal: React.FC<DirectSalesInvoiceModalProps> = (
     () => rows.reduce((sum, r) => sum + r.qty * r.unit_price, 0),
     [rows]
   );
-  const discountAmount = Math.min(subtotal, Math.max(0, Number(discountInput) || 0));
+  const discountAmount = Math.min(subtotal, Math.max(0, parseNominalDots(discountInput)));
   const netBeforeTax = Math.max(0, subtotal - discountAmount);
   const taxAmount = taxEnabled ? Math.round((netBeforeTax * (Number(taxRate) || 0)) / 100) : 0;
   const grandTotal = netBeforeTax + taxAmount;
-  const dpNumber = Math.min(grandTotal, Math.max(0, Number(dpGiven) || 0));
+  const dpNumber = Math.min(grandTotal, Math.max(0, parseNominalDots(dpGiven)));
   const remainingReceivable = Math.max(0, grandTotal - dpNumber);
 
   const availSaldo = activeCustomer
@@ -537,11 +537,11 @@ export const DirectSalesInvoiceModal: React.FC<DirectSalesInvoiceModalProps> = (
                           </td>
                           <td className="py-2 px-2 text-right">
                             <input
-                              type="number"
-                              min="0"
-                              value={r.unit_price}
+                              type="text"
+                              inputMode="numeric"
+                              value={formatNominalDots(r.unit_price)}
                               onChange={(e) => {
-                                const up = Math.max(0, Number(e.target.value) || 0);
+                                const up = Math.max(0, parseNominalDots(e.target.value));
                                 setRows((prev) => prev.map((it, i) => (i === idx ? { ...it, unit_price: up } : it)));
                               }}
                               className="w-32 px-2 py-1 text-right font-mono font-bold border border-[#dfcebe] rounded-lg bg-white"
@@ -650,10 +650,10 @@ export const DirectSalesInvoiceModal: React.FC<DirectSalesInvoiceModalProps> = (
                   <div>
                     <label className="text-[11px] font-bold text-amber-950 block mb-1">Uang Muka / DP Diterima (Rp):</label>
                     <input
-                      type="number"
-                      min="0"
-                      value={dpGiven}
-                      onChange={(e) => setDpGiven(e.target.value)}
+                      type="text"
+                      inputMode="numeric"
+                      value={formatNominalDots(dpGiven)}
+                      onChange={(e) => setDpGiven(e.target.value.replace(/\D/g, ''))}
                       className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white font-mono font-bold text-xs text-right"
                     />
                     <div className="flex justify-between text-[11px] font-extrabold text-rose-700 pt-1">
@@ -689,10 +689,10 @@ export const DirectSalesInvoiceModal: React.FC<DirectSalesInvoiceModalProps> = (
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-stone-600 font-semibold">Potongan Diskon (Rp):</span>
                   <input
-                    type="number"
-                    min="0"
-                    value={discountInput}
-                    onChange={(e) => setDiscountInput(e.target.value)}
+                    type="text"
+                    inputMode="numeric"
+                    value={formatNominalDots(discountInput)}
+                    onChange={(e) => setDiscountInput(e.target.value.replace(/\D/g, ''))}
                     className="w-32 px-2.5 py-1 rounded-lg border border-[#dfcebe] font-mono font-bold text-right bg-[#fcf8f4]"
                   />
                 </div>

@@ -15,7 +15,7 @@ import {
   ShieldAlert,
   FileText
 } from 'lucide-react';
-import { formatRupiah } from '../services/escposService';
+import { formatRupiah, formatNominalDots, parseNominalDots } from '../services/escposService';
 import { db } from '../db';
 import type { Customer } from '../types';
 import { syncService } from '../services/syncService';
@@ -460,11 +460,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       <span className="absolute left-4 top-3 text-[#96633b] font-bold text-lg font-mono">Rp</span>
                       <input
                         ref={inputRef}
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={cashGiven || ''}
-                        onChange={(e) => setCashGiven(Number(e.target.value) || 0)}
+                        type="text"
+                        inputMode="numeric"
+                        value={cashGiven ? formatNominalDots(cashGiven) : ''}
+                        onChange={(e) => setCashGiven(parseNominalDots(e.target.value))}
                         placeholder="0"
                         className="w-full pl-12 pr-4 py-3 bg-white text-[#3d2617] font-mono font-black text-2xl rounded-2xl border-2 border-[#ddc3aa] focus:border-[#96633b] focus:ring-4 focus:ring-[#96633b]/20 shadow-xs selection:bg-[#faebd7] selection:text-[#96633b] transition-all"
                       />
@@ -689,12 +688,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-amber-800 font-bold text-xs font-mono">Rp</span>
                   <input
-                    type="number"
-                    min="0"
-                    max={grandTotal}
-                    step="1"
-                    value={dpGiven || ''}
-                    onChange={(e) => setDpGiven(Math.min(grandTotal, Math.max(0, Number(e.target.value) || 0)))}
+                    type="text"
+                    inputMode="numeric"
+                    value={dpGiven ? formatNominalDots(dpGiven) : ''}
+                    onChange={(e) => setDpGiven(Math.min(grandTotal, Math.max(0, parseNominalDots(e.target.value))))}
                     placeholder="0 (jika belum bayar sama sekali)"
                     className="w-full pl-9 pr-3 py-2 bg-white text-[#3d2617] font-mono font-bold text-xs rounded-xl border border-amber-300 focus:border-amber-600 focus:ring-2 focus:ring-amber-200 shadow-2xs"
                   />

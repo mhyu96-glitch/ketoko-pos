@@ -30,10 +30,9 @@ import {
 } from 'lucide-react';
 import { db } from '../db';
 import type { Transaction, Product, TransactionItem, OperationalExpense, StoreProfile, Customer } from '../types';
-import { exportReportToPDF } from '../services/pdfReportService';
+import { exportReportToPDF, exportReportToExcel } from '../services/pdfReportService';
 import { 
   exportCustomerItemsToExcel, 
-  exportCustomerItemsToCSV, 
   type CustomerReportGroupData, 
   type CustomerItemRowData 
 } from '../services/excelReportService';
@@ -313,6 +312,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
     const paymentMethodMap: Record<string, number> = {
       CASH: 0,
+      SALDO: 0,
       QRIS: 0,
       DEBIT: 0,
       TRANSFER: 0
@@ -320,6 +320,7 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
 
     const paymentCountMap: Record<string, number> = {
       CASH: 0,
+      SALDO: 0,
       QRIS: 0,
       DEBIT: 0,
       TRANSFER: 0
@@ -329,13 +330,23 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     const categorySalesMap = new Map<string, { qty: number; totalSales: number; totalCost: number }>();
 
     filteredTransactions.forEach((trx) => {
-      totalGrossRevenue += trx.subtotal;
+      const itemsSum = (trx.items || []).reduce(
+        (s, it) => s + (Number(it.subtotal_item) || (Number(it.price_applied) || 0) * (Number(it.qty) || 1)),
+        0
+      );
+      const effSubtotal = Number(trx.subtotal) > 0 ? Number(trx.subtotal) : itemsSum;
+      const effGrandTotal =
+        Number(trx.grand_total) > 0
+          ? Number(trx.grand_total)
+          : Math.max(0, effSubtotal - (Number(trx.discount_amount) || 0) + (Number(trx.tax_amount) || 0));
+
+      totalGrossRevenue += effSubtotal;
       totalDiscount += trx.discount_amount || 0;
-      totalNetRevenue += trx.grand_total;
+      totalNetRevenue += effGrandTotal;
       totalTax += trx.tax_amount || 0;
 
       const pMethod = trx.payment_method || 'CASH';
-      paymentMethodMap[pMethod] = (paymentMethodMap[pMethod] || 0) + trx.grand_total;
+      paymentMethodMap[pMethod] = (paymentMethodMap[pMethod] || 0) + effGrandTotal;
       paymentCountMap[pMethod] = (paymentCountMap[pMethod] || 0) + 1;
 
       trx.items.forEach((item: TransactionItem) => {
@@ -768,30 +779,46 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
     }
 
     if (activeTab === 'sales') {
+      const validSalesTrx = filteredTransactions.filter((t) => {
+        const itemsSum = (t.items || []).reduce(
+          (s, it) => s + (Number(it.subtotal_item) || (Number(it.price_applied) || 0) * (Number(it.qty) || 1)),
+          0
+        );
+        return (Number(t.grand_total) || Number(t.subtotal) || itemsSum) > 0 || (t.items && t.items.length > 0);
+      });
       exportReportToPDF({
         title: 'LAPORAN REKAPITULASI PENJUALAN & SHIFT KASIR',
         periodText: periodLabel,
         storeProfile,
         kpis: [
           { label: 'Penjualan Bersih', value: formatRupiah(metrics.totalNetRevenue), highlight: true },
-          { label: 'Penjualan Tunai (CASH)', value: formatRupiah(metrics.paymentMethodMap.CASH), sublabel: `${metrics.paymentCountMap.CASH} Nota (${(metrics.totalNetRevenue > 0 ? (metrics.paymentMethodMap.CASH / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%)` },
-          { label: 'Transfer Bank (TF)', value: formatRupiah(metrics.paymentMethodMap.TRANSFER), sublabel: `${metrics.paymentCountMap.TRANSFER} Nota (${(metrics.totalNetRevenue > 0 ? (metrics.paymentMethodMap.TRANSFER / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%)` },
-          { label: 'QRIS & Kartu Debit', value: formatRupiah(metrics.paymentMethodMap.QRIS + metrics.paymentMethodMap.DEBIT), sublabel: `${metrics.paymentCountMap.QRIS + metrics.paymentCountMap.DEBIT} Nota` }
+          { label: 'Potong Saldo Member', value: formatRupiah(metrics.paymentMethodMap.SALDO || 0), sublabel: `${metrics.paymentCountMap.SALDO || 0} Nota` },
+          { label: 'Penjualan Tunai (CASH)', value: formatRupiah(metrics.paymentMethodMap.CASH || 0), sublabel: `${metrics.paymentCountMap.CASH || 0} Nota` },
+          { label: 'Transfer & QRIS/Debit', value: formatRupiah((metrics.paymentMethodMap.TRANSFER || 0) + (metrics.paymentMethodMap.QRIS || 0) + (metrics.paymentMethodMap.DEBIT || 0)), sublabel: `${(metrics.paymentCountMap.TRANSFER || 0) + (metrics.paymentCountMap.QRIS || 0) + (metrics.paymentCountMap.DEBIT || 0)} Nota` }
         ],
         table: {
-          headers: ['No. Nota', 'Waktu Transaksi', 'Kasir / Petugas', 'Metode', 'Item', 'Subtotal', 'Diskon', 'Total Bayar'],
-          rows: filteredTransactions.map((t) => [
-            t.receipt_number,
-            new Date(t.created_at).toLocaleString('id-ID'),
-            t.cashier_name || cashierName,
-            t.payment_method,
-            t.items.reduce((s, it) => s + it.qty, 0),
-            formatRupiah(t.subtotal),
-            '-' + formatRupiah(t.discount_amount || 0),
-            formatRupiah(t.grand_total)
-          ]),
-          alignments: ['left', 'left', 'left', 'center', 'center', 'right', 'right', 'right'],
-          footers: ['TOTAL PENJUALAN', '', '', '', `${metrics.totalItems} Pcs`, formatRupiah(metrics.totalGrossRevenue), '-' + formatRupiah(metrics.totalDiscount), formatRupiah(metrics.totalNetRevenue)]
+          headers: ['No', 'No. Nota', 'Waktu Transaksi', 'Pelanggan / Member', 'Kasir / Petugas', 'Metode', 'Rincian Barang', 'Item', 'Total Bayar'],
+          rows: validSalesTrx.map((t, idx) => {
+            const itemsSum = (t.items || []).reduce(
+              (s, it) => s + (Number(it.subtotal_item) || (Number(it.price_applied) || 0) * (Number(it.qty) || 1)),
+              0
+            );
+            const effTotal = Number(t.grand_total) > 0 ? Number(t.grand_total) : (Number(t.subtotal) > 0 ? Number(t.subtotal) : itemsSum);
+            const itemsText = (t.items || []).map((it) => `${it.qty}x ${it.product_name}`).join(', ') || '-';
+            return [
+              idx + 1,
+              t.receipt_number,
+              new Date(t.created_at).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+              t.customer_name || 'Pelanggan Umum',
+              t.cashier_name || cashierName,
+              t.payment_method,
+              itemsText,
+              t.items.reduce((s, it) => s + it.qty, 0),
+              formatRupiah(effTotal)
+            ];
+          }),
+          alignments: ['center', 'left', 'center', 'left', 'left', 'center', 'left', 'center', 'right'],
+          footers: ['TOTAL', `${validSalesTrx.length} Nota`, '', '', '', '', '', `${metrics.totalItems} Pcs`, formatRupiah(metrics.totalNetRevenue)]
         },
         notes: 'Data laporan penjualan resmi divalidasi dari sistem database offline POS.'
       });
@@ -959,8 +986,19 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
   const handleExportExcel = () => {
     const savedStore = localStorage.getItem('ketoko_store_profile');
     const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
-    const storeName = storeProfile?.name || 'KETOKO POS';
+    const storeName = storeProfile?.name || 'KOPERASI KARYAWAN PT. MUARATOYU SUBUR LESTARI';
     const branchName = storeProfile?.branch_name || branchId;
+    const periodLabel =
+      dateFilter === 'custom'
+        ? `${startDate} s/d ${endDate}`
+        : dateFilter === 'today'
+          ? 'Hari Ini (' + new Date().toLocaleDateString('id-ID') + ')'
+          : dateFilter === '7days'
+            ? '7 Hari Terakhir'
+            : dateFilter === 'month'
+              ? 'Bulan Ini (' + new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ')'
+              : 'Seluruh Waktu';
+    const dateSlug = new Date().toISOString().split('T')[0];
 
     if (activeTab === 'employee_allowance') {
       if (employeeReport) {
@@ -980,65 +1018,239 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
         groups: filteredCustomerReportGroups,
         grandTotals: customerGrandTotals
       });
-    } else {
-      handleExportCSV();
-    }
-  };
-
-  // Export active report to CSV
-  const handleExportCSV = () => {
-    if (activeTab === 'employee_allowance') {
-      if (employeeReport) {
-        employeeAllowanceService.exportEmployeeAllowanceCSV({ ...employeeReport, employees: filteredEmployees });
-      }
       return;
     }
-
-    if (activeTab === 'customer_items') {
-      const savedStore = localStorage.getItem('ketoko_store_profile');
-      const storeProfile: StoreProfile | undefined = savedStore ? JSON.parse(savedStore) : undefined;
-      exportCustomerItemsToCSV({
-        storeName: storeProfile?.name || 'KETOKO POS',
-        branchName: storeProfile?.branch_name || branchId,
-        periodText: periodFormattedHeader,
-        groups: filteredCustomerReportGroups,
-        grandTotals: customerGrandTotals
-      });
-      return;
-    }
-
-    let filename = `laporan-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`;
-    let csvContent = 'data:text/csv;charset=utf-8,';
 
     if (activeTab === 'sales') {
-      csvContent += 'No Nota,Waktu,Kasir,Metode,Subtotal,Diskon,Pajak,Total\n';
-      filteredTransactions.forEach((t) => {
-        csvContent += `"${t.receipt_number}","${t.created_at}","${t.cashier_name || cashierName}","${t.payment_method}",${t.subtotal},${t.discount_amount || 0},${t.tax_amount || 0},${t.grand_total}\n`;
+      const validSalesTrx = filteredTransactions.filter((t) => {
+        const itemsSum = (t.items || []).reduce(
+          (s, it) => s + (Number(it.subtotal_item) || (Number(it.price_applied) || 0) * (Number(it.qty) || 1)),
+          0
+        );
+        return (Number(t.grand_total) || Number(t.subtotal) || itemsSum) > 0 || (t.items && t.items.length > 0);
       });
-    } else if (activeTab === 'products') {
-      csvContent += 'Kode SKU,Nama Produk,Kategori,Qty Terjual,Omset Penjualan,Laba Kotor\n';
-      metrics.rankedProducts.forEach((p) => {
-        csvContent += `"${p.product.id}","${p.product.name}","${p.product.category || 'Umum'}",${p.qty},${p.totalSales},${p.totalSales - p.totalCost}\n`;
+
+      exportReportToExcel({
+        title: 'LAPORAN REKAPITULASI PENJUALAN & SHIFT KASIR',
+        periodText: periodLabel,
+        storeProfile,
+        filename: `Laporan_Penjualan_${dateSlug}.xls`,
+        sheetName: `Laporan Penjualan`,
+        columnWidths: [42, 155, 140, 210, 165, 105, 420, 75, 120, 110, 130],
+        kpis: [
+          { label: 'Total Transaksi', value: `${validSalesTrx.length} Nota`, sublabel: `${metrics.totalItems} Pcs Terjual` },
+          { label: 'Penjualan Bersih', value: formatRupiah(metrics.totalNetRevenue), highlight: true },
+          { label: 'Potong Saldo Member', value: formatRupiah(metrics.paymentMethodMap.SALDO || 0), sublabel: `${metrics.paymentCountMap.SALDO || 0} Nota Saldo` },
+          { label: 'Penjualan Tunai (CASH)', value: formatRupiah(metrics.paymentMethodMap.CASH || 0), sublabel: `${metrics.paymentCountMap.CASH || 0} Nota Tunai` },
+          { label: 'Transfer & QRIS/Debit', value: formatRupiah((metrics.paymentMethodMap.TRANSFER || 0) + (metrics.paymentMethodMap.QRIS || 0) + (metrics.paymentMethodMap.DEBIT || 0)), sublabel: `${(metrics.paymentCountMap.TRANSFER || 0) + (metrics.paymentCountMap.QRIS || 0) + (metrics.paymentCountMap.DEBIT || 0)} Nota Non-Tunai` }
+        ],
+        table: {
+          headers: [
+            'No',
+            'No. Nota',
+            'Waktu Transaksi',
+            'Pelanggan / Karyawan',
+            'Kasir / Petugas',
+            'Metode Bayar',
+            'Rincian Barang Dibeli',
+            'Item',
+            'Subtotal',
+            'Diskon',
+            'Total Bayar'
+          ],
+          rows: validSalesTrx.map((t, idx) => {
+            const itemsSum = (t.items || []).reduce(
+              (s, it) => s + (Number(it.subtotal_item) || (Number(it.price_applied) || 0) * (Number(it.qty) || 1)),
+              0
+            );
+            const effSub = Number(t.subtotal) > 0 ? Number(t.subtotal) : itemsSum;
+            const effTotal =
+              Number(t.grand_total) > 0
+                ? Number(t.grand_total)
+                : Math.max(0, effSub - (Number(t.discount_amount) || 0) + (Number(t.tax_amount) || 0));
+            const itemsText = (t.items || []).map((it) => `${it.qty}x ${it.product_name}`).join(', ') || '-';
+            return [
+              idx + 1,
+              t.receipt_number,
+              new Date(t.created_at).toLocaleString('id-ID', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }),
+              t.customer_name || 'Pelanggan Umum',
+              t.cashier_name || cashierName,
+              t.payment_method,
+              itemsText,
+              `${t.items.reduce((s, it) => s + it.qty, 0)} Pcs`,
+              formatRupiah(effSub),
+              t.discount_amount ? '-' + formatRupiah(t.discount_amount) : 'Rp 0',
+              formatRupiah(effTotal)
+            ];
+          }),
+          alignments: ['center', 'left', 'center', 'left', 'left', 'center', 'left', 'center', 'right', 'right', 'right'],
+          footers: [
+            'TOTAL',
+            `${validSalesTrx.length} Nota`,
+            '',
+            '',
+            '',
+            '',
+            '',
+            `${metrics.totalItems} Pcs`,
+            formatRupiah(metrics.totalGrossRevenue),
+            metrics.totalDiscount ? '-' + formatRupiah(metrics.totalDiscount) : 'Rp 0',
+            formatRupiah(metrics.totalNetRevenue)
+          ]
+        }
       });
-    } else if (activeTab === 'inventory') {
-      csvContent += 'Kode SKU,Nama Produk,Kategori,Stok,Satuan,Harga Beli HPP,Harga Jual Eceran,Nilai Aset HPP\n';
-      filteredInventoryProducts.forEach((p) => {
-        csvContent += `"${p.id}","${p.name}","${p.category}",${p.stock},"${p.unit || 'pcs'}",${p.buy_price},${p.retail_price},${p.stock * p.buy_price}\n`;
-      });
-    } else {
-      csvContent += 'Metode Pembayaran,Total Penerimaan\n';
-      Object.entries(metrics.paymentMethodMap).forEach(([k, v]) => {
-        csvContent += `"${k}",${v}\n`;
-      });
+      return;
     }
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (activeTab === 'products') {
+      exportReportToExcel({
+        title: 'LAPORAN PENJUALAN PER PRODUK & SKU',
+        periodText: periodLabel,
+        storeProfile,
+        filename: `Laporan_Produk_Terjual_${dateSlug}.xls`,
+        sheetName: 'Produk Terjual',
+        columnWidths: [45, 130, 280, 140, 100, 140, 140],
+        kpis: [
+          { label: 'Total Produk Terjual', value: `${metrics.rankedProducts.length} Jenis Produk` },
+          { label: 'Total Unit Keluar', value: `${metrics.totalItems} Pcs` },
+          { label: 'Total Omset Produk', value: formatRupiah(metrics.totalGrossRevenue), highlight: true },
+          { label: 'Laba Kotor Produk', value: formatRupiah(metrics.grossProfit) }
+        ],
+        table: {
+          headers: ['No', 'Kode SKU', 'Nama Produk / Barang', 'Kategori', 'Qty Terjual', 'Omset Penjualan', 'Laba Kotor'],
+          rows: metrics.rankedProducts.map((p, idx) => [
+            idx + 1,
+            p.product.id,
+            p.product.name,
+            p.product.category || 'Umum',
+            `${p.qty} ${p.product.unit || 'pcs'}`,
+            formatRupiah(p.totalSales),
+            formatRupiah(p.totalSales - p.totalCost)
+          ]),
+          alignments: ['center', 'left', 'left', 'left', 'center', 'right', 'right'],
+          footers: ['TOTAL', '', `${metrics.rankedProducts.length} Produk`, '', `${metrics.totalItems} Pcs`, formatRupiah(metrics.totalGrossRevenue), formatRupiah(metrics.grossProfit)]
+        }
+      });
+      return;
+    }
+
+    if (activeTab === 'profit') {
+      exportReportToExcel({
+        title: 'LAPORAN LABA RUGI KOMPREHENSIF (P&L STATEMENT)',
+        periodText: periodLabel,
+        storeProfile,
+        filename: `Laporan_Laba_Rugi_${dateSlug}.xls`,
+        sheetName: 'Laba Rugi',
+        columnWidths: [300, 180, 120, 160],
+        kpis: [
+          { label: 'Penjualan Bersih', value: formatRupiah(metrics.totalNetRevenue) },
+          { label: 'Total HPP Modal', value: formatRupiah(metrics.totalCOGS) },
+          { label: 'Laba Kotor Usaha', value: `${formatRupiah(metrics.grossProfit)} (${metrics.grossProfitMarginPercent.toFixed(1)}%)` },
+          { label: 'Laba Bersih Operasional', value: `${formatRupiah(metrics.netProfit)} (${metrics.netProfitMarginPercent.toFixed(1)}%)`, highlight: true }
+        ],
+        table: {
+          headers: ['Komponen Keuangan', 'Kategori Akun', 'Persentase (%)', 'Jumlah Nominal (Rp)'],
+          rows: [
+            ['1. Pendapatan Kotor Penjualan', 'Penjualan Retail', '100.0%', formatRupiah(metrics.totalGrossRevenue)],
+            ['2. Potongan Diskon & Promo', 'Diskon Kasir', `${(metrics.totalGrossRevenue > 0 ? (metrics.totalDiscount / metrics.totalGrossRevenue) * 100 : 0).toFixed(1)}%`, '-' + formatRupiah(metrics.totalDiscount)],
+            ['3. Penjualan Bersih (Net Sales)', 'Pendapatan Bersih', '100.0%', formatRupiah(metrics.totalNetRevenue)],
+            ['4. Total Beban Pokok Penjualan (HPP)', 'Modal Beli Produk', `${(metrics.totalNetRevenue > 0 ? (metrics.totalCOGS / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%`, '-' + formatRupiah(metrics.totalCOGS)],
+            ['5. Laba Kotor (Gross Profit)', 'Margin Kotor', `${metrics.grossProfitMarginPercent.toFixed(1)}%`, formatRupiah(metrics.grossProfit)],
+            ...filteredExpenses.map((exp) => [
+              `6. Beban Operasional: ${exp.title}`,
+              exp.category,
+              `${(metrics.totalNetRevenue > 0 ? (exp.amount / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%`,
+              '-' + formatRupiah(exp.amount)
+            ]),
+            ['7. Total Beban Operasional Toko', 'Beban Toko', `${(metrics.totalNetRevenue > 0 ? (metrics.totalExpenses / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%`, '-' + formatRupiah(metrics.totalExpenses)]
+          ],
+          alignments: ['left', 'left', 'center', 'right'],
+          footers: ['LABA BERSIH OPERASIONAL (NET PROFIT)', 'HASIL BERSIH AKHIR', `${metrics.netProfitMarginPercent.toFixed(1)}%`, formatRupiah(metrics.netProfit)]
+        }
+      });
+      return;
+    }
+
+    if (activeTab === 'inventory') {
+      exportReportToExcel({
+        title: 'LAPORAN VALUASI NILAI STOK & ASET INVENTORI',
+        periodText: 'Posisi Per ' + new Date().toLocaleString('id-ID'),
+        storeProfile,
+        filename: `Laporan_Stok_Inventori_${dateSlug}.xls`,
+        sheetName: 'Stok Inventori',
+        columnWidths: [45, 130, 280, 140, 95, 130, 130, 145, 95],
+        kpis: [
+          { label: 'Total Jenis Barang (SKU)', value: `${filteredInventoryProducts.length} SKU` },
+          { label: 'Total Fisik Barang', value: `${metrics.totalStockQty} Unit/Pcs` },
+          { label: 'Total Nilai Aset (HPP Modal)', value: formatRupiah(metrics.totalInventoryAssetValue), highlight: true },
+          { label: 'Potensi Omset Retail', value: formatRupiah(metrics.totalRetailAssetValue) }
+        ],
+        table: {
+          headers: ['No', 'Kode SKU', 'Nama Produk / Barang', 'Kategori', 'Stok', 'Harga Beli (HPP)', 'Harga Jual', 'Nilai Aset (HPP)', 'Status'],
+          rows: filteredInventoryProducts.map((p, idx) => [
+            idx + 1,
+            p.id,
+            p.name,
+            p.category,
+            `${p.stock} ${p.unit || 'pcs'}`,
+            formatRupiah(p.buy_price),
+            formatRupiah(p.retail_price),
+            formatRupiah(p.stock * p.buy_price),
+            p.stock <= 0 ? 'HABIS' : p.stock <= p.min_stock_alert ? 'MENIPIS' : 'AMAN'
+          ]),
+          alignments: ['center', 'left', 'left', 'left', 'center', 'right', 'right', 'right', 'center'],
+          footers: ['TOTAL ASET', '', `${filteredInventoryProducts.length} SKU`, '', `${metrics.totalStockQty} Pcs`, '', '', formatRupiah(metrics.totalInventoryAssetValue), '']
+        }
+      });
+      return;
+    }
+
+    exportReportToExcel({
+      title: 'LAPORAN REKAPITULASI METODE PEMBAYARAN & SETTLEMENT',
+      periodText: periodLabel,
+      storeProfile,
+      filename: `Laporan_Metode_Pembayaran_${dateSlug}.xls`,
+      sheetName: 'Metode Pembayaran',
+      columnWidths: [45, 260, 180, 140],
+      kpis: [
+        { label: 'Total Pembayaran', value: formatRupiah(metrics.totalNetRevenue), highlight: true },
+        { label: 'Potong Saldo Member', value: formatRupiah(metrics.paymentMethodMap['SALDO'] || 0) },
+        { label: 'Total Tunai (Cash)', value: formatRupiah(metrics.paymentMethodMap['CASH'] || 0) },
+        { label: 'Transfer & QRIS/Debit', value: formatRupiah((metrics.paymentMethodMap['TRANSFER'] || 0) + (metrics.paymentMethodMap['QRIS'] || 0) + (metrics.paymentMethodMap['DEBIT'] || 0)) }
+      ],
+      table: {
+        headers: ['No', 'Metode Pembayaran', 'Total Penerimaan Kasir (Rp)', 'Porsi Kontribusi (%)'],
+        rows: Object.entries(metrics.paymentMethodMap).map(([method, amount], idx) => [
+          idx + 1,
+          method === 'CASH'
+            ? 'Tunai (Cash Physical)'
+            : method === 'SALDO'
+              ? 'Potong Saldo Anggota / Karyawan'
+              : method === 'QRIS'
+                ? 'QRIS Digital Settlement'
+                : method === 'DEBIT'
+                  ? 'Kartu Debit / EDC'
+                  : method === 'TRANSFER'
+                    ? 'Transfer Bank Direct'
+                    : method,
+          formatRupiah(amount),
+          `${(metrics.totalNetRevenue > 0 ? (amount / metrics.totalNetRevenue) * 100 : 0).toFixed(1)}%`
+        ]),
+        alignments: ['center', 'left', 'right', 'center'],
+        footers: ['TOTAL SETTLEMENT', 'SEMUA SALURAN PEMBAYARAN', formatRupiah(metrics.totalNetRevenue), '100.0%']
+      }
+    });
+  };
+
+  // Export active report (diarahkan ke format Excel .xls rapi agar tidak berantakan di kolom A)
+  const handleExportCSV = () => {
+    handleExportExcel();
   };
 
   // Thermal Print Handler for Detailed Profit & Loss Report
@@ -1154,14 +1366,14 @@ export const FullReportsCenterModal: React.FC<FullReportsCenterModalProps> = ({
               <span>Export PDF (A4)</span>
             </button>
 
-            {/* Export CSV / Excel Button */}
+            {/* Export Excel Button */}
             <button
-              onClick={activeTab === 'employee_allowance' ? handleExportExcel : handleExportCSV}
-              className="px-3 py-2 rounded-xl bg-[#543017] hover:bg-[#422511] text-amber-100 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs active:scale-95 border border-[#9b663b]/50 whitespace-nowrap"
-              title="Unduh Data Mentah Laporan dalam Format Excel / CSV"
+              onClick={handleExportExcel}
+              className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs active:scale-95 border border-emerald-500/50 whitespace-nowrap"
+              title="Unduh Laporan Aktif dalam Format Microsoft Excel Rapi (.xls)"
             >
-              <FileSpreadsheet className="w-4 h-4 text-amber-200" />
-              <span className="hidden md:inline">{activeTab === 'employee_allowance' ? 'Export Excel' : 'Export CSV'}</span>
+              <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+              <span className="hidden md:inline">Export Excel (.xls)</span>
             </button>
 
             {/* Thermal Print Button */}
